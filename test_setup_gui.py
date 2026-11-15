@@ -398,6 +398,16 @@ class ReleaseGuidanceTests(unittest.TestCase):
         self.assertFalse(app.bridge_enabled.get())
         self.assertIn('Select a row', app.bridge_status.get())
 
+    def test_selecting_discovered_direct_module_keeps_direct_mode(self):
+        app = self.app
+        app.discovered = [{'ip': '1.2.3.4', 'port': 2000}]
+        app.module_box.configure(values=['Direct telescope'])
+        app.module_box.current(0)
+        app.select_module()
+        self.assertEqual(app.connection_mode.get(), 'direct')
+        self.assertEqual(app.host.get(), '1.2.3.4')
+        self.assertEqual(app.last_infrastructure_host, '192.168.1.42')
+
     def test_infrastructure_discovery_rejects_direct_address(self):
         app = self.app
         app.connection_mode.set('infrastructure')

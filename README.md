@@ -92,7 +92,8 @@ move the telescope slider or connect the computer to a different Wi-Fi network.
 3. **Bridge:** relays native AUX traffic to a compatible phone/desktop control app.
    Defaults OFF. While ON, the other control tabs are disabled and readbacks/logs
    remain visible. The controlling application can command real telescope motion.
-4. **Wi-Fi provisioning:** read settings or replace the router SSID, password and
+4. **Wi-Fi provisioning:** Connect & Read Settings displays replies in the
+   **Transfer log below the tabs**, not a popup, and saves a report. Read settings or replace the router SSID, password and
    supported security settings. Supports an already provisioned adapter through
    its reachable infrastructure address as well as direct mode. Saving replaces
    network configuration; power OFF, set the physical slider RIGHT, and power ON

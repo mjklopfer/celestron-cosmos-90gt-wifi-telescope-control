@@ -239,6 +239,8 @@ class SetupApp(ttk.Frame):
         self.upload_button.pack(side='left', padx=10)
         self.progress = ttk.Progressbar(buttons, mode='indeterminate', length=100)
         self.progress.pack(side='right')
+        ttk.Label(self.provision_tab, text='Read settings and command replies appear in the Transfer log below the tabs; no popup opens. Logs are also saved.',
+                  wraplength=780).grid(row=2, sticky='w', pady=(8, 0))
         ttk.Label(self, textvariable=self.status, wraplength=760).grid(row=5, sticky='w', pady=(0, 10))
 
         transfer = ttk.LabelFrame(self, text='Transfer log — credentials redacted', padding=8)
@@ -258,7 +260,7 @@ class SetupApp(ttk.Frame):
         self.switch_help_label = ttk.Label(self.provision_tab, text=WIFI_SWITCH_HELP,
                                           wraplength=820)
         self.switch_help_label.grid(row=2, sticky='w', pady=(12, 0))
-        self.append('Ready. Close CFM / CPWI before connecting here; the adapter shares one command stream.')
+        self.append('Ready. Disconnect other connected apps (for example CFM or CPWI) before connecting here; the adapter shares one command stream.')
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<Escape>', lambda event: self.stop_motors())
         root.bind('<ButtonRelease-1>', lambda event: self.release_direction(), add='+')
@@ -270,7 +272,8 @@ class SetupApp(ttk.Frame):
 
     def scroll_window(self, event):
         # Reply text, transfer text and the endpoint table retain their own scroll.
-        if event.widget in (self.console, self.diagnostic_details, self.diagnostic_rows):
+        if event.widget in (self.console, self.diagnostic_details, self.diagnostic_rows,
+                            self.bridge_console, self.interface_table):
             return
         delta = getattr(event, 'delta', 0)
         if getattr(event, 'num', None) in (4, 5):
@@ -408,7 +411,7 @@ class SetupApp(ttk.Frame):
         self.bridge_firewall_label = ttk.Label(tab, foreground='#b36b00', wraplength=820,
                   text='FIREWALL / LOCAL NETWORK: allow this Python application incoming TCP 2000 and 3000 '
                   'from your local network, and outgoing UDP broadcasts to port 55555. '
-                  'Allow incoming connections in the computer’s firewall when prompted; enable Local Network access for SkySafari/SkyPortal on iOS. '
+                  'Allow incoming connections in the computer’s firewall when prompted; enable Local Network access for your control app on iOS (for example SkySafari). '
                   'Do not forward these ports from the Internet. A listening socket does not verify firewall access.\n'
                   'Two-interface option: manually connect one Wi-Fi adapter to SkyQLink and another Wi-Fi/Ethernet adapter '
                   'to the router LAN. Enter the computer’s router-LAN IP above. The app does not configure or share networks.')
@@ -601,7 +604,7 @@ class SetupApp(ttk.Frame):
             address = self.last_infrastructure_host or ''
         self.host.set(address)
         self.port.set('2000')
-        self.status.set('House-network IP is a saved DHCP snapshot; it may change.' if home else
+        self.status.set('Enter or discover the telescope’s router-assigned IP; DHCP addresses may change.' if home else
                         'Direct / ad hoc: connect this computer to SkyQLink-xx. No SSID-prefix discovery is used.')
 
     def update_mode_help(self):
@@ -626,7 +629,7 @@ class SetupApp(ttk.Frame):
             self.set_busy(False)
             self.status.set(str(e))
             return
-        self.status.set(f'Discovering Celestron modules on TCP {port}… Close CPWI / other telescope connections.')
+        self.status.set(f'Discovering Celestron modules on TCP {port}… Disconnect any connected control apps (for example CPWI or SkySafari).')
         self.scan_started = time.monotonic()
         self.scan_button.configure(text='Scanning…')
         self.tick_scan()
@@ -654,11 +657,12 @@ class SetupApp(ttk.Frame):
         index = self.module_box.current()
         if 0 <= index < len(self.discovered):
             match = self.discovered[index]
-            self.connection_mode.set('infrastructure')
+            self.connection_mode.set('direct' if match['ip'] == '1.2.3.4' else 'infrastructure')
             self.update_mode_help()
             self.host.set(match['ip'])
             self.port.set(str(match.get('port', 2000)))
-            self.last_infrastructure_host = match['ip']
+            if match['ip'] != '1.2.3.4':
+                self.last_infrastructure_host = match['ip']
             self.status.set(f'Verified {match.get("module_type", "Celestron AUX")}: {match["ip"]}:{match.get("port", 2000)}')
 
     def update_controls(self):
