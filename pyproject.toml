@@ -13,8 +13,8 @@ requires-python = ">=3.10"
 dependencies = ["psutil>=5.9,<8"]
 
 [project.urls]
-Repository = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-control"
-Issues = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-control/issues"
+Repository = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control"
+Issues = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/issues"
 
 [project.optional-dependencies]
 dev = ["ruff>=0.9,<1", "build>=1.2,<2"]
