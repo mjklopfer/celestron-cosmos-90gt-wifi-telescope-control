@@ -1,3 +1,4 @@
+"""Regression checks for setup backend. No real telescope is connected."""
 import unittest
 from setup_backend import clean, validate_endpoint
 from wifly_configure import Session

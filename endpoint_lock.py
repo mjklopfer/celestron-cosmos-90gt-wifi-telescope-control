@@ -1,4 +1,7 @@
-"""Coordinate access to the adapter's single stream across copies of this app."""
+"""Cross-process exclusion for each adapter host/port.
+
+Use platform file locking because the original adapter exposes one shared command
+stream. This coordinates local processes, not separate computers on the network."""
 import functools
 import hashlib
 import os
@@ -12,6 +15,7 @@ class EndpointBusy(ConnectionError):
 
 class EndpointLease:
     def __init__(self, host, port):
+        """Choose a per-endpoint lock file in the host’s temporary directory."""
         root = Path(tempfile.gettempdir()) / ('cosmos-control-locks-' + str(getattr(os, 'getuid', lambda: 'user')()))
         root.mkdir(mode=0o700, exist_ok=True)
         key = hashlib.sha256(f'{host}:{port}'.encode()).hexdigest()
@@ -20,6 +24,7 @@ class EndpointLease:
         self.endpoint = f'{host}:{port}'
 
     def acquire(self):
+        """Take a nonblocking process lock for this telescope endpoint."""
         self.file = self.path.open('a+b')
         try:
             if os.name == 'nt':
@@ -41,6 +46,7 @@ class EndpointLease:
         return self
 
     def release(self):
+        """Unlock the endpoint and close its file handle, including on failure."""
         if self.file:
             try:
                 if os.name == 'nt':
@@ -52,15 +58,19 @@ class EndpointLease:
                 self.file = None
 
     def __enter__(self):
+        """Acquire ownership before entering the managed operation."""
         return self.acquire()
 
     def __exit__(self, *args):
+        """Release ownership when the managed operation leaves scope."""
         self.release()
 
 
 def exclusive_endpoint(operation):
+    """Wrap an operation so concurrent sessions cannot share its adapter stream."""
     @functools.wraps(operation)
     def wrapped(host, port=2000, *args, **kwargs):
+        """Run the decorated operation while holding the endpoint lease."""
         with EndpointLease(host, port):
             return operation(host, port, *args, **kwargs)
     return wrapped

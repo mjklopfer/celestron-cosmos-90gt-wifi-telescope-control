@@ -1,3 +1,4 @@
+"""Regression checks for endpoint lock. No real telescope is connected."""
 import unittest
 from endpoint_lock import EndpointLease, EndpointBusy
 

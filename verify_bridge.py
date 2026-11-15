@@ -10,6 +10,7 @@ from motor_control import motor_packet
 
 
 def verify(host, port=2000):
+    """Exercise relay reads and reconnects on loopback; request no motor movement."""
     events = queue.Queue()
     bridge = Bridge(host, port, events.put, bind_host='127.0.0.1', listen_port=0,
                     management_port=0, advertise=False)

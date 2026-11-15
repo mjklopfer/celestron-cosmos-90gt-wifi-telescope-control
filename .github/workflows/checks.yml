@@ -1,3 +1,4 @@
+# Offline checks only: fake adapters/loopback sockets, never a real telescope.
 name: Python checks
 on: [push, pull_request, workflow_dispatch]
 jobs:

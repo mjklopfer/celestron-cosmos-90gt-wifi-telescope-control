@@ -8,6 +8,7 @@ from skyqlink_setup import SetupApp
 
 
 def main():
+    """Parse command-line options and run this module’s entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True)
     parser.add_argument('--port', type=int, default=2000)
@@ -30,6 +31,7 @@ def main():
     soak_until = next_progress = 0
 
     def finish(error=None):
+        """Save the opt-in hardware-check result and close the GUI services."""
         nonlocal phase
         if phase == 'closing':
             return
@@ -42,6 +44,7 @@ def main():
         app.close()
 
     def press(index):
+        """Generate a bounded GUI arrow hold for the explicitly requested hardware check."""
         button = app.jog_buttons[index]
         root.focus_force()
         button.focus_set()
@@ -49,6 +52,7 @@ def main():
         root.after(700, lambda: button.event_generate('<ButtonRelease-1>', x=10, y=10))
 
     def watch():
+        """Advance the opt-in hardware-check state machine from current GUI telemetry."""
         nonlocal phase, controller, step, soak_until, next_progress
         if phase == 'closing':
             return

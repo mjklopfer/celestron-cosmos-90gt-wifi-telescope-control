@@ -1,3 +1,4 @@
+"""Regression checks for protocol. No real telescope is connected."""
 import unittest
 
 from celestron_probe import FrameParser, packet

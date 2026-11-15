@@ -1,4 +1,7 @@
-"""Single-connection AUX motor service with bounded jogs, priority stop and telemetry."""
+"""Thread-owned Celestron AUX motor control and encoder telemetry.
+
+Priority Stop, expiring holds and bounded jogs limit commanded movement. A failed
+transport can prevent Stop delivery; successful writes alone do not prove motion."""
 import queue
 import socket
 import threading
@@ -12,6 +15,7 @@ COUNTS_PER_TURN = 1 << 24
 
 
 def motor_packet(axis, command, data=b''):
+    """Validate a supported motor request and append its AUX checksum."""
     if axis not in AXES or command not in (1, 0xfe, 0x24, 0x25):
         raise ValueError('Unsupported motor request')
     if command in (0x24, 0x25):
@@ -24,18 +28,22 @@ def motor_packet(axis, command, data=b''):
 
 
 def angle(encoder):
+    """Convert a raw 24-bit encoder count into degrees."""
     return encoder * 360 / COUNTS_PER_TURN
 
 
 def relative_angle(encoder, origin):
+    """Express the shortest signed encoder difference in degrees."""
     return relative_counts(encoder, origin) * 360 / COUNTS_PER_TURN
 
 
 def relative_counts(encoder, origin):
+    """Return the shortest signed count difference across wraparound."""
     return (encoder - origin + COUNTS_PER_TURN // 2) % COUNTS_PER_TURN - COUNTS_PER_TURN // 2
 
 
 def version(data):
+    """Format a controller firmware payload for display."""
     if len(data) == 2:
         return f'{data[0]}.{data[1]}'
     if len(data) == 4:
@@ -46,6 +54,7 @@ def version(data):
 class MotorController:
     def __init__(self, host, port, callback, socket_factory=socket.create_connection,
                  recorder_factory=Recorder, route_check=check_direct_route):
+        """Validate the destination and create command queues, watchdog and telemetry state."""
         self.host, self.port = validate_endpoint(host, port)
         self.callback, self.socket_factory = callback, socket_factory
         self.recorder_factory, self.route_check = recorder_factory, route_check
@@ -70,17 +79,20 @@ class MotorController:
         self.report = {'host': self.host, 'port': self.port, 'jogs': [], 'errors': [], 'final_stops': []}
 
     def emit(self, event, **fields):
+        """Publish a service event for logging and the GUI event queue."""
         if self.recorder:
             self.recorder.record(event, **fields)
         self.callback({'event': event, **fields})
 
     def start(self):
+        """Start background processing without blocking the caller."""
         if self.thread is not None:
             raise RuntimeError('Controller has already been started')
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
 
     def jog(self, axis, direction, rate, seconds, hold=False):
+        """Queue a bounded movement request after validating its rate and duration."""
         if not self.connected.is_set() or self.disconnecting.is_set():
             raise RuntimeError('Connect to the motors first')
         if axis not in AXES or direction not in (-1, 1) or not isinstance(rate, int) or not 1 <= rate <= 9:
@@ -97,26 +109,32 @@ class MotorController:
         self.commands.put_nowait((axis, direction, rate, seconds))
 
     def stop(self):
+        """Request priority stopping through the service’s owning thread."""
         self.holding = False
         self.stopping.set()
 
     def hold(self, axis, direction, rate):
+        """Begin manual movement that must be renewed while the control stays held."""
         self.jog(axis, direction, rate, .4, hold=True)
 
     def renew_hold(self):
+        """Refresh the manual-hold watchdog without issuing a new direction."""
         if self.holding and self.command_pending.is_set() and not self.stopping.is_set():
             self.lease_deadline = time.monotonic() + .4
 
     def disconnect(self):
+        """Ask the owning thread to stop movement and close its connection."""
         self.disconnecting.set()
         self.stopping.set()
 
     def send(self, axis, command, data=b''):
+        """Write one supported motor frame through the service-owned socket."""
         frame = motor_packet(axis, command, data)
         self.sock.sendall(frame)
         self.emit('motor_tx', axis=axis, command=command, hex=frame.hex())
 
     def stop_both(self):
+        """Send rate-zero Stop commands for both motor axes."""
         errors = []
         for axis in AXES:
             try:
@@ -138,6 +156,7 @@ class MotorController:
         self.emit('motor_stopped', message='Stop sent to both axes; delivery is not encoder verification.')
 
     def handle_stop(self):
+        """Process a pending priority Stop and reset manual movement state."""
         if self.stopping.is_set():
             # Stop precedes every read/jog and discards any queued movement.
             self.stop_both()
@@ -176,6 +195,7 @@ class MotorController:
                 pass
 
     def request(self, axis, command, timeout=1.2):
+        """Send a controller query and wait within its reply deadline."""
         self.handle_stop()
         if self.disconnecting.is_set():
             return None
@@ -200,6 +220,7 @@ class MotorController:
         return None
 
     def read_positions(self, attempts=1, publish=True, axes=None):
+        """Read both encoder positions and publish validated telemetry."""
         samples = {}
         for axis in (AXES if axes is None else axes):
             if self.disconnecting.is_set():
@@ -226,6 +247,7 @@ class MotorController:
         return samples
 
     def perform_jog(self, axis, direction, rate, seconds):
+        """Run the queued bounded motion, stop, and measure final encoder feedback."""
         if self.stopping.is_set() or self.disconnecting.is_set():
             self.handle_stop()
             return
@@ -312,6 +334,7 @@ class MotorController:
             raise ConnectionError('Encoder feedback lost; movement controls disabled')
 
     def run(self):
+        """Own motor I/O, process queued motion and priority Stop, then drain and close safely."""
         try:
             self.recorder = self.recorder_factory('motor-control')
         except Exception as e:

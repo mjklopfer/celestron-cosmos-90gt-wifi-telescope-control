@@ -1,4 +1,7 @@
-"""Experimental single-client Celestron AUX LAN bridge. Explicit start/stop only."""
+"""Single-client AUX relay for a Version 1 Celestron WiFly adapter.
+
+Provides later-module-style discovery and limited read-only management. One worker
+owns the upstream stream; other control sessions must remain disconnected."""
 import argparse
 import ipaddress
 import json
@@ -21,6 +24,7 @@ class Bridge:
     def __init__(self, host, port=2000, callback=lambda event: None, bind_host='',
                  listen_port=2000, management_port=3000, advertise=True, allow_direct_upstream=False,
                  socket_factory=socket.create_connection):
+        """Initialize Bridge state; external work starts only in the corresponding operation."""
         self.host, self.port = validate_endpoint(host, port)
         address = ipaddress.ip_address(self.host)
         direct = address in ipaddress.ip_network('1.2.3.0/24')
@@ -58,20 +62,24 @@ class Bridge:
         self.lease = EndpointLease(self.host, self.port)
 
     def emit(self, kind, **fields):
+        """Publish a service event for logging and the GUI event queue."""
         if self.recorder:
             self.recorder.record(kind, **fields)
         self.callback({'event': kind, **fields})
 
     def start(self):
+        """Start the relay worker; construction alone never opens a telescope connection."""
         if self.thread is not None:
             raise RuntimeError('Bridge has already been started')
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
 
     def stop(self):
+        """Signal bridge shutdown; the worker attempts Stop and drains replies before closing."""
         self.stopping.set()
 
     def observe(self, raw, direction):
+        """Log valid AUX frames and update readbacks from controller position replies."""
         parser = self.parser if direction == 'mount' else self.client_parser
         frames = parser.feed(raw)
         for frame in frames:
@@ -92,6 +100,7 @@ class Bridge:
         return frames
 
     def request(self, axis, command, timeout=1.2):
+        """Send a controller query and wait within its reply deadline."""
         self.upstream.sendall(motor_packet(axis, command))
         deadline = time.monotonic() + timeout
         while not self.stopping.is_set() and time.monotonic() < deadline:
@@ -107,6 +116,7 @@ class Bridge:
         return None
 
     def send_stops(self, axes=AXES):
+        """Attempt Stop on the requested axes and record unconfirmed delivery."""
         for axis in axes:
             try:
                 self.upstream.sendall(motor_packet(axis, 0x24, b'\x00'))
@@ -119,6 +129,7 @@ class Bridge:
         self.emit('bridge_status', message='Stop attempted on both axes; encoder verification is separate.')
 
     def close_client(self):
+        """Drop the app socket, reset its parser and attempt motor Stop."""
         if self.client:
             self.client.close()
             self.client = None
@@ -128,6 +139,7 @@ class Bridge:
 
     def management_reply(self, command):
         # This is a proxy, never a WiFly provisioning or firmware-update gateway.
+        """Answer supported read-only proxy commands; reject configuration writes."""
         values = {'wifi.mode': '1', 'wlan.dhcp.enabled': '1',
                   'wlan.static.ip': self.bind_host, 'softap.ssid': 'COSMOS-Bridge'}
         if command == 'version':
@@ -139,6 +151,7 @@ class Bridge:
         return 'ERR Unsupported proxy command; configure the telescope outside Bridge mode'
 
     def listen(self, port):
+        """Bind a TCP listener to the selected computer interface address."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listeners.append(server)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE if hasattr(socket, 'SO_EXCLUSIVEADDRUSE') else socket.SO_REUSEADDR, 1)
@@ -147,6 +160,7 @@ class Bridge:
         return server
 
     def run(self):
+        """Own the upstream socket, relay one client, advertise discovery and clean up Stop replies."""
         try:
             self.recorder = Recorder('bridge')
             self.emit('bridge_starting', message='Opening infrastructure bridge and verifying motor replies…',
@@ -343,6 +357,7 @@ class Bridge:
 
 
 def main():
+    """Parse command-line options and run this module’s entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True, help='Telescope infrastructure IP')
     parser.add_argument('--port', type=int, default=2000)

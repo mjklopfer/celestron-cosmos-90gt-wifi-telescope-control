@@ -1,4 +1,7 @@
-"""Cross-platform IPv4 interface inventory, route checks and neighbor hints."""
+"""Portable IPv4 interfaces, route-source checks and optional neighbor hints.
+
+psutil supplies native OS interface names. Route probes send no UDP payload;
+neighbor entries prioritize scanning but never establish telescope identity."""
 import ipaddress
 import os
 import re
@@ -80,6 +83,7 @@ def parse_neighbors(output):
 
 
 def neighbor_entries():
+    """Read optional OS neighbor hints; absence is not a discovery failure."""
     commands = [['arp', '-a']] if os.name == 'nt' else [['ip', 'neigh'], ['arp', '-an']]
     for command in commands:
         try:

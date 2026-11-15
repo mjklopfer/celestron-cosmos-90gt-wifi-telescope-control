@@ -1,1 +1,2 @@
+# Runtime dependency for host-independent interface and route inventory.
 psutil>=5.9,<8

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Read-only SkyQLink discovery and AUX diagnostics. Requires psutil for portable network inventory."""
+"""Read-only AUX framing, discovery and diagnostic recording.
+
+Only firmware/position queries are allowed by this probe. psutil supplies portable
+network inventory; runtime reports use a writable user data directory."""
 import argparse
 import os
 import concurrent.futures
@@ -22,6 +25,7 @@ PORTS = (23, 80, 443, 2000, 3000, 4030, 8080)
 
 
 def run(*args):
+    """Run a bounded OS helper and return output or a captured execution error."""
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=10)
         return {'argv': list(args), 'exit_code': p.returncode,
@@ -32,18 +36,21 @@ def run(*args):
 
 class Recorder:
     def __init__(self, kind):
+        """Initialize Recorder state; external work starts only in the corresponding operation."""
         stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         self.directory = ROOT / 'logs' / (stamp + '-' + kind + '-' + uuid.uuid4().hex[:6])
         self.directory.mkdir(parents=True)
         self.events = (self.directory / 'events.jsonl').open('a')
 
     def record(self, kind, **fields):
+        """Append a timestamped event to the operation log."""
         entry = {'utc': dt.datetime.now(dt.timezone.utc).isoformat(),
                  'monotonic': time.monotonic(), 'event': kind, **fields}
         self.events.write(json.dumps(entry) + '\n')
         self.events.flush()
 
     def finish(self, report):
+        """Save the final operation report and close its event log."""
         (self.directory / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         self.events.close()
         print(json.dumps(report, indent=2))
@@ -52,6 +59,7 @@ class Recorder:
 
 def packet(destination, command):
     # This probe permits only GET_POSITION and GET_VER, without command data.
+    """Build a checksummed AUX request permitted by this module."""
     if command not in (0x01, 0xfe):
         raise ValueError('Probe only permits read commands')
     body = bytes((3, 0x20, destination, command))
@@ -60,9 +68,11 @@ def packet(destination, command):
 
 class FrameParser:
     def __init__(self):
+        """Initialize FrameParser state; external work starts only in the corresponding operation."""
         self.buffer = bytearray()
 
     def feed(self, data):
+        """Buffer partial bytes, validate AUX checksums and return complete frames."""
         self.buffer.extend(data)
         frames = []
         while len(self.buffer) >= 2:
@@ -83,6 +93,7 @@ class FrameParser:
 
 class AuxProbe:
     def __init__(self, host, port, recorder):
+        """Initialize AuxProbe state; external work starts only in the corresponding operation."""
         self.recorder = recorder
         self.parser = FrameParser()
         self.sock = socket.create_connection((host, port), 3)
@@ -90,6 +101,7 @@ class AuxProbe:
         recorder.record('connected', host=host, port=port)
 
     def receive(self, seconds, axis=None, command=None):
+        """Read available socket data within the requested time window."""
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             try:
@@ -106,6 +118,7 @@ class AuxProbe:
         return None
 
     def query(self, axis, command, attempts=2):
+        """Send a read-only AUX query and await the matching controller reply."""
         for attempt in range(attempts):
             # Drain existing stream before sending so an old reply isn't accepted.
             self.receive(.25)
@@ -118,11 +131,13 @@ class AuxProbe:
         return None
 
     def close(self):
+        """Release this object’s resources and complete its shutdown path."""
         self.sock.close()
         self.recorder.record('disconnected')
 
 
 def diagnose(args, recorder):
+    """Collect read-only controller diagnostics through a recorded probe session."""
     report = {'host': args.host, 'port': args.port, 'read_only': True, 'nodes': []}
     probe = None
     try:
@@ -152,6 +167,7 @@ def diagnose(args, recorder):
 
 
 def ping(host):
+    """Check host reachability with host-appropriate ping options and a timeout."""
     try:
         command = ['ping', '-n', '1', '-w', '1000', host] if os.name == 'nt' else ['ping', '-c', '1', host]
         p = subprocess.run(command,
@@ -162,6 +178,7 @@ def ping(host):
 
 
 def check_port(item):
+    """Test a TCP endpoint and report whether a connection can be opened."""
     host, port = item
     try:
         with socket.create_connection((host, port), .6):
@@ -171,10 +188,12 @@ def check_port(item):
 
 
 def arp_entries(output):
+    """Normalize neighbor output into IPv4 and MAC records."""
     return parse_neighbors(output)
 
 
 def discover(args, recorder):
+    """Inspect supported attached networks and candidate TCP endpoints without movement."""
     network = ipaddress.ip_network(args.subnet)
     direct = network == ipaddress.ip_network('1.2.3.0/24')
     if network.version != 4 or network.prefixlen < 24 or (not network.is_private and not direct):
@@ -215,6 +234,7 @@ def discover(args, recorder):
 
 
 def main():
+    """Parse command-line options and run this module’s entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='mode', required=True)
     d = commands.add_parser('discover')

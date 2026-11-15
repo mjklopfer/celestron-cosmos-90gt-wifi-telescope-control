@@ -1,2 +1,3 @@
+# Optional native desktop bundling dependencies; build on the target OS.
 -r requirements.txt
 pyinstaller>=6,<7

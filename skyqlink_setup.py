@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Tkinter motor control and Wi-Fi setup for the Celestron Gen-1 SkyQLink RN-171."""
+"""Python/Tk interface for Celestron Cosmos 90GT Telescope WiFi Control.
+
+Worker services own network operations and publish events; only the Tk thread
+updates widgets. Network-mode controls do not join Wi-Fi or move the mount switch."""
 import argparse
 import datetime as dt
 from pathlib import Path
@@ -38,6 +41,7 @@ WIFI_SWITCH_HELP = (
 class BridgeRocker(tk.Canvas):
     """Two-position OFF/ON control with mouse and keyboard operation."""
     def __init__(self, parent, variable, command):
+        """Create the accessible OFF/ON canvas and watch its BooleanVar."""
         super().__init__(parent, width=184, height=46, highlightthickness=1,
                          highlightbackground='#777777', takefocus=True, background='#30343b')
         self.variable, self.command = variable, command
@@ -52,12 +56,14 @@ class BridgeRocker(tk.Canvas):
         self.redraw()
 
     def configure(self, *args, **kwargs):
+        """Update rocker options and redraw the control."""
         result = super().configure(*args, **kwargs)
         if 'state' in kwargs and hasattr(self, 'variable'):
             self.redraw()
         return result
 
     def redraw(self):
+        """Render the rocker with its current selection and enabled state."""
         self.delete('all')
         enabled = str(self.cget('state')) == 'normal'
         on = self.variable.get()
@@ -69,16 +75,19 @@ class BridgeRocker(tk.Canvas):
                              font=('TkDefaultFont', 14, 'bold'))
 
     def choose(self, on):
+        """Apply an enabled rocker selection and invoke its callback."""
         if str(self.cget('state')) == 'normal' and bool(on) != self.variable.get():
             self.variable.set(bool(on))
             self.command()
         return 'break'
 
     def click(self, event):
+        """Map a pointer position to the rocker’s OFF or ON selection."""
         self.focus_set()
         return self.choose(event.x >= 92)
 
     def destroy(self):
+        """Remove the variable trace before destroying the rocker widget."""
         self.variable.trace_remove('write', self.trace_id)
         super().destroy()
 
@@ -86,6 +95,7 @@ class BridgeRocker(tk.Canvas):
 class SetupApp(ttk.Frame):
     def __init__(self, root, operation=operate, motor_factory=MotorController, scanner=scan_modules,
                  diagnostic=diagnose, recovery=recover, bridge_factory=Bridge):
+        """Build the desktop controls and event queue around injectable backend services."""
         shell = ttk.Frame(root)
         shell.pack(fill='both', expand=True)
         canvas = tk.Canvas(shell, highlightthickness=0, borderwidth=0)
@@ -272,6 +282,7 @@ class SetupApp(ttk.Frame):
 
     def scroll_window(self, event):
         # Reply text, transfer text and the endpoint table retain their own scroll.
+        """Scroll the main form while leaving nested log/table scrolling independent."""
         if event.widget in (self.console, self.diagnostic_details, self.diagnostic_rows,
                             self.bridge_console, self.interface_table):
             return
@@ -283,6 +294,7 @@ class SetupApp(ttk.Frame):
             self.scroll_canvas.yview_scroll(units, 'units')
 
     def build_motor_tab(self):
+        """Create manual movement controls and encoder readback fields."""
         tab = self.motor_tab
         tab.columnconfigure(1, weight=1)
         controls = ttk.Frame(tab)
@@ -342,6 +354,7 @@ class SetupApp(ttk.Frame):
                   font=('TkDefaultFont', 12, 'bold')).grid(row=3, column=0, columnspan=2, sticky='w', pady=8)
 
     def build_diagnostics_tab(self):
+        """Create query results and the full-response inspection panel."""
         tab = self.diagnostic_tab
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(2, weight=1)
@@ -371,6 +384,7 @@ class SetupApp(ttk.Frame):
                   wraplength=800).grid(row=4, columnspan=2, sticky='w')
 
     def build_bridge_tab(self):
+        """Create bridge controls, interface selection and relay status readbacks."""
         tab = self.bridge_tab
         tab.columnconfigure(0, weight=1)
         self.bridge_switch = BridgeRocker(tab, variable=self.bridge_enabled, command=self.toggle_bridge)
@@ -426,6 +440,7 @@ class SetupApp(ttk.Frame):
         self.bridge_console.grid(row=8, sticky='ew', pady=8)
 
     def refresh_network_interfaces(self):
+        """Request a fresh interface inventory on a worker thread."""
         if self.interface_refreshing:
             return
         self.interface_refreshing = True
@@ -438,6 +453,7 @@ class SetupApp(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def show_network_interfaces(self):
+        """Render current adapter addresses and active bridge socket roles."""
         self.interface_table.delete(*self.interface_table.get_children())
         for row in self.interface_rows:
             role = (f'TCP {self.bridge_listener[1]} / {self.bridge_listener[2]}'
@@ -447,6 +463,7 @@ class SetupApp(ttk.Frame):
             self.interface_table.insert('', 'end', values=(row['interface'], row['name'], row['ip'], row['state'], role))
 
     def select_bridge_interface(self, event=None):
+        """Use the selected computer address as the phone-facing bridge listener."""
         if self.bridge is not None:
             return
         selected = self.interface_table.selection()
@@ -460,6 +477,7 @@ class SetupApp(ttk.Frame):
                 self.bridge_bind.set(ip)
 
     def toggle_bridge(self):
+        """Validate shared-network settings, then start or stop the exclusive relay."""
         if not self.bridge_enabled.get():
             if self.bridge:
                 self.bridge.stop()
@@ -494,6 +512,7 @@ class SetupApp(ttk.Frame):
         self.update_controls()
 
     def handle_bridge_event(self, event):
+        """Apply worker events to bridge status, tab locks and readbacks."""
         kind = event['event']
         if kind == 'bridge_values':
             self.handle_motor_event({**event, 'event': 'motor_values'})
@@ -538,6 +557,7 @@ class SetupApp(ttk.Frame):
         self.update_controls()
 
     def start_recovery(self, reconnect=False):
+        """Queue a verified adapter restart, optionally followed by motor reconnection."""
         if self.busy or self.motor is not None or self.bridge is not None:
             self.status.set('Disconnect motors before restarting the Wi-Fi adapter.')
             return
@@ -558,6 +578,7 @@ class SetupApp(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def show_diagnostic_reply(self, event=None):
+        """Display the selected diagnostic row’s full captured response."""
         selected = self.diagnostic_rows.selection()
         if selected:
             self.diagnostic_details.configure(state='normal')
@@ -566,6 +587,7 @@ class SetupApp(ttk.Frame):
             self.diagnostic_details.configure(state='disabled')
 
     def start_diagnostics(self):
+        """Queue read-only adapter and motor checks under exclusive ownership."""
         if self.busy or self.motor is not None or self.bridge is not None:
             self.status.set('Disconnect motors before running diagnostics.')
             return
@@ -595,6 +617,7 @@ class SetupApp(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def preset(self, home):
+        """Select network-mode defaults without changing OS Wi-Fi or the mount switch."""
         if self.busy or self.motor is not None or self.bridge is not None:
             return
         address = '1.2.3.4'
@@ -608,6 +631,7 @@ class SetupApp(ttk.Frame):
                         'Direct / ad hoc: connect this computer to SkyQLink-xx. No SSID-prefix discovery is used.')
 
     def update_mode_help(self):
+        """Explain the selected connection mode and refresh control availability."""
         if self.connection_mode.get() == 'direct':
             text = 'Direct / ad hoc: connect this computer to SkyQLink-xx, then use 1.2.3.4:2000.'
         else:
@@ -616,6 +640,7 @@ class SetupApp(ttk.Frame):
         self.update_controls()
 
     def scan_lan(self):
+        """Validate discovery settings and start bounded module identification."""
         if self.busy or self.motor is not None or self.bridge is not None:
             self.status.set('Disconnect motor control before starting discovery.')
             return
@@ -643,6 +668,7 @@ class SetupApp(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def tick_scan(self):
+        """Update elapsed search-period feedback until discovery finishes."""
         if self.scan_started is None:
             return
         elapsed = time.monotonic() - self.scan_started
@@ -652,6 +678,7 @@ class SetupApp(ttk.Frame):
         self.scan_tick_id = self.root.after(250, self.tick_scan)
 
     def select_module(self):
+        """Apply the verified endpoint and preserve its direct or infrastructure mode."""
         if self.busy or self.motor is not None or self.bridge is not None:
             return
         index = self.module_box.current()
@@ -666,6 +693,7 @@ class SetupApp(ttk.Frame):
             self.status.set(f'Verified {match.get("module_type", "Celestron AUX")}: {match["ip"]}:{match.get("port", 2000)}')
 
     def update_controls(self):
+        """Refresh widget locks and conditional shared-network interface guidance."""
         self.bridge_ip_help.set('Computer IP on the app’s network — required' if self.bridge_dual.get() else 'Computer LAN IP (blank = automatic)')
         self.bridge_interface_help.set(
             'Select this computer’s IP on the network shared with your phone/control app. For example, select Ethernet when the phone uses house Wi-Fi. Do not select telescope-facing Wi-Fi.'
@@ -699,6 +727,7 @@ class SetupApp(ttk.Frame):
         self.refresh_password()
 
     def connect_motors(self, recover_attempted=False):
+        """Start the motor service and wait for verified encoder feedback."""
         if self.busy or self.motor is not None or self.bridge is not None:
             return
         try:
@@ -722,6 +751,7 @@ class SetupApp(ttk.Frame):
             self.update_controls()
 
     def jog(self, axis, direction):
+        """Queue the selected bounded jog through the active motor service."""
         if not self.motor_ready or self.motor is None or self.jogging:
             return
         try:
@@ -732,10 +762,12 @@ class SetupApp(ttk.Frame):
             self.status.set(str(e))
 
     def timed_direction(self, axis, direction):
+        """Run the chosen direction for the selected bounded duration."""
         if self.drive_mode.get() == 'jog':
             self.jog(axis, direction)
 
     def press_direction(self, axis, direction):
+        """Start a held direction when validated motor controls are ready."""
         if self.drive_mode.get() != 'hold' or not self.motor_ready or self.motor is None or self.jogging:
             return
         try:
@@ -747,16 +779,19 @@ class SetupApp(ttk.Frame):
             self.status.set(str(e))
 
     def release_direction(self):
+        """Release a manual direction and request Stop."""
         if self.held:
             self.stop_motors()
 
     def stop_motors(self):
+        """Request priority Stop and clear held-button state."""
         self.held = False
         if self.motor:
             self.motor.stop()
             self.motor_status.set('Stopping…')
 
     def disconnect_motors(self):
+        """Stop renewing manual motion and request service disconnection."""
         self.connect_request_active = False
         if self.motor:
             self.motor_ready = False
@@ -765,15 +800,18 @@ class SetupApp(ttk.Frame):
             self.update_controls()
 
     def stop_if_unfocused(self):
+        """Stop a held direction when focus leaves the application."""
         if self.motor and self.jogging and self.root.focus_get() is None:
             self.stop_motors()
 
     def refresh_password(self):
+        """Update password visibility and open-network input availability."""
         enabled = not self.busy and self.motor is None and self.bridge is None and self.security.get() != 'Open (no password)'
         self.password_entry.configure(show='' if self.show_password.get() else '•',
                                       state='normal' if enabled else 'disabled')
 
     def show_provisioned_network(self, report):
+        """Present the current adapter’s provisioning status and overwrite notice."""
         before = report.get('readback') or report.get('before', {})
         wlan = before.get('wlan', before.get('get wlan', ''))
         ip = before.get('ip', before.get('get ip', ''))
@@ -786,6 +824,7 @@ class SetupApp(ttk.Frame):
                 'Restart afterward, join the new network and discover the new telescope IP.')
 
     def append(self, text):
+        """Append one line to the read-only on-screen transfer log."""
         self.console.configure(state='normal')
         self.console.insert('end', dt.datetime.now().strftime('%H:%M:%S') + '  ' + text.replace('\r', '') + '\n')
         self.console.see('end')
@@ -794,11 +833,13 @@ class SetupApp(ttk.Frame):
         self.console.configure(state='disabled')
 
     def clear(self):
+        """Clear the displayed transfer log without deleting saved evidence."""
         self.console.configure(state='normal')
         self.console.delete('1.0', 'end')
         self.console.configure(state='disabled')
 
     def set_busy(self, value):
+        """Mark an exclusive operation active and refresh UI controls."""
         self.busy = value
         self.clear_button.configure(state='disabled' if value else 'normal')
         self.update_controls()
@@ -808,6 +849,7 @@ class SetupApp(ttk.Frame):
             self.progress.stop()
 
     def start(self, apply):
+        """Validate provisioning inputs and queue a read or explicitly confirmed settings upload."""
         if self.busy or self.motor is not None or self.bridge is not None:
             self.status.set('Disconnect motor control before entering Wi-Fi command mode.')
             return
@@ -833,6 +875,7 @@ class SetupApp(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def poll(self):
+        """Drain worker events on the Tk thread and refresh telemetry ages."""
         try:
             while True:
                 event = self.events.get_nowait()
@@ -993,6 +1036,7 @@ class SetupApp(ttk.Frame):
         self.poll_id = self.after(100, self.poll)
 
     def handle_motor_event(self, event):
+        """Apply motor-service events to position, movement and connection state."""
         kind = event['event']
         if kind == 'motor_values':
             axis = event['axis']
@@ -1099,6 +1143,7 @@ class SetupApp(ttk.Frame):
         self.update_controls()
 
     def open_logs(self):
+        """Open the latest operation folder in the host’s file browser."""
         if self.log_directory:
             try:
                 open_directory(self.log_directory)
@@ -1106,6 +1151,7 @@ class SetupApp(ttk.Frame):
                 self.status.set('Saved logs: ' + self.log_directory)
 
     def close(self):
+        """Request service shutdown and defer window destruction until workers release ownership."""
         if self.bridge is not None:
             self.closing = True
             self.bridge_enabled.set(False)
@@ -1127,6 +1173,7 @@ class SetupApp(ttk.Frame):
 
 
 def main():
+    """Parse command-line options and run this module’s entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--smoke-test', action='store_true', help='Build and check the window without hardware, then close')
     parser.add_argument('--diagnostic-report', type=Path, help='Display a saved diagnostic report without connecting')

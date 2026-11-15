@@ -1,3 +1,4 @@
+"""Regression checks for wifly configure. No real telescope is connected."""
 import unittest
 from wifly_configure import configure, make_plan, sanitize
 

@@ -1,3 +1,5 @@
+// Portable in-memory AUX controller model, shared by firmware and native tests.
+// Counts wrap at 24 bits; simulated timing is not a real mount calibration.
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
@@ -10,16 +12,20 @@ public:
   double speed[2] = {0, 0}; // Encoder counts per second.
   double target[2] = {0, 0};
   bool movingTo[2] = {false, false};
+  // Wrap a signed/continuous virtual position into the wire-format count range.
   static uint32_t count(double value) {
     int64_t v = (int64_t)value % 16777216;
     return (uint32_t)(v < 0 ? v + 16777216 : v);
   }
+  // Decode one big-endian 24-bit AUX payload.
   static uint32_t read24(const uint8_t *data) {
     return ((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2];
   }
+  // Cancel virtual rates and targets on both axes.
   void stop() {
     for (int i = 0; i < 2; ++i) { speed[i] = 0; movingTo[i] = false; }
   }
+  // Advance virtual positions using elapsed time and shortest-path GoTo targets.
   void tick(double seconds) {
     if (seconds < 0 || seconds > 1) return;
     for (int i = 0; i < 2; ++i) {

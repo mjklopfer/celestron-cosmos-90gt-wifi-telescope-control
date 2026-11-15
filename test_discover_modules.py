@@ -1,3 +1,4 @@
+"""Regression checks for discover modules. No real telescope is connected."""
 from pathlib import Path
 import ipaddress
 import unittest

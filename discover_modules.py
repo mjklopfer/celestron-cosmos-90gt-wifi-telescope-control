@@ -1,4 +1,7 @@
-"""Discover Celestron AUX Wi-Fi modules by protocol replies, independent of MAC/SSID."""
+"""Bounded identification of Celestron AUX and original RN-171 Wi-Fi endpoints.
+
+Scans attached supported networks; vendor prefixes are hints, not identity checks.
+Discovery sends no motor movement or configuration-write commands."""
 import concurrent.futures
 import ipaddress
 import re
@@ -15,15 +18,18 @@ RN171_VENDOR_PREFIXES = {'00:06:66'}  # Candidate hint from the observed RN-171,
 
 
 def vendor_prefix(mac):
+    """Normalize the MAC vendor prefix used only to prioritize discovery."""
     parts = mac.lower().split(':')
     return ':'.join(part.zfill(2) for part in parts[:3]) if len(parts) == 6 else ''
 
 
 class SafeRecorder:
     def __init__(self, recorder):
+        """Initialize SafeRecorder state; external work starts only in the corresponding operation."""
         self.recorder = recorder
         self.lock = threading.Lock()
     def record(self, kind, **fields):
+        """Append a timestamped event to the operation log."""
         with self.lock:
             self.recorder.record(kind, **fields)
 
@@ -45,6 +51,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
     parser = FrameParser()
     hello = False
     def query(axis, timeout=.6):
+        """Send a read-only AUX query and await the matching controller reply."""
         nonlocal hello
         sock.sendall(motor_packet(axis, 0xfe) if axis in (0x10, 0x11) else bytes.fromhex('3b0320b5fe2a'))
         end = time.monotonic() + timeout
@@ -135,6 +142,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
 
 
 def scan_modules(port=2000, callback=lambda event: None, timeout=60):
+    """Search supported attached LANs within a period and identify replies without changing settings."""
     started = time.monotonic()
     deadline = started + timeout
     recorder = Recorder('discover-modules')

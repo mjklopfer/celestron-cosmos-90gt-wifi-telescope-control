@@ -1,3 +1,6 @@
+// ESP32-only telescope simulator: captive setup, persistent Wi-Fi modes and AUX replies.
+// No mount socket, AUX electrical transport or physical motor outputs are implemented.
+// All service state is handled in loop(); recovery must remain reachable after failed joins.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
@@ -28,10 +31,12 @@ bool scanRequested = false;
 uint32_t connectStarted = 0, restartAt = 0, lastTick = 0, lastAdvert = 0;
 uint32_t lastControl = 0, lastManager = 0, lastReconnect = 0, packets = 0, unknown = 0;
 
+// Choose the current app-facing IP for status and management replies.
 IPAddress activeAddress() {
   return WiFi.status() == WL_CONNECTED ? WiFi.localIP() : WiFi.softAPIP();
 }
 
+// Escape configuration text before inserting it into the setup page.
 String html(const String &value) {
   String escaped = value;
   escaped.replace("&", "&amp;"); escaped.replace("<", "&lt;");
@@ -39,6 +44,7 @@ String html(const String &value) {
   escaped.replace("'", "&#39;"); return escaped;
 }
 
+// Report connection and virtual encoder state without printing router credentials.
 void printStatus() {
   Serial.printf("STATUS simulator=1 wifi=%d ip=%s setup_ap=%d clients=%d packets=%lu unknown=%lu az=%lu alt=%lu\n",
     (int)WiFi.status(), WiFi.localIP().toString().c_str(), setupAP ? 1 : 0,
@@ -49,6 +55,7 @@ void printStatus() {
     WiFi.softAPIP().toString().c_str(), (int)WiFi.softAPgetStationNum());
 }
 
+// Create an explicitly addressed hotspot/DHCP service before binding the portal.
 void startSetup() {
   if (setupAP) return;
   WiFi.mode(WIFI_AP_STA);
@@ -65,6 +72,7 @@ void startSetup() {
     AP_PASSWORD, WiFi.softAPIP().toString().c_str());
 }
 
+// Serve mode selection, scan controls and any persistent connection-failure warning.
 void portal() {
   String page = "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>COSMOS telescope simulator</title><style>body{font:18px system-ui;max-width:650px;"
@@ -101,6 +109,7 @@ void portal() {
   Serial.println("HTTP portal served");
 }
 
+// Escape scanned SSIDs as JSON strings rather than executable page content.
 String jsonText(const String &value) {
   String result = "\"";
   const char *digits = "0123456789abcdef";
@@ -113,6 +122,7 @@ String jsonText(const String &value) {
   return result + "\"";
 }
 
+// Start or collect a bounded asynchronous scan; expose supported security metadata.
 void scanNetworks() {
   if (!setupAP) { web.send(403, "text/plain", "Open the setup hotspot to scan."); return; }
   web.sendHeader("Cache-Control", "no-store");
@@ -159,6 +169,7 @@ void scanNetworks() {
   Serial.printf("SCAN completed count=%d\n", count);
 }
 
+// Validate one configuration record, persist it and schedule reboot after responding.
 void configure() {
   if (!setupAP || !storageOK || web.arg("token") != formToken) {
     web.send(403, "text/plain", "Setup is unavailable or this form has expired."); return;
@@ -200,11 +211,13 @@ void configure() {
   restartAt = millis() + 1000;
 }
 
+// Release the single app client and stop all in-memory motion.
 void closeControl() {
   control.stop(); hadControl = false; frameUsed = 0; mount.stop();
   Serial.println("CLIENT_DISCONNECTED simulated movement stopped");
 }
 
+// Persist a failure marker and reboot once into setup; avoid an endless join loop.
 void recoverConnection() {
   recoveryReason = "The previous Wi-Fi configuration could not connect within 30 seconds. Please try again.";
   recoveryBoot = true;
@@ -219,6 +232,7 @@ void recoverConnection() {
   }
 }
 
+// Reassemble bounded AUX frames, validate checksums, echo and answer virtual commands.
 void receiveByte(uint8_t byte) {
   if (!frameUsed && byte != 0x3b) return;
   frame[frameUsed++] = byte;
@@ -242,6 +256,7 @@ void receiveByte(uint8_t byte) {
   }
 }
 
+// Handle limited read-only module-style management; no provisioning writes here.
 void serviceManagement() {
   WiFiClient incoming = managementServer.available();
   if (incoming) {
@@ -269,6 +284,7 @@ void serviceManagement() {
   if (manager && millis() - lastManager > 10000) manager.stop();
 }
 
+// Initialize network/storage services and choose saved connection or recovery setup.
 void setup() {
   Serial.begin(115200);
   pinMode(0, INPUT_PULLUP);
@@ -317,6 +333,7 @@ void setup() {
   lastTick = millis(); printStatus();
 }
 
+// Service networking, recovery deadlines and simulated motion without an AUX interface.
 void loop() {
   uint32_t now = millis();
   mount.tick((now - lastTick) / 1000.0); lastTick = now;

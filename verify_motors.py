@@ -7,11 +7,13 @@ from motor_control import MotorController, AXES
 
 
 def verify(host, port=2000, move=False):
+    """Verify real motor readbacks, issuing bounded jogs only when movement is explicitly enabled."""
     events = queue.Queue()
     controller = MotorController(host, port, events.put)
     results = []
 
     def wait(kind, timeout=15):
+        """Wait for the expected validation event or raise on timeout."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
@@ -56,6 +58,7 @@ def verify(host, port=2000, move=False):
 
 
 def main():
+    """Parse command-line options and run this module’s entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='1.2.3.4')
     parser.add_argument('--port', type=int, default=2000)

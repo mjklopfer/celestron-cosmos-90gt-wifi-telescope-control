@@ -1,4 +1,7 @@
-"""Read-only inventory of supported WiFly queries and AUX motor endpoints."""
+"""Read-only native WiFly settings and AUX controller diagnostics.
+
+Leave command mode before opening a fresh transparent AUX connection. Preserve
+actual replies and timeouts rather than treating TCP connection as motor proof."""
 import socket
 import time
 from celestron_probe import AuxProbe
@@ -13,6 +16,7 @@ WIFI_QUERIES = ('ver', 'get mac', 'get wlan', 'get ip', 'get uart', 'get com',
 
 @exclusive_endpoint
 def diagnose(host, port, callback=lambda event: None):
+    """Read WiFly settings and both motor controllers, reporting replies and failures separately."""
     host, port = validate_endpoint(host, port)
     recorder = LiveRecorder(callback, ())
     report = {'host': host, 'port': port, 'settings_changed': False,
@@ -20,6 +24,7 @@ def diagnose(host, port, callback=lambda event: None):
               'motor_positions_verified': False}
 
     def row(device, endpoint, status, reply):
+        """Append and publish one diagnostic result with its actual response data."""
         item = dict(device=device, endpoint=endpoint, status=status, reply=sanitize(reply))
         report['rows'].append(item)
         recorder.record('diagnostic_row', **item)

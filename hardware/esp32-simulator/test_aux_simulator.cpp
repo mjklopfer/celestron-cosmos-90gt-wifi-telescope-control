@@ -1,7 +1,9 @@
+// Native C++ regression checks for the virtual AUX model; no board or mount needed.
 #include <assert.h>
 #include <stdio.h>
 #include "simulator/aux_simulator.h"
 
+// Build a request and verify framing/checksums of any simulated response.
 size_t request(AuxSimulator &mount, uint8_t dest, uint8_t cmd,
                const uint8_t *payload, size_t length, uint8_t *out) {
   uint8_t frame[32] = {0x3b, (uint8_t)(length + 3), 0x20, dest, cmd};
@@ -18,6 +20,7 @@ size_t request(AuxSimulator &mount, uint8_t dest, uint8_t cmd,
   return n;
 }
 
+// Cover movement, Stop, target completion, wraparound and unsupported endpoints.
 int main() {
   AuxSimulator mount;
   uint8_t out[32];

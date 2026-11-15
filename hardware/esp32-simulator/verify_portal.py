@@ -10,6 +10,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 
 def verify(host, save_hotspot=False):
+    """Identify our simulator, check portal/scanning and optionally save hotspot mode."""
     with socket.create_connection((host, 3000), timeout=3) as manager:
         manager.sendall(b"version\n")
         identity = manager.recv(512).decode("ascii", "replace")

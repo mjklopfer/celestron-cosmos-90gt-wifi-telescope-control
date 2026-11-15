@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Explicit RN-171 restart, preserving stored settings, then read-only AUX check."""
+"""Explicit restart of an identified legacy RN-171, retaining saved settings.
+
+No factory reset, provisioning writes or motor motion is requested. The old IP
+may change when the adapter rejoins a DHCP network."""
 import argparse
 import socket
 import time
@@ -11,6 +14,7 @@ from endpoint_lock import exclusive_endpoint
 
 @exclusive_endpoint
 def recover(host, port=2000, callback=lambda event: None):
+    """Verify legacy module identity, reboot it and recheck both motor positions."""
     host, port = validate_endpoint(host, port)
     check_direct_route(host)
     recorder = LiveRecorder(callback, ())

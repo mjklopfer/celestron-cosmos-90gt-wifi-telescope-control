@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Provision the Gen-1 RN-171 over TCP 2000; preview/inspect by default, explicit --apply writes."""
+"""Native WiFly RN-171 inspection and opt-in infrastructure provisioning.
+
+The CLI previews by default; --apply explicitly permits configuration writes.
+Command-mode entry/exit and redaction protect the shared transparent AUX stream."""
 import argparse
 import getpass
 import re
@@ -12,11 +15,13 @@ SECURITY = {'WPA2-Personal (AES)': 4, 'WPA-Personal (TKIP)': 2, 'Open (no passwo
 
 
 def validate_text(value, label, minimum, maximum):
+    """Reject unsupported lengths and non-printable provisioning characters."""
     if not minimum <= len(value) <= maximum or any(not 32 <= ord(c) <= 126 for c in value):
         raise ValueError(f'{label} must be {minimum}-{maximum} printable ASCII characters')
 
 
 def make_plan(ssid, password, security='WPA2-Personal (AES)'):
+    """Build the native WiFly command sequence without transmitting it."""
     validate_text(ssid, 'SSID', 1, 32)
     if security not in SECURITY:
         raise ValueError('Select a supported security mode')
@@ -28,6 +33,7 @@ def make_plan(ssid, password, security='WPA2-Personal (AES)'):
     if replacement is None:
         raise ValueError('No unambiguous space-encoding character available')
     def encode(s):
+        """Replace spaces with the selected unambiguous WiFly escape character."""
         return s.replace(' ', replacement)
     plan = [('set opt replace ' + hex(ord(replacement)), False),
             ('set wlan ssid ' + encode(ssid), False)]
@@ -41,6 +47,7 @@ def make_plan(ssid, password, security='WPA2-Personal (AES)'):
 
 def sanitize(text, secrets=()):
     # Process complete responses: secrets may be split across TCP chunks.
+    """Redact credentials and protocol password fields from captured text."""
     for secret in sorted((s for s in secrets if s), key=len, reverse=True):
         text = text.replace(secret, '[REDACTED]')
     return re.sub(r'(?im)^.*(?:passphrase|passkey|password|(?:wlan\s+phrase)|(?:\b(?:key|phrase)\s*=)).*$',
@@ -49,10 +56,12 @@ def sanitize(text, secrets=()):
 
 class Session:
     def __init__(self, sock, recorder, secrets=()):
+        """Attach command-mode parsing and redaction to an existing adapter socket."""
         self.sock, self.recorder, self.secrets = sock, recorder, secrets
         self.entered = False
 
     def receive(self, timeout=3):
+        """Read available socket data within the requested time window."""
         data = bytearray()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -76,6 +85,7 @@ class Session:
         return text
 
     def enter(self):
+        """Enter native WiFly command mode and verify its prompt."""
         self.receive(.6)
         time.sleep(.5)
         self.recorder.record('command_mode_escape')
@@ -86,6 +96,7 @@ class Session:
         self.entered = True
 
     def command(self, command, secret=False, write=False):
+        """Send a native command and collect its bounded response."""
         self.last_reply = ''
         self.recorder.record('tx', command='set wlan phrase [REDACTED]' if secret else sanitize(command, self.secrets))
         self.sock.sendall(command.encode('ascii') + b'\r')
@@ -100,6 +111,7 @@ class Session:
         return reply
 
     def exit(self):
+        """Try to return the adapter to transparent AUX data mode."""
         if self.entered:
             reply = self._exit()
             confirmed = bool(re.search(r'\bEXIT\b', reply))
@@ -109,12 +121,14 @@ class Session:
         return None
 
     def _exit(self):
+        """Perform one command-mode exit attempt and confirm the response."""
         self.recorder.record('tx', command='exit')
         self.sock.sendall(b'exit\r')
         return self.receive(1)
 
 
 def configure(session, ssid, password, report, security='WPA2-Personal (AES)'):
+    """Apply, read back and save the provisioning plan while restoring space encoding."""
     plan = make_plan(ssid, password, security)
     original = re.search(r'(?im)^Replace=(0x[0-9a-f]+)\s*$', report['before']['get option'])
     if not original:
@@ -151,6 +165,7 @@ def configure(session, ssid, password, report, security='WPA2-Personal (AES)'):
 
 
 def main():
+    """Parse command-line options and run this module’s entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ssid')
     mode = parser.add_mutually_exclusive_group()

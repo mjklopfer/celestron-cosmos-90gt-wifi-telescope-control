@@ -1,18 +1,15 @@
 # Celestron Cosmos 90GT Telescope WiFi Control
 
 A portable Python/Tk application for the **Celestron Cosmos 90GT telescope with
-a Version 1 Celestron WiFi module** (the original SkyQLink RN-171 / WiFly adapter).
-This project targets **Version 1 Celestron WiFi modules**. Direct hardware
-support for later module generations is not established; the bridge described
-below emulates selected later-generation app-facing behavior for the older adapter.
+an original Version 1 Celestron WiFi module: SkyQLink / WiFly RN-171**.
+It provides infrastructure Wi-Fi provisioning, manual motor control, encoder
+readback, module discovery, diagnostics and an optional compatible-app LAN bridge.
+SkySafari is a tested example control application.
 
-**Hardware scope:** the original Version 1 **WiFly RN-171 Wi-Fi modules**,
-including the SkyQLink interface in the Cosmos 90GT. RN-171 is a Wi-Fi module,
-not a Bluetooth (BT) adapter; Bluetooth telescope interfaces are not supported.
-
-The application provides manual motor control,
-encoder readback, module discovery, diagnostics, Wi-Fi provisioning and a LAN
-bridge for compatible telescope applications. SkySafari is a tested example.
+The target hardware is the original WiFly **Wi-Fi** interface, not a Bluetooth
+(BT) adapter. Direct hardware support for later-generation Celestron modules is
+not established. Bridge mode instead presents selected later-generation-style
+behavior to control applications while communicating with the original module.
 
 ## Bridge emulation and provisioning-only use
 
@@ -276,3 +273,15 @@ Research references: [COSMOS 90GT](https://www.celestron.com/products/cosmos-90g
 [WiFly command reference](https://ww1.microchip.com/downloads/en/DeviceDoc/50002230B.pdf),
 [AUX protocol investigation](https://paquettefamily.ca/nexstar/NexStar_AUX_Commands_10.pdf).
 The project is independent of Celestron and the control-app vendors.
+
+## Maintainer notes
+
+Each source module describes its role at the top of the file. Function docstrings
+cover input validation, endpoint ownership, protocol framing, UI events, network
+operations and shutdown responsibilities. Firmware comments distinguish virtual
+motor behavior from future physical AUX transport. Tests explain their fixtures;
+ordinary test commands do not connect to a real telescope.
+
+Keep network I/O in its owning worker, send UI changes through the event queue,
+and preserve command-mode exit and stop/drain cleanup when extending the code.
+Do not log router secrets or treat an open TCP connection as proof of motor motion.

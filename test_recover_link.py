@@ -1,3 +1,4 @@
+"""Regression checks for recover link. No real telescope is connected."""
 import unittest
 from unittest.mock import MagicMock, patch
 import recover_link

@@ -1,3 +1,5 @@
+// Captive-portal HTML/JavaScript stored in flash to limit runtime RAM usage.
+// Selection happens locally; validated settings are saved only by the firmware POST handler.
 #pragma once
 #include <Arduino.h>
 
@@ -24,6 +26,7 @@ For a hidden network, enter its SSID manually.</small>
 const $=id=>document.getElementById(id);
 const mode=()=>document.querySelector('input[name=mode]:checked').value;
 let scanRunning=false;
+// Keep required fields and explanations consistent with the chosen network role.
 function updateMode(){
  const local=mode()==='hotspot';
  $('stationFields').hidden=local;
@@ -49,6 +52,7 @@ $('networks').addEventListener('change',()=>{
  if($('password').disabled)$('password').value='';
  else $('password').focus();
 });
+// Bound each request separately from the full site-scan deadline.
 async function fetchScan(url){
  const controller=new AbortController();
  const timer=setTimeout(()=>controller.abort(),6000);

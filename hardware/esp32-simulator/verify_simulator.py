@@ -7,11 +7,13 @@ from urllib.request import urlopen
 
 
 def packet(axis, command, data=b""):
+    """Build a checksummed AUX request permitted by this module."""
     body = bytes((len(data) + 3, 0x20, axis, command)) + data
     return b"\x3b" + body + bytes((-sum(body) & 255,))
 
 
 def reply(connection, axis, command, data=b""):
+    """Send an AUX request and skip echoes until a matching checksummed reply arrives."""
     connection.sendall(packet(axis, command, data))
     buffer = bytearray()
     deadline = time.monotonic() + 3
@@ -42,6 +44,7 @@ def reply(connection, axis, command, data=b""):
 
 
 def verify(host):
+    """Require simulator identity before checking HTTP, virtual movement and Stop."""
     with socket.create_connection((host, 3000), timeout=3) as manager:
         manager.sendall(b"version\n")
         identity = manager.recv(512).decode("ascii", "replace")

@@ -184,7 +184,7 @@ class GuiTests(unittest.TestCase):
         self.assertIn('RN-171', self.app.console.get('1.0', 'end'))
         self.assertIn('Both motor positions: NOT VERIFIED', self.app.diagnostic_status.get())
         self.assertFalse(self.app.motor_ready)
-        self.assertIn('COSMOS 90GT', self.root.title())
+        self.assertEqual(self.root.title(), 'Celestron Cosmos 90GT Telescope WiFi Control')
         self.app.diagnostic_rows.selection_set(self.app.diagnostic_rows.get_children()[0])
         self.app.show_diagnostic_reply()
         self.assertIn('RN-171', self.app.diagnostic_details.get('1.0', 'end'))
