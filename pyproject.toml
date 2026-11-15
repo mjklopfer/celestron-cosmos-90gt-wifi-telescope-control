@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cosmos90gt-control"
 version = "1.0.0"
-description = "Python desktop controller and compatible-app LAN bridge for the Celestron COSMOS 90GT"
+description = "Celestron Cosmos 90GT Telescope WiFi Control for Version 1 Celestron WiFi modules"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["psutil>=5.9,<8"]

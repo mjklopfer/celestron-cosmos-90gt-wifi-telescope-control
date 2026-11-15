@@ -19,7 +19,7 @@ from recover_link import recover
 from bridge_mode import Bridge
 from network_info import network_interfaces, open_directory
 
-APP_TITLE = 'Celestron COSMOS 90GT — Version 1 Wi-Fi Control Management Application'
+APP_TITLE = 'Celestron Cosmos 90GT Telescope WiFi Control'
 WIFI_SWITCH_HELP = (
     'Physical Wi-Fi mode switch — on the telescope mount, beside its power socket\n'
     'LEFT — Direct / ad hoc: the telescope provides its own SkyQLink-xx Wi-Fi network '
@@ -161,8 +161,8 @@ class SetupApp(ttk.Frame):
         root.minsize(900, min(650, window_height))
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
-        ttk.Label(self, text='Celestron COSMOS 90GT', font=('TkDefaultFont', 20, 'bold')).grid(sticky='w')
-        ttk.Label(self, text='Version 1 Wi-Fi Control Management Application · Gen 1 SkyQLink', foreground='#666666').grid(row=1, sticky='w', pady=(2, 8))
+        ttk.Label(self, text=APP_TITLE, font=('TkDefaultFont', 20, 'bold')).grid(sticky='w')
+        ttk.Label(self, text='For Version 1 Celestron WiFi modules · Original SkyQLink RN-171', foreground='#666666').grid(row=1, sticky='w', pady=(2, 8))
 
         connection = ttk.LabelFrame(self, text='Telescope connection', padding=8)
         connection.grid(row=2, sticky='ew')

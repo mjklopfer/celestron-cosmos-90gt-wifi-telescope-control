@@ -1,7 +1,13 @@
-# Celestron COSMOS 90GT Wi-Fi Control
+# Celestron Cosmos 90GT Telescope WiFi Control
 
-A portable Python/Tk application for the **COSMOS 90GT WiFi telescope** and its
-original SkyQLink RN-171 / WiFly adapter. It provides manual motor control,
+A portable Python/Tk application for the **Celestron Cosmos 90GT telescope with
+a Version 1 Celestron WiFi module** (the original SkyQLink RN-171 / WiFly adapter).
+This project targets **Version 1 Celestron WiFi modules**; support for later
+module generations is not established.
+
+**Hardware scope:** the original Version 1 **WiFly RN-171 Wi-Fi modules**,
+including the SkyQLink interface in the Cosmos 90GT. RN-171 is a Wi-Fi module,
+not a Bluetooth (BT) adapter; Bluetooth telescope interfaces are not supported. It provides manual motor control,
 encoder readback, module discovery, diagnostics, Wi-Fi provisioning and a LAN
 bridge for compatible telescope applications. SkySafari is a tested example.
 
