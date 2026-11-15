@@ -61,6 +61,23 @@ hotspot mode. App/version compatibility varies, so a successful direct connectio
 should be verified rather than assumed. Use the bridge when the control app
 cannot communicate reliably with the original module on its own.
 
+## Phone hotspot compatibility — unverified
+
+Operation through a phone hotspot **may or may not work and has not yet been
+verified**. In testing with an iPhone Personal Hotspot, the original RN-171
+accepted, read back and saved the requested Wi-Fi settings, but a successful
+hotspot association and a reachable telescope connection were not established.
+Repeated telescope restarts did not establish connectivity, and no telescope
+response was found on TCP port 2000 from a laptop connected to that hotspot.
+
+This does not establish whether the cause was Wi-Fi association/authentication,
+DHCP, or hotspot restrictions on local device communication. Communication
+between hotspot clients, automatic discovery, and SkySafari running on the
+hotspot-hosting iPhone remain unverified. Successful provisioning alone does
+not prove the telescope joined the hotspot. The verified house-router and
+computer-bridge arrangements should not be taken as verification of a phone
+hotspot arrangement.
+
 ## Requirements
 
 - Python **3.10 or newer**, with **Tkinter/Tcl-Tk** and a graphical desktop.
