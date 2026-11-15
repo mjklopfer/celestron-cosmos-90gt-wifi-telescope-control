@@ -17,6 +17,25 @@ The target hardware is the original WiFly **Wi-Fi** interface, not a Bluetooth
 not established. Bridge mode instead presents selected later-generation-style
 behavior to control applications while communicating with the original module.
 
+## Hardware identification and search terms
+
+This project targets the **Celestron COSMOS 90GT WiFi telescope (model 22094)**
+and its **first-generation / Gen 1 / Version 1 Celestron SkyQLink Wi-Fi module**.
+The original radio is the **Roving Networks WiFly RN-171 (RN171)**, with
+Celestron-specific **2.40-CEL** firmware. Related names and functions used in
+this project include:
+
+- **Celestron WiFi / Celestron Wi-Fi**, legacy SkyQLink adapter and telescope control.
+- **SkySafari, SkyPortal and CPWI** compatibility, with an optional TCP bridge.
+- **Celestron AUX protocol**, altitude/azimuth (Alt-Az) motor control and encoder
+  position readback over TCP port **2000**.
+- **WiFly configuration**, Wi-Fi provisioning, infrastructure / station mode,
+  direct / ad hoc mode and WPA2-Personal network setup.
+- **Python / Tkinter** desktop control, network discovery and read-only diagnostics.
+
+These terms identify the hardware and functionality discussed here; they do not
+extend the compatibility claims to every Celestron telescope or Wi-Fi generation.
+
 ## Bridge emulation and provisioning-only use
 
 Bridge mode presents **later-generation Celestron Wi-Fi module-style discovery

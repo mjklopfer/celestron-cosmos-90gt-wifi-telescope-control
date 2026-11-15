@@ -8,8 +8,13 @@ name = "cosmos90gt-control"
 version = "1.0.0"
 description = "Celestron Cosmos 90GT Telescope WiFi Control for Version 1 Celestron WiFi modules"
 readme = "README.md"
+keywords = ["celestron", "cosmos-90gt", "skyqlink", "wifly", "rn171", "skysafari", "skyportal", "cpwi", "telescope-control", "wifi-provisioning", "celestron-aux", "tcp-bridge"]
 requires-python = ">=3.10"
 dependencies = ["psutil>=5.9,<8"]
+
+[project.urls]
+Repository = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-control"
+Issues = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-control/issues"
 
 [project.optional-dependencies]
 dev = ["ruff>=0.9,<1", "build>=1.2,<2"]
