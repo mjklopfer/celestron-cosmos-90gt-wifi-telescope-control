@@ -23,11 +23,25 @@ identity and limited read-only management replies. This is a compatibility bridg
 not a complete emulation of every newer module feature, and it does not replace
 or upgrade the original adapter's firmware.
 
-**The full bridge is optional.** Some control applications or versions, including
-SkySafari with a compatible Celestron telescope configuration, may already connect
-to the telescope directly over infrastructure Wi-Fi. If that works for your
-app/telescope combination, use this software only to provision the original
-adapter onto the router network:
+**The full bridge is optional.** After the Version 1 adapter has been provisioned
+onto the router's infrastructure Wi-Fi, compatible control applications can
+connect directly to the telescope's assigned IP. This includes supported
+SkySafari configurations and compatible PC-based Celestron applications, such as
+CPWI. App version, telescope profile and original-module compatibility still
+matter; this is not a guarantee that every Celestron-labelled profile works.
+The computer does not need to relay that connection.
+
+**Direct/ad hoc operation is a separate case.** The original SkyQLink network can
+have connectivity or compatibility problems with newer control applications.
+That is where the bridge can help: it connects upstream to the old adapter while
+presenting later-generation-style discovery and connection behavior to the app.
+In the verified two-interface arrangement, computer Wi-Fi joins SkyQLink and
+computer Ethernet reaches the house network, while the phone remains on house
+Wi-Fi. The bridge does not modify or repair the adapter's radio, and the computer
+must still be able to join and communicate over the telescope-facing network.
+
+If your control app already works directly over infrastructure Wi-Fi, use this
+software only for provisioning:
 
 1. Connect to the original adapter using its reachable direct or infrastructure IP.
 2. In **Wi-Fi provisioning**, enter the router SSID, password and supported security,

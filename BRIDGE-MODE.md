@@ -22,3 +22,17 @@ the router network, leave Bridge OFF. This software can be used solely to upload
 infrastructure Wi-Fi settings, then disconnected/closed before the control app
 connects to the telescope's own assigned IP. See the README's provisioning-only
 workflow; compatibility depends on the application version and configuration.
+
+## When to use the bridge
+
+Compatible phone and PC control applications can connect to the original adapter's
+router-assigned IP after infrastructure provisioning; supported SkySafari
+configurations and CPWI are examples. They do not inherently require this proxy.
+
+The older direct/ad hoc SkyQLink connection can cause application compatibility
+or connectivity issues. The bridge provides a later-module-style app-facing
+interface while the computer handles the original adapter link. The verified
+two-interface setup uses telescope-facing Wi-Fi plus house-network Ethernet;
+the phone stays on house Wi-Fi. A functioning computer-to-adapter radio link is
+still required. Use Celestron Wi-Fi as the scope type for the tested bridge path;
+do not assume a serial NexStar/Advanced GT profile is interchangeable with it.
