@@ -222,6 +222,20 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(self.app.host.get(), '192.168.1.42')
         self.assertFalse(self.app.motor_ready)
 
+    def test_direct_discovery_preserves_mode_and_house_address(self):
+        calls = []
+        def scanner(**kwargs):
+            calls.append(kwargs)
+            return {'matches': [{'ip': '1.2.3.4', 'verified': True}]}
+        self.app.scanner = scanner
+        self.app.connection_mode.set('direct')
+        previous = self.app.last_infrastructure_host
+        self.app.scan_lan()
+        self.finish_worker()
+        self.assertEqual(calls[0]['mode'], 'direct')
+        self.assertEqual(self.app.connection_mode.get(), 'direct')
+        self.assertEqual(self.app.last_infrastructure_host, previous)
+
     def test_requested_tab_order_and_infrastructure_reprovisioning_notice(self):
         self.assertEqual([self.app.tabs.tab(t, 'text') for t in self.app.tabs.tabs()],
                          ['Motor control', 'Diagnostics', 'Bridge', 'Wi-Fi provisioning'])

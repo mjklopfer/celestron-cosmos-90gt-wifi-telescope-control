@@ -34,7 +34,7 @@ class SafeRecorder:
             self.recorder.record(kind, **fields)
 
 
-def identify(host, port=2000, recorder=None, socket_factory=socket.create_connection, rn171_hint=False):
+def identify(host, port=2000, recorder=None, socket_factory=socket.create_connection, rn171_hint=False, connect_timeout=.35):
     """Read both motor versions, optionally the Wi-Fi node and WiFly firmware. No settings/motion."""
     class NullRecorder:
         def record(self, *args, **kwargs):
@@ -43,7 +43,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
     lease = EndpointLease(host, port)
     try:
         lease.acquire()
-        sock = socket_factory((host, port), .35)
+        sock = socket_factory((host, port), connect_timeout)
     except (OSError, EndpointBusy) as error:
         recorder.record('candidate_unavailable', host=host, port=port, error=str(error))
         lease.release()
@@ -141,7 +141,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
         lease.release()
 
 
-def scan_modules(port=2000, callback=lambda event: None, timeout=60):
+def scan_modules(port=2000, callback=lambda event: None, timeout=60, mode=None):
     """Search supported attached LANs within a period and identify replies without changing settings."""
     started = time.monotonic()
     deadline = started + timeout
@@ -149,11 +149,20 @@ def scan_modules(port=2000, callback=lambda event: None, timeout=60):
     safe = SafeRecorder(recorder)
     report = {'port': port, 'matches': [], 'networks_checked': [],
               'method': 'RN-171 vendor-prefix hints first, then TCP firmware identification; no exact MAC or SSID requirement',
-              'settings_changed': False, 'motor_commands_sent': False}
+              'settings_changed': False, 'motor_commands_sent': False, 'mode': mode or 'all'}
     try:
         lans = connected_lans()
-        if not lans:
+        if not lans and mode != 'direct':
             raise ValueError('Connect to the telescope router LAN. Automatic scan supports attached private IPv4 /24 or smaller networks; otherwise enter its IP manually.')
+        direct_network = ipaddress.ip_network('1.2.3.0/24')
+        if mode == 'direct':
+            lans = [row for row in lans if row[2] == direct_network]
+            if not lans:
+                raise ValueError('Direct / ad hoc discovery requires this computer to be joined to the telescope SkyQLink Wi-Fi with a 1.2.3.x address. The telescope-facing interface currently has no usable direct-network address. Wait for Wi-Fi to connect, then retry.')
+        elif mode == 'infrastructure':
+            lans = [row for row in lans if row[2] != direct_network]
+            if not lans:
+                raise ValueError('No supported infrastructure LAN is connected. Join the router network, then retry.')
         neighbors = neighbor_entries()
         hosts = {}
         for interface, local, network in lans:
@@ -168,12 +177,27 @@ def scan_modules(port=2000, callback=lambda event: None, timeout=60):
         cached = list(dict.fromkeys(n['ip'] for n in neighbors if n['ip'] in hosts))
         preferred = list(dict.fromkeys(n['ip'] for n in neighbors if n['ip'] in hosts
                                       and vendor_prefix(n['mac']) in RN171_VENDOR_PREFIXES))
-        report['vendor_hint_candidates'] = preferred
+        # The direct endpoint is known independently of the ARP cache. Give it
+        # the same connect allowance as provisioning and retry transient failures.
+        if '1.2.3.4' in hosts and '1.2.3.4' not in preferred:
+            preferred.insert(0, '1.2.3.4')
+        report['vendor_hint_candidates'] = [h for h in preferred if any(
+            n['ip'] == h and vendor_prefix(n['mac']) in RN171_VENDOR_PREFIXES for n in neighbors)]
+        report['priority_candidates'] = preferred
+        failures = {}
+
         def probe(address):
             if time.monotonic() >= deadline:
                 report['timed_out'] = True
                 return None
-            result = identify(address, port, safe, rn171_hint=address in preferred)
+            class CandidateRecorder:
+                def record(self, kind, **fields):
+                    safe.record(kind, **fields)
+                    if fields.get('error'):
+                        failures[address] = str(fields['error'])
+            result = identify(address, port, CandidateRecorder(), rn171_hint=address in preferred,
+                              connect_timeout=min(3., max(.05, deadline - time.monotonic()))
+                              if address in preferred else .35)
             if result:
                 result['interface'] = hosts[address]
                 result['observed_mac'] = next((n['mac'] for n in neighbors if n['ip'] == address), None)
@@ -190,8 +214,13 @@ def scan_modules(port=2000, callback=lambda event: None, timeout=60):
                 found = [item for item in executor.map(probe, [h for h in cached if h not in preferred]) if item]
             if not found:
                 callback({'event': 'scan_progress', 'message': f'Checking the remaining LAN addresses on TCP {port}…'})
-                found = [item for item in executor.map(probe, [h for h in hosts if h not in cached]) if item]
+                found = [item for item in executor.map(probe, [h for h in hosts if h not in cached and h not in preferred]) if item]
         report['matches'] = found
+        report['candidate_errors'] = failures
+        if not found and mode == 'direct':
+            reason = failures.get('1.2.3.4', 'No valid RN-171 identity or motor firmware reply received')
+            report['no_match_reason'] = ('Direct adapter 1.2.3.4: ' + reason +
+                '. Close other connected control apps; wait for the telescope Wi-Fi to finish connecting and retry. Connect & Read Settings can also test this address.')
         report['scan_scope'] = 'Cached LAN neighbors first; full attached subnet scan if none verify.'
         report['limitations'] = 'Busy single-client modules, client isolation, and blocked ports may prevent identification. Close other telescope apps before a protocol scan.'
     except Exception as e:

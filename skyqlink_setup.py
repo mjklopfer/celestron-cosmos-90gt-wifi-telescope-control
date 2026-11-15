@@ -659,9 +659,10 @@ class SetupApp(ttk.Frame):
         self.scan_button.configure(text='Scanning…')
         self.tick_scan()
         self.append(f'SCAN LAN — verify motor/adapter firmware replies on TCP {port}; no movement or setting changes.')
+        scan_mode = self.connection_mode.get()
         def worker():
             try:
-                report = self.scanner(port=port, callback=self.events.put)
+                report = self.scanner(port=port, callback=self.events.put, mode=scan_mode)
             except Exception as e:
                 report = {'error': str(e)}
             self.events.put({'event': 'scan_done', 'report': report})
@@ -961,10 +962,11 @@ class SetupApp(ttk.Frame):
                         self.module_box.configure(values=[f'{m["ip"]}:{m.get("port", 2000)} — {m.get("module_type", "Celestron AUX")}' for m in matches])
                         self.module_box.current(0)
                         match = matches[0]
-                        self.connection_mode.set('infrastructure')
+                        self.connection_mode.set('direct' if match['ip'] == '1.2.3.4' else 'infrastructure')
                         self.update_mode_help()
                         self.host.set(match['ip'])
-                        self.last_infrastructure_host = match['ip']
+                        if match['ip'] != '1.2.3.4':
+                            self.last_infrastructure_host = match['ip']
                         self.port.set(str(match.get('port', 2000)))
                         text = f'{len(matches)} verified module(s). Selected {match["ip"]}:{match.get("port", 2000)} — {match.get("module_type", "Celestron AUX")}.'
                         if match.get('module_version'):
@@ -977,7 +979,7 @@ class SetupApp(ttk.Frame):
                         self.discovered = []
                         self.module_box.configure(values=[])
                         self.selected_module.set('')
-                        text = 'No Celestron replies verified. Close other telescope apps and check the router LAN; enter the IP manually if discovery is blocked.'
+                        text = report.get('no_match_reason') or 'No Celestron replies verified. Close other telescope apps and check the selected network; enter the IP manually if discovery is blocked.'
                     self.status.set(text)
                     found = bool(matches) and not report.get('error')
                     self.scan_indicator.configure(

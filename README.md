@@ -149,6 +149,14 @@ move the telescope slider or connect the computer to a different Wi-Fi network.
    network configuration; power OFF, set the physical slider RIGHT, and power ON
    to join the saved router. Discover the newly assigned IP afterward.
 
+The selected connection mode controls discovery: **Direct / ad hoc** checks only
+`1.2.3.4:2000` on the telescope Wi-Fi; **Infrastructure / house Wi-Fi** scans
+attached supported router networks. Direct discovery waits up to three seconds
+for each connection attempt and retries once. If the telescope-facing Wi-Fi has
+no usable address yet, the app explains that instead of searching Ethernet and
+reporting an unidentified module. A successful settings read and a failed scan
+can otherwise reflect different connection timing on this single-client adapter.
+
 Discovery shows an animated state and a 60-second **search period**. The deadline
 prevents new probes; already active probes may finish afterward. Neighbor/MAC
 vendor hints prioritize candidates but do not replace protocol identification.

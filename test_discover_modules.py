@@ -98,8 +98,10 @@ class ModuleDiscoveryTests(unittest.TestCase):
              patch('discover_modules.Recorder', Recorder), \
              patch('discover_modules.identify', return_value=None) as probe:
             scan_modules()
-        probe.assert_called_once()
+        self.assertEqual(probe.call_count, 2)
         self.assertEqual(probe.call_args.args[:2], ('1.2.3.4', 2000))
+        self.assertTrue(probe.call_args.kwargs['rn171_hint'])
+        self.assertGreater(probe.call_args.kwargs['connect_timeout'], 2.5)
 
     def test_transient_rn171_failure_is_retried(self):
         lans = [('en0', '192.168.1.20', ipaddress.ip_network('192.168.1.0/24'))]
@@ -112,6 +114,28 @@ class ModuleDiscoveryTests(unittest.TestCase):
             report = scan_modules()
         self.assertEqual(probe.call_count, 2)
         self.assertEqual(report['matches'], [found])
+
+    def test_direct_mode_ignores_house_lan_and_retries_known_adapter(self):
+        lans = [('house', '192.168.1.20', ipaddress.ip_network('192.168.1.0/24')),
+                ('scope', '1.2.3.10', ipaddress.ip_network('1.2.3.0/24'))]
+        found = {'ip': '1.2.3.4', 'verified': True, 'adapter_verified': True}
+        with patch('discover_modules.connected_lans', return_value=lans), \
+             patch('discover_modules.neighbor_entries', return_value=[]), \
+             patch('discover_modules.Recorder', Recorder), \
+             patch('discover_modules.identify', side_effect=[None, found]) as probe:
+            report = scan_modules(mode='direct')
+        self.assertEqual(report['matches'], [found])
+        self.assertEqual(report['networks_checked'], ['1.2.3.0/24'])
+        self.assertTrue(all(call.args[0] == '1.2.3.4' for call in probe.call_args_list))
+
+    def test_direct_mode_reports_missing_telescope_interface(self):
+        lans = [('house', '192.168.1.20', ipaddress.ip_network('192.168.1.0/24'))]
+        with patch('discover_modules.connected_lans', return_value=lans), \
+             patch('discover_modules.Recorder', Recorder), \
+             patch('discover_modules.identify') as probe:
+            report = scan_modules(mode='direct')
+        probe.assert_not_called()
+        self.assertIn('no usable direct-network address', report['error'])
 
     def test_expired_scan_budget_skips_network_probes(self):
         lans = [('en1', '1.2.3.10', ipaddress.ip_network('1.2.3.0/24'))]
