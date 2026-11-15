@@ -2,14 +2,47 @@
 
 A portable Python/Tk application for the **Celestron Cosmos 90GT telescope with
 a Version 1 Celestron WiFi module** (the original SkyQLink RN-171 / WiFly adapter).
-This project targets **Version 1 Celestron WiFi modules**; support for later
-module generations is not established.
+This project targets **Version 1 Celestron WiFi modules**. Direct hardware
+support for later module generations is not established; the bridge described
+below emulates selected later-generation app-facing behavior for the older adapter.
 
 **Hardware scope:** the original Version 1 **WiFly RN-171 Wi-Fi modules**,
 including the SkyQLink interface in the Cosmos 90GT. RN-171 is a Wi-Fi module,
-not a Bluetooth (BT) adapter; Bluetooth telescope interfaces are not supported. It provides manual motor control,
+not a Bluetooth (BT) adapter; Bluetooth telescope interfaces are not supported.
+
+The application provides manual motor control,
 encoder readback, module discovery, diagnostics, Wi-Fi provisioning and a LAN
 bridge for compatible telescope applications. SkySafari is a tested example.
+
+## Bridge emulation and provisioning-only use
+
+Bridge mode presents **later-generation Celestron Wi-Fi module-style discovery
+and connection behavior** to the control application, while relaying native AUX
+commands to the original Version 1 adapter. It uses an AMW007-style discovery
+identity and limited read-only management replies. This is a compatibility bridge,
+not a complete emulation of every newer module feature, and it does not replace
+or upgrade the original adapter's firmware.
+
+**The full bridge is optional.** Some control applications or versions, including
+SkySafari with a compatible Celestron telescope configuration, may already connect
+to the telescope directly over infrastructure Wi-Fi. If that works for your
+app/telescope combination, use this software only to provision the original
+adapter onto the router network:
+
+1. Connect to the original adapter using its reachable direct or infrastructure IP.
+2. In **Wi-Fi provisioning**, enter the router SSID, password and supported security,
+   then upload and save the settings.
+3. Power the telescope OFF, set its physical Wi-Fi switch RIGHT for infrastructure
+   mode, and power it ON. Find its router-assigned IP.
+4. Disconnect this software from the adapter, then connect the control application
+   directly to that telescope IP using its infrastructure/Access Point settings.
+
+In that arrangement, **leave Bridge OFF**. The computer and this software do not
+need to remain running after provisioning. Here, “directly” means control app to
+adapter through the router network; it does not mean the app's Direct Connect
+hotspot mode. App/version compatibility varies, so a successful direct connection
+should be verified rather than assumed. Use the bridge when the control app
+cannot communicate reliably with the original module on its own.
 
 ## Requirements
 

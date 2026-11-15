@@ -12,3 +12,13 @@ SkyQLink Wi-Fi. SkySafari is a tested control application, not the exclusive cli
 Successful sessions do not establish long-duration reliability. Isolated idle
 reply delays now retry; repeated missing replies still fail closed. This retry
 change needs further live endurance verification.
+
+The proxy emulates selected later-generation Celestron module discovery and
+limited management behavior, then forwards native AUX traffic to the original
+Version 1 adapter. It is not a complete newer-module firmware replacement.
+
+If the control application already connects to the telescope directly through
+the router network, leave Bridge OFF. This software can be used solely to upload
+infrastructure Wi-Fi settings, then disconnected/closed before the control app
+connects to the telescope's own assigned IP. See the README's provisioning-only
+workflow; compatibility depends on the application version and configuration.
