@@ -6,6 +6,12 @@ It provides infrastructure Wi-Fi provisioning, manual motor control, encoder
 readback, module discovery, diagnostics and an optional compatible-app LAN bridge.
 SkySafari is a tested example control application.
 
+The original radio module is the **Roving Networks WiFly RN-171** (also
+written RN171), rather than an ESP32 or ESP8266. The inspected telescope reports
+**WiFly firmware `2.40-CEL`**, build date **03-05-2012**; native provisioning
+currently checks for that RN-171 / `2.40-CEL` combination before writing settings.
+The ESP32 simulator included in this repository is a separate hardware project.
+
 The target hardware is the original WiFly **Wi-Fi** interface, not a Bluetooth
 (BT) adapter. Direct hardware support for later-generation Celestron modules is
 not established. Bridge mode instead presents selected later-generation-style
