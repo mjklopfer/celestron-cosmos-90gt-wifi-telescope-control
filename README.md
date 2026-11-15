@@ -1,10 +1,27 @@
 # Celestron Cosmos 90GT Telescope WiFi Control
 
-A portable Python/Tk application for the **Celestron Cosmos 90GT telescope with
-an original Version 1 Celestron WiFi module: SkyQLink / WiFly RN-171**.
-It provides infrastructure Wi-Fi provisioning, manual motor control, encoder
-readback, module discovery, diagnostics and an optional compatible-app LAN bridge.
-SkySafari is a tested example control application.
+**Legacy Celestron SkyQLink Wi-Fi setup, telescope control, and a SkySafari / SkyPortal bridge.**
+
+[![Python checks](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml/badge.svg)](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml)
+
+Have a **Celestron Cosmos 90GT WiFi telescope** with the original **SkyQLink /
+WiFly RN-171** module? This Python desktop application lets you configure its
+router Wi-Fi, drive the motors, inspect encoder positions, and bridge compatible
+astronomy apps to the original adapter. SkySafari is a tested example client.
+
+| What you need | What this application provides |
+| --- | --- |
+| Put an old SkyQLink telescope on home Wi-Fi | Read, upload and save infrastructure Wi-Fi credentials |
+| Connect a compatible app to a legacy Celestron Wi-Fi module | Optional later-module-style discovery and TCP bridge |
+| Move the telescope and check whether it moved | Manual Alt-Az motor controls with encoder position and motion delta readback |
+| Diagnose a connection problem | Module identification, native WiFly replies and motor-controller diagnostics |
+| Reach telescope Wi-Fi and home Wi-Fi at the same time | Verified computer Ethernet + telescope Wi-Fi bridge arrangement |
+
+**Start here:** [Install and run](#install-and-run) ·
+[Supported hardware](#supported-telescope-and-wi-fi-hardware) ·
+[Wi-Fi modes and physical switch](#telescope-wi-fi-modes-and-physical-switch) ·
+[Bridge setup](#bridge-two-addresses-with-different-purposes) ·
+[Phone hotspot limitations](#phone-hotspot-compatibility--unverified)
 
 The original radio module is the **Roving Networks WiFly RN-171** (also
 written RN171), rather than an ESP32 or ESP8266. The inspected telescope reports
@@ -17,7 +34,7 @@ The target hardware is the original WiFly **Wi-Fi** interface, not a Bluetooth
 not established. Bridge mode instead presents selected later-generation-style
 behavior to control applications while communicating with the original module.
 
-## Hardware identification and search terms
+## Supported telescope and Wi-Fi hardware
 
 This project targets the **Celestron COSMOS 90GT WiFi telescope (model 22094)**
 and its **first-generation / Gen 1 / Version 1 Celestron SkyQLink Wi-Fi module**.
@@ -80,6 +97,30 @@ hotspot mode. App/version compatibility varies, so a successful direct connectio
 should be verified rather than assumed. Use the bridge when the control app
 cannot communicate reliably with the original module on its own.
 
+## Celestron SkyQLink connection questions
+
+### SkySafari or SkyPortal cannot connect to an old Celestron Wi-Fi module
+
+This project provides an optional **SkySafari / SkyPortal Wi-Fi bridge** for the
+original Version 1 SkyQLink adapter. It presents selected newer-module discovery
+and management behavior while relaying commands to the original telescope.
+It addresses a tested legacy-adapter compatibility case, rather than promising
+a fix for every “Connection Failure” or “Automatic Telescope Wi-Fi Detection
+Failed” message. Start by verifying the adapter and motors in Diagnostics.
+
+### How do I configure SkyQLink infrastructure mode without the phone app?
+
+Use **Wi-Fi provisioning** to read the RN-171 settings and save a supported
+router SSID and password. Follow the physical-switch and restart instructions.
+A compatible control application can then connect to the assigned IP directly;
+leave Bridge OFF when that connection works. See [provisioning-only use](#bridge-emulation-and-provisioning-only-use).
+
+### Is this a Celestron firmware update or a replacement Wi-Fi adapter?
+
+It is desktop software for communicating with the existing **WiFly RN-171**
+adapter. The bridge does not flash the telescope or turn its radio into newer
+hardware. The included ESP32 telescope simulator is a separate development tool.
+
 ## Phone hotspot compatibility — unverified
 
 Operation through a phone hotspot **may or may not work and has not yet been
@@ -121,6 +162,13 @@ or Xvfb. On Windows, use a Python distribution installed with Tcl/Tk support.
 Check availability with `python -m tkinter`.
 
 ## Install and run
+
+Download this repository using Git (or use GitHub's **Code → Download ZIP**):
+
+```sh
+git clone https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control.git
+cd celestron-cosmos-90gt-wifi-telescope-control
+```
 
 Create a virtual environment from the repository folder:
 
