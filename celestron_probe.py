@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only AUX framing, discovery and diagnostic recording.
 
-Only firmware/position queries are allowed by this probe. psutil supplies portable
+Only whitelisted, destination-specific read queries are allowed. psutil supplies portable
 network inventory; runtime reports use a writable user data directory."""
 import argparse
 import os
@@ -19,7 +19,7 @@ from network_info import network_interfaces, route_source_address, neighbor_entr
 ROOT = Path(os.environ.get('COSMOS90GT_DATA_DIR', str(Path.home() / '.cosmos90gt'))).expanduser()
 NODES = {0x01: 'Main board', 0x04: 'Hand controller', 0x0d: 'Hand controller plus',
          0x10: 'Azimuth motor', 0x11: 'Altitude motor', 0x12: 'Focuser',
-         0xb0: 'GPS', 0xb5: 'Wi-Fi adapter', 0xb6: 'Battery',
+         0xb0: 'GPS', 0xb2: 'RTC (model-dependent)', 0xb5: 'Wi-Fi adapter', 0xb6: 'Battery',
          0xb7: 'Charger', 0xbf: 'Light'}
 PORTS = (23, 80, 443, 2000, 3000, 4030, 8080)
 
@@ -58,9 +58,14 @@ class Recorder:
 
 
 def packet(destination, command):
-    # This probe permits only GET_POSITION and GET_VER, without command data.
+    # Command IDs are destination-specific: GPS GET_YEAR 0x04 must never
+    # become motor SET_POSITION 0x04. No payload or write command is accepted.
     """Build a checksummed AUX request permitted by this module."""
-    if command not in (0x01, 0xfe):
+    allowed = ({0x01, 0x02, 0x03, 0x04, 0x33, 0x36, 0x37, 0x07, 0xa0, 0xfe}
+               if destination == 0xb0 else {0x03, 0x04, 0x33, 0xfe}
+               if destination == 0xb2 else {0x01, 0x13, 0x40, 0x41, 0x47, 0xfc, 0xfe}
+               if destination in (0x10, 0x11) else {0xfe} if destination in NODES else set())
+    if command not in allowed:
         raise ValueError('Probe only permits read commands')
     body = bytes((3, 0x20, destination, command))
     return b'\x3b' + body + bytes((-sum(body) & 255,))

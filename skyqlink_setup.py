@@ -393,7 +393,7 @@ class SetupApp(ttk.Frame):
         ttk.Label(tab, textvariable=self.diagnostic_status, wraplength=800).grid(row=1, sticky='w', pady=6)
         self.diagnostic_rows = ttk.Treeview(tab, columns=('device', 'endpoint', 'status', 'reply'), show='headings', height=7)
         for key, label, width in (('device', 'Device', 110), ('endpoint', 'Query / endpoint', 210),
-                                  ('status', 'Result', 105), ('reply', 'Reply data', 355)):
+                                  ('status', 'Result', 105), ('reply', 'Interpretation / raw hex', 355)):
             self.diagnostic_rows.heading(key, text=label)
             self.diagnostic_rows.column(key, width=width)
         self.diagnostic_rows.grid(row=2, sticky='nsew')
@@ -404,7 +404,7 @@ class SetupApp(ttk.Frame):
         self.diagnostic_details.grid(row=3, columnspan=2, sticky='ew', pady=6)
         self.diagnostic_replies = {}
         self.diagnostic_rows.bind('<<TreeviewSelect>>', self.show_diagnostic_reply)
-        ttk.Label(tab, text='Select a row for the full response. Read-only diagnostics sends no motion or configuration writes.\n'
+        ttk.Label(tab, text='Select a row for raw hex and decoded values. Optional AUX devices may not reply. No motion or configuration writes.\n'
                   'Restart & recheck restarts the RN-171, retains saved Wi-Fi settings, and checks motor replies. Disconnect motors first.',
                   wraplength=800).grid(row=4, columnspan=2, sticky='w')
 

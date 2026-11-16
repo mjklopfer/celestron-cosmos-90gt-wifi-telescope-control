@@ -454,3 +454,36 @@ ordinary test commands do not connect to a real telescope.
 Keep network I/O in its owning worker, send UI changes through the event queue,
 and preserve command-mode exit and stop/drain cleanup when extending the code.
 Do not log router secrets or treat an open TCP connection as proof of motor motion.
+
+### AUX register diagnostics
+
+The Diagnostics tab reports a bounded catalog of documented, read-only AUX
+queries as well as native WiFly queries. Each AUX row identifies the destination
+address and command ID, and retains the raw reply hex beside its interpretation.
+Select a row to read the full response.
+
+- Known node addresses: firmware identification (GET_VER 0xFE).
+- Motor nodes 0x10/0x11: encoder counts and degrees, positive/negative backlash,
+  autoguide percentage, slew-complete status, and GOTO approach direction.
+- Optional GPS 0xB0: latitude/longitude with N/S/E/W, month/day, year, UTC time,
+  time-valid and GPS-linked flags, satellite counts, and compass direction.
+- Optional RTC 0xB2: month/day, year, and UTC time. This interface is documented
+  for other Celestron models; its presence on COSMOS is unverified.
+- WiFly clock configuration/status: `get time`, `show time`, and `show t t`.
+  Older customized firmware may reject these commands.
+
+A timeout does not prove a device is absent or a command unsupported. Unrecognized
+or invalid replies retain raw hex without a guessed physical meaning. If the
+connection fails, catalog entries show **NOT QUERIED**. Host observation time is
+separate from device time. Encoder degrees are motor coordinates, not an aligned
+celestial position; autoguide rate is not a tracking-enabled indicator. GPS values
+must be considered alongside the reported validity flags.
+
+This is a documented query catalog, not an exhaustive command/address scan.
+Command IDs are destination-specific: GPS 0x04 reads the year, while motor 0x04
+writes position. Diagnostic whitelists block motion, position, RTC, and firmware
+writes. Nothing sets time, synchronizes SNTP, or changes observing location.
+
+Protocol reference: [NexStar AUX command observations](https://paquettefamily.ca/nexstar/NexStar_AUX_Commands_10.pdf).
+Software decoding and read-only guards are tested; live COSMOS GPS/RTC support
+remains unverified. No optional hardware capability is inferred from a catalog row.

@@ -32,6 +32,19 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 packet(0x10, command)
 
+    def test_time_reads_are_destination_scoped_and_writes_blocked(self):
+        for device in (0xb0, 0xb2):
+            for command in (3, 4, 0x33):
+                wire = packet(device, command)
+                self.assertEqual(wire[2:5], bytes((0x20, device, command)))
+                self.assertEqual(sum(wire[1:]) & 255, 0)
+            for command in (0x83, 0x84, 0xb3, 0x24, 0x25):
+                with self.assertRaises(ValueError):
+                    packet(device, command)
+        for device in (0x10, 0x11):
+            with self.assertRaises(ValueError):
+                packet(device, 4)
+
 
 if __name__ == '__main__':
     unittest.main()
