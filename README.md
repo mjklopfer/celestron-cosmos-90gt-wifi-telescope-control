@@ -201,6 +201,29 @@ Python. No local developer account, fixed MAC address, home SSID or saved router
 password is required. Infrastructure addresses are entered or discovered at run time.
 The interface inventory uses native names supplied by the host OS.
 
+### Smaller screens and optional zoom (including Raspberry Pi)
+
+The default text and control sizes remain at 100%. The window can be resized,
+with horizontal and vertical scrollbars keeping oversized content reachable.
+To enable a **View** menu with **Zoom in**, **Zoom out**, **Actual size (100%)**,
+and **Fit width**, launch from your activated virtual environment:
+
+```sh
+python -m skyqlink_setup --zoom-controls
+# Start at 80% on a smaller display:
+python -m skyqlink_setup --zoom-controls --ui-scale 0.8
+# Fixed startup size without a zoom menu:
+python -m skyqlink_setup --ui-scale 1.25
+```
+
+`--ui-scale` accepts 0.5 through 2.0. Zoom changes fonts, text-based control
+sizes, spacing, table rows/columns and the bridge switch. Fit width is a manual
+action after resizing the window; it does not continuously shrink text as you
+resize. Content taller than the window remains vertically scrollable. At the
+minimum zoom, especially narrow windows may still need horizontal scrolling.
+Zoom does not reconnect the telescope or change entered settings. Sizes are
+not saved between launches. Omit both options for the default size and no menu.
+
 ### Verified Windows 11 setup
 
 On **November 15, 2026**, a fresh clone of commit `7e7f543` was installed and

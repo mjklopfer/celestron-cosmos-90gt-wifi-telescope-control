@@ -21,6 +21,7 @@ from diagnostics import diagnose
 from recover_link import recover
 from bridge_mode import Bridge
 from network_info import network_interfaces, open_directory
+from ui_zoom import UiZoom, scale_argument
 
 APP_TITLE = 'Celestron Cosmos 90GT Telescope WiFi Control'
 WIFI_SWITCH_HELP = (
@@ -45,6 +46,7 @@ class BridgeRocker(tk.Canvas):
         super().__init__(parent, width=184, height=46, highlightthickness=1,
                          highlightbackground='#777777', takefocus=True, background='#30343b')
         self.variable, self.command = variable, command
+        self.ui_scale = 1.0
         self.trace_id = variable.trace_add('write', lambda *args: self.redraw())
         self.bind('<Button-1>', self.click)
         self.bind('<Left>', lambda event: self.choose(False))
@@ -67,12 +69,19 @@ class BridgeRocker(tk.Canvas):
         self.delete('all')
         enabled = str(self.cget('state')) == 'normal'
         on = self.variable.get()
+        scale = self.ui_scale
         for left, label, selected in ((2, 'OFF', not on), (93, 'ON', on)):
             fill = ('#197442' if on else '#8c3434') if selected and enabled else '#454951'
-            self.create_rectangle(left, 2, left + 89, 44, fill=fill,
+            self.create_rectangle(left * scale, 2 * scale, (left + 89) * scale, 44 * scale, fill=fill,
                                   outline='#dddddd' if selected and enabled else '#666666', width=2)
-            self.create_text(left + 44, 22, text=label, fill='white' if enabled else '#aaaaaa',
-                             font=('TkDefaultFont', 14, 'bold'))
+            self.create_text((left + 44) * scale, 22 * scale, text=label, fill='white' if enabled else '#aaaaaa',
+                             font=('TkDefaultFont', max(1, round(14 * scale)), 'bold'))
+
+    def set_scale(self, scale):
+        """Resize both the drawing and its pointer hit boundary."""
+        self.ui_scale = scale
+        self.configure(width=round(184 * scale), height=round(46 * scale))
+        self.redraw()
 
     def choose(self, on):
         """Apply an enabled rocker selection and invoke its callback."""
@@ -84,7 +93,7 @@ class BridgeRocker(tk.Canvas):
     def click(self, event):
         """Map a pointer position to the rocker’s OFF or ON selection."""
         self.focus_set()
-        return self.choose(event.x >= 92)
+        return self.choose(event.x >= 92 * self.ui_scale)
 
     def destroy(self):
         """Remove the variable trace before destroying the rocker widget."""
@@ -94,20 +103,26 @@ class BridgeRocker(tk.Canvas):
 
 class SetupApp(ttk.Frame):
     def __init__(self, root, operation=operate, motor_factory=MotorController, scanner=scan_modules,
-                 diagnostic=diagnose, recovery=recover, bridge_factory=Bridge):
+                 diagnostic=diagnose, recovery=recover, bridge_factory=Bridge,
+                 ui_scale=1.0, zoom_controls=False):
         """Build the desktop controls and event queue around injectable backend services."""
         shell = ttk.Frame(root)
         shell.pack(fill='both', expand=True)
         canvas = tk.Canvas(shell, highlightthickness=0, borderwidth=0)
         scrollbar = ttk.Scrollbar(shell, orient='vertical', command=canvas.yview)
-        scrollbar.pack(side='right', fill='y')
-        canvas.pack(side='left', fill='both', expand=True)
-        canvas.configure(yscrollcommand=scrollbar.set)
+        horizontal = ttk.Scrollbar(shell, orient='horizontal', command=canvas.xview)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        horizontal.grid(row=1, column=0, sticky='ew')
+        canvas.grid(row=0, column=0, sticky='nsew')
+        canvas.configure(yscrollcommand=scrollbar.set, xscrollcommand=horizontal.set)
         super().__init__(canvas, padding=16)
         self.scroll_canvas = canvas
         content = canvas.create_window((0, 0), window=self, anchor='nw')
-        canvas.bind('<Configure>', lambda event: canvas.itemconfigure(content, width=event.width))
-        self.bind('<Configure>', lambda event: canvas.configure(scrollregion=canvas.bbox('all')))
+        self.content_window = content
+        canvas.bind('<Configure>', lambda event: self.resize_content())
+        self.bind('<Configure>', lambda event: self.resize_content())
         self.root, self.operation = root, operation
         self.events = queue.Queue()
         self.busy = False
@@ -167,8 +182,8 @@ class SetupApp(ttk.Frame):
         self.show_password = tk.BooleanVar(value=False)
         root.title(APP_TITLE)
         window_height = min(950, root.winfo_screenheight() - 90)
-        root.geometry(f'980x{window_height}')
-        root.minsize(900, min(650, window_height))
+        root.geometry(f'{min(980, root.winfo_screenwidth() - 40)}x{window_height}')
+        root.minsize(480, 320)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
         ttk.Label(self, text=APP_TITLE, font=('TkDefaultFont', 20, 'bold')).grid(sticky='w')
@@ -279,6 +294,16 @@ class SetupApp(ttk.Frame):
         root.bind('<Button-4>', self.scroll_window, add='+')
         root.bind('<Button-5>', self.scroll_window, add='+')
         self.poll_id = self.after(100, self.poll)
+        self.zoom = None
+        if zoom_controls or ui_scale != 1.0:
+            self.zoom = UiZoom(self, controls=zoom_controls)
+            self.zoom.apply(ui_scale)
+
+    def resize_content(self):
+        """Expand to the viewport, but scroll instead of clipping wide controls."""
+        self.scroll_canvas.itemconfigure(self.content_window,
+                                         width=max(self.scroll_canvas.winfo_width(), self.winfo_reqwidth()))
+        self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox('all'))
 
     def scroll_window(self, event):
         # Reply text, transfer text and the endpoint table retain their own scroll.
@@ -1182,9 +1207,13 @@ def main():
     parser.add_argument('--host', default='1.2.3.4', help='Initial telescope IP (default: 1.2.3.4)')
     parser.add_argument('--port', type=int, default=2000, help='Initial TCP port (default: 2000)')
     parser.add_argument('--connect', action='store_true', help='Connect and read encoders on startup; no movement')
+    parser.add_argument('--ui-scale', type=scale_argument, default=1.0,
+                        help='Startup UI size, 0.5 to 2.0 (default: 1.0)')
+    parser.add_argument('--zoom-controls', action='store_true',
+                        help='Enable View menu zoom and Fit width controls')
     args = parser.parse_args()
     root = tk.Tk()
-    app = SetupApp(root)
+    app = SetupApp(root, ui_scale=args.ui_scale, zoom_controls=args.zoom_controls)
     app.host.set(args.host)
     app.port.set(str(args.port))
     app.connection_mode.set('direct' if args.host == '1.2.3.4' else 'infrastructure')
