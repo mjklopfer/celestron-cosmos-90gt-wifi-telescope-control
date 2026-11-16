@@ -8,6 +8,8 @@ An optional **View menu** provides zoom in/out, reset to 100%, and Fit width
 for different screen sizes. Enable it with `cosmos90gt --zoom-controls`;
 see [display sizing](#smaller-screens-and-optional-zoom-including-raspberry-pi).
 
+**Raspberry Pi desktop setup:** [Raspbian build, Buster fixes, versions and desktop launcher](docs/RASPBERRY-PI-DESKTOP.md).
+
 [![Python checks](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml/badge.svg)](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml)
 
 Have a **Celestron Cosmos 90GT WiFi telescope** with the original **SkyQLink /
@@ -173,7 +175,7 @@ Check availability with `python -m tkinter`.
 | --- | --- | --- |
 | Windows 11 Pro, build 26100, Python 3.14 | Installation and GUI startup verified; 92 automated tests, lint and package build passed with the zoom update. The View menu and 80% interface were visually checked. | Real telescope connection, motor operation, provisioning, bridge firewall access and endurance. |
 | macOS, Python 3.14 | Existing project hardware testing covers telescope operation and the documented Ethernet + telescope Wi-Fi bridge arrangement. | The new View menu/zoom controls have not yet been separately verified on macOS. |
-| Raspberry Pi OS (Raspbian), desktop GUI | User reported successful application startup after installing the project dependencies, including `psutil`, in the active virtual environment. Pi model and OS version were not recorded. | The new View menu/zoom controls, real telescope connection, motor operation and bridge operation have not yet been separately verified on the Pi. |
+| Raspbian 10 Buster, 32-bit, Raspberry Pi 3 B+, Python 3.12.16 | SSL/Tk-enabled Python build, editable install, default and 80% zoom smoke tests, all four zoom tests, and desktop-entry launch verified. View menu and running X window visually checked. [Environment and setup details](docs/RASPBERRY-PI-DESKTOP.md). | Real telescope connection, motor operation, provisioning, bridge operation and endurance; full regression suite on this Pi. |
 
 The zoom-update checks were performed on November 16, 2026. Platform testing
 does not imply every feature or hardware configuration has been validated.
