@@ -216,7 +216,7 @@ cleanup can take time to finish. Coverage is described in [Diagnostic coverage](
 
 **Time / Time Server Settings…** can test a common or custom server from this computer
 and request that the WiFly module use its IPv4 address. Choose disabled, once at
-startup, or every 2–1440 minutes; Sync now requests an immediate synchronization.
+startup, or every 2–1440 minutes; Sync WiFly from time server now requests an immediate synchronization.
 A recent successful computer test is required before pushing a new server.
 The telescope itself also needs a route to that server over UDP 123; a successful
 computer test does not prove this. Saving to flash is optional and saves ALL
@@ -322,7 +322,7 @@ set and the selected row’s complete reply. The full-response panel explicitly
 refers to the table above. Copying does not include hidden password-entry fields.
 
 **Clock semantics:** Test from this computer queries the selected server; it does
-not set either clock. Sync clock now asks WiFly to synchronize with its configured
+not set either clock. Sync WiFly from time server now asks WiFly to synchronize with its configured
 SNTP server, not the PC clock. The server timestamp includes date and time; the
 RTC is UTC-based Unix seconds. The application does not add a timezone offset.
 WiFly documents Zone=7 as UTC-7 for its displayed clock, not an automatic daylight-
@@ -333,3 +333,45 @@ See [WiFly manual, section 3.11](https://ww1.microchip.com/downloads/en/DeviceDo
 Button naming: a trailing ellipsis (**…**) means another dialog or confirmation
 opens before the action is completed. Immediate actions such as Read current
 values, Disconnect, STOP and Copy to Clipboard have no ellipsis.
+
+
+### Read current WiFly settings and compare clocks
+
+In **Diagnostics > Time / Time Server Settings…**, click **Read current board
+settings and clock**. Disconnect Motor control and turn Control Bridge off first;
+leave telescope power on. This reads settings without writing or requesting sync.
+The scrollable snapshot shows the board's server, mode, zone, reported time,
+uptime, restart/wake counts and RTC/RAW counters, followed by PC local/UTC time,
+WiFly UTC and the same timestamp in the PC's local timezone. Copy to Clipboard
+includes this readback. Refresh explicitly; this is not a continuously ticking clock.
+
+The difference is WiFly minus PC time, calculated from RTC Unix seconds in UTC.
+No zone correction is applied twice. An unset clock, missing date or invalid RTC
+gets an explanatory message instead of an invented date. Differences exceeding
+24 hours are flagged. This is an approximate comparison, including network delay
+and one-second clock resolution; it does not establish that the PC clock is correct.
+
+**Sync WiFly from time server now…** asks the module to fetch its configured
+server. **Set WiFly clock from this computer…** is visibly disabled pending
+verification of the custom firmware's clock-write command. PC clock copying is
+not implemented; neither existing action changes the computer clock.
+
+Uptime observations from diagnostics and this dialog are compared within the
+current app session for the same adapter MAC. A falling uptime or changed restart
+count clears active local references and warns in Motor control and the log;
+time-dialog readbacks also show the result. History remains inactive. This is
+possible adapter-reset evidence, not proof of motor-controller power loss.
+Rollover cannot yet be distinguished reliably on this firmware. No additional
+WiFly polling interrupts motor traffic; no warning can occur without a new sample.
+
+### Planned SkySafari time/location investigation
+
+The vendor says time/location are always sent with Celestron Wi-Fi connections,
+but this does not identify a WiFly clock-write command. Capture a controlled
+connect through Control Bridge and compare fresh WiFly reads before and after.
+Bridge logs already retain valid AUX frames in both directions, with source,
+destination and command bytes available in the raw packet. Non-AUX traffic is
+not retained as a complete byte capture; absence from these logs is not proof
+that nothing was sent. Distinguish requests, matching replies and persistent
+readback. Keep other controllers disconnected and do not align or slew during
+this observation. Full sanitized transport capture remains an investigation task.

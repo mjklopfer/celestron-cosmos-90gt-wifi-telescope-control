@@ -39,12 +39,13 @@ def clock_summary(replies):
     clock_lines = [line.strip() for line in text.splitlines()
                    if re.match(r'^Time[ =:]', line) and 'NOT SET' not in line]
     fields['Reported clock text'] = '; '.join(clock_lines) or 'Not reported'
-    if clock_lines:
+    if clock_lines and fields['Status'] != 'Unset':
         fields['Status'] = 'Clock text reported; validity unverified'
     for label, key in (('Uptime', 'UpTime'), ('RTC counter', 'RTC'), ('RAW counter (hex)', 'RAW'),
                        ('Restarts', 'Restarts'), ('Wake count', 'Wake'), ('Time sync enable', 'TimeEna'),
                        ('Time server', 'TIMEADR'), ('Zone setting (raw)', 'Zone')):
-        found = re.findall(r'^' + key + r'=(.*)$', text, re.M)
+        aliases = {'TimeEna': '(?:TimeEna|ENA)', 'TIMEADR': '(?:TIMEADR|ADDR)', 'Zone': 'ZONE'}.get(key, key)
+        found = re.findall(r'^\s*' + aliases + r'=(.*)$', text, re.M | re.I)
         fields[label] = found[-1].strip() if found else 'Not reported'
     fields['Zone interpretation'] = ('UTC-07:00 per WiFly manual; not a geographic site or verified DST rule'
                                      if fields['Zone setting (raw)'] == '7' else 'Not reported')

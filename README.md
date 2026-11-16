@@ -545,7 +545,7 @@ Diagnostics offers a time-server dialog with Cloudflare, Google and a numeric
 server address, plus custom input. Test performs an SNTP query from this computer;
 it does not prove the WiFly module can reach that server. Push requires a recent
 successful test, resolves an IPv4 address, and selects disabled, once at startup,
-or every 2-1440 minutes. Sync now requests the configured server. Saving to flash
+or every 2-1440 minutes. Sync WiFly from time server now requests the configured server. Saving to flash
 is optional and saves ALL current WiFly RAM settings. The telescope needs network
 access to UDP 123. Timezone is displayed read-only: a supported setter for this
 custom firmware has not been established. These controls affect the WiFly clock,
@@ -588,3 +588,13 @@ Calibration profiles use the adapter MAC; an IP change requires a matching diagn
 read before updating the saved address. See the [development roadmap](docs/DEVELOPMENT-ROADMAP.md)
 for Raspberry Pi validation, the deferred companion API and experimental tracking.
 Current automated checks do not establish untested hardware-write behavior.
+
+
+Recent clock diagnostics: **Time / Time Server Settings…** now offers read-only
+board settings/clock refresh and a UTC-based comparison with the computer clock,
+including unset/missing-date and greater-than-one-day messages. PC-to-WiFly clock
+copying remains disabled pending protocol verification. Session-scoped uptime
+checks warn on possible adapter resets and clear active local references; they
+cannot prove motor resets or distinguish undocumented uptime rollover. See the
+[user guide](docs/USER-GUIDE.md) for limits and the
+[future architecture plan](docs/ARCHITECTURE-PLAN.md) for ESP32 GPS/compass/RTC work.

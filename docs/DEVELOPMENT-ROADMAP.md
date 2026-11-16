@@ -29,7 +29,7 @@ visible in the documentation; successful UI tests must not erase them.
    currently they reject, rather than silently changing a requested coordinate.
 4. Add hardware-baseline restore only after a verified reset-state snapshot and
    device identity match. Never assume zero is a factory default.
-5. Consider uptime-based reboot evidence as an additional warning. Do not rely on
+5. Validate the session-scoped uptime discontinuity warning on hardware. Do not rely on
    it to keep old alignment valid; reconnect/feedback loss already clears local
    offsets. A dropped connection does not prove the mount rebooted.
 6. Review small-screen settings-dialog scrolling and accessibility with real Pi
@@ -73,11 +73,12 @@ The architecture plan also records a deferred ESP32 GPS/compass/RTC accessory
 emulator alongside the Wi-Fi bridge. Client consumption of these replies and
 COSMOS compatibility require verification; no shared alignment is promised.
 
-## Planned: uptime evidence for potentially stale references
+## Implemented baseline: uptime evidence for potentially stale references
 
-Not implemented as of 2026-11-16. Diagnostics displays uptime, restart/wake counts
-and RTC/RAW values; it does not retain and compare them to detect resets. Existing
-disconnect/lost-feedback handling already clears active local offsets.
+Implemented 2026-11-16: the GUI retains session-scoped samples by adapter MAC from
+diagnostics and time-menu reads. Falling uptime or a changed restart count warns
+and clears active local offsets. Real restart/rollover validation remains pending.
+Disconnect/lost-feedback handling also clears active local offsets.
 
 - Compare samples for the same verified adapter identity, recording host monotonic
   elapsed time and sample freshness. Collect at safe diagnostic/connect boundaries;
@@ -104,3 +105,7 @@ disconnect/lost-feedback handling already clears active local offsets.
 Reference: [Microchip WiFly manual, section 3.11](https://ww1.microchip.com/downloads/en/DeviceDoc/50002230B.pdf).
 This manual is newer than the installed customized firmware; verify behavior
 on hardware before claiming reliable reboot detection.
+
+PC-to-WiFly clock copying remains unimplemented until the 2.40-CEL write command
+is verified. Investigate SkySafari traffic; its documented time/site transfer
+does not identify which device stores those values.

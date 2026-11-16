@@ -19,7 +19,7 @@ from motor_settings import motor_settings, parse_degrees, parse_backlash
 from motor_control import MotorController, AXES, relative_counts, relative_angle
 from discover_modules import scan_modules
 from diagnostics import diagnose
-from time_settings import configure_time, test_time_server, COMMON_TIME_SERVERS
+from time_settings import configure_time, test_time_server, COMMON_TIME_SERVERS, UptimeEvidence
 from recover_link import recover
 from bridge_mode import Bridge
 from network_info import network_interfaces, open_directory
@@ -757,18 +757,19 @@ class SetupApp(ttk.Frame):
         self.motion_status.set(f'{AXES[axis]} reference set locally. No movement or encoder write sent.')
         self.append(f'{AXES[axis]} local reference: encoder {encoder} = {degrees:.5f} degrees')
 
-    def start_time_settings(self, sync_now=False):
+    def start_time_settings(self, sync_now=False, read_only=False):
         if self.busy or self.motor is not None or self.bridge is not None:
             self.status.set('Time settings are unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running. Leave the telescope powered on.')
+            self.time_status.set(self.status.get())
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
             mode = self.time_mode.get()
-            enable = None if sync_now else (0 if mode == 'Disabled' else 1 if mode == 'At startup' else int(self.time_enable.get()))
-            if mode == 'Every N minutes' and not sync_now and not 2 <= enable <= 1440:
+            enable = None if sync_now or read_only else (0 if mode == 'Disabled' else 1 if mode == 'At startup' else int(self.time_enable.get()))
+            if mode == 'Every N minutes' and not sync_now and not read_only and not 2 <= enable <= 1440:
                 raise ValueError('Use an interval between 2 and 1440 minutes')
             server_ip = None
-            if not sync_now and enable != 0:
+            if not sync_now and not read_only and enable != 0:
                 tested = self.tested_time_server
                 if not tested or tested['host'] != self.time_server.get().strip() or time.monotonic() - tested['tested_at'] > 300:
                     raise ValueError('Test the selected server successfully within five minutes before pushing it')
@@ -777,14 +778,14 @@ class SetupApp(ttk.Frame):
             self.status.set(str(error))
             self.time_status.set(str(error))
             return
-        persist = self.time_persist.get() and not sync_now
+        persist = self.time_persist.get() and not sync_now and not read_only
         message = ('Request WiFly time from its configured SNTP server now? Internet/UDP 123 access is required.'
                    if sync_now else f'Write WiFly time enable={enable}? 0=off, 1=startup, larger values=minutes. This does not align the telescope.')
         if server_ip:
             message += f'\nServer: {self.time_server.get()} → {server_ip}:123'
         if persist:
             message += '\nSave writes ALL current WiFly RAM settings to flash, not just time settings.'
-        if not messagebox.askyesno('Change WiFly clock', message, parent=self.winfo_toplevel()):
+        if not read_only and not messagebox.askyesno('Change WiFly clock', message, parent=self.winfo_toplevel()):
             return
         self.set_busy(True)
         def worker():
@@ -838,10 +839,13 @@ class SetupApp(ttk.Frame):
                   wraplength=800).grid(row=4, columnspan=2, sticky='w')
 
         self.time_window = None
+        self.uptime_evidence = UptimeEvidence()
+        self.time_readback_widget = None
         self.time_enable = tk.StringVar(value='60')
         self.time_mode = tk.StringVar(value='At startup')
         self.time_server = tk.StringVar(value=COMMON_TIME_SERVERS[0])
         self.time_zone = tk.StringVar(value='Not read')
+        self.time_readback = tk.StringVar(value='No board values read in this session. Click Read current board settings and clock.')
         self.time_status = tk.StringVar(value='Test a server from this computer before pushing a new server address.')
         self.time_persist = tk.BooleanVar(value=False)
         self.tested_time_server = None
@@ -866,13 +870,36 @@ class SetupApp(ttk.Frame):
         ttk.Spinbox(frame, from_=2, to=1440, textvariable=self.time_enable, width=10).grid(row=3, column=1, sticky='w')
         ttk.Label(frame, text='WiFly timezone number (readback)').grid(row=4, column=0, sticky='w')
         ttk.Entry(frame, textvariable=self.time_zone, state='readonly', width=15).grid(row=4, column=1, sticky='w')
-        ttk.Label(frame, text='7 = UTC−07:00 in WiFly documentation. Setter unverified. Run diagnostics to refresh.', wraplength=500).grid(row=5, columnspan=2, sticky='w', pady=6)
+        ttk.Label(frame, text='7 = UTC−07:00 in WiFly documentation. Setter unverified. Read current board settings below to refresh.', wraplength=500).grid(row=5, columnspan=2, sticky='w', pady=6)
         ttk.Checkbutton(frame, text='Save ALL current WiFly settings to flash', variable=self.time_persist).grid(row=6, columnspan=2, sticky='w')
         ttk.Button(frame, text='Push server and sync mode…', command=self.start_time_settings).grid(row=7, column=0, pady=8)
-        ttk.Button(frame, text='Sync clock now…', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
+        ttk.Button(frame, text='Sync WiFly from time server now…', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
         ttk.Label(frame, textvariable=self.time_status, wraplength=500).grid(row=8, columnspan=2, sticky='w')
-        self.copy_button(frame, lambda: 'Time server: ' + self.time_server.get() + '\nTimezone readback: ' + self.time_zone.get() + '\n' + self.time_status.get()).grid(row=10, columnspan=2, sticky='w')
+        self.copy_button(frame, lambda: self.time_readback.get() + '\n' + self.time_status.get()).grid(row=10, columnspan=2, sticky='w')
         ttk.Label(frame, text='The telescope needs its own route to UDP 123. A successful PC test does not prove telescope access. Names are resolved and pushed as IPv4 addresses.', wraplength=500).grid(row=9, columnspan=2, sticky='w', pady=8)
+
+        ttk.Button(frame, text='Read current board settings and clock', command=lambda: self.start_time_settings(read_only=True)).grid(row=11, columnspan=2, sticky='w', pady=6)
+        self.time_readback_widget = ScrolledText(frame, height=10, width=82, wrap='word', state='disabled')
+        self.time_readback_widget.grid(row=12, columnspan=2, sticky='ew')
+        self.refresh_time_readback()
+        ttk.Button(frame, text='Set WiFly clock from this computer…', state='disabled').grid(row=13, columnspan=2, sticky='w', pady=6)
+        ttk.Label(frame, text='PC-to-WiFly sync is not available yet: the clock-write command for 2.40-CEL still needs verification. Time-server sync queries the configured server; neither action changes the PC clock.', wraplength=650).grid(row=14, columnspan=2, sticky='w')
+
+    def refresh_time_readback(self):
+        widget = self.time_readback_widget
+        if widget is not None and widget.winfo_exists():
+            widget.configure(state='normal')
+            widget.delete('1.0', 'end')
+            widget.insert('1.0', self.time_readback.get())
+            widget.configure(state='disabled')
+
+    def check_uptime_evidence(self, identity, clock):
+        result = self.uptime_evidence.observe(identity, clock)
+        if result['warning']:
+            self.clear_local_references()
+            self.motion_status.set(result['message'])
+            self.append(result['message'])
+        return result['message']
 
     def test_selected_time_server(self):
         host = self.time_server.get().strip()
@@ -1554,6 +1581,9 @@ class SetupApp(ttk.Frame):
                         except (ValueError, OSError, KeyError) as error:
                             self.append('Calibration identity: ' + str(error))
                     self.time_zone.set(report.get('wifly_clock', {}).get('Zone setting (raw)', 'Not reported'))
+                    identity = next((row.get('reply', '') for row in report.get('rows', []) if row.get('endpoint') == 'get mac'), '')
+                    evidence = self.check_uptime_evidence(identity, report.get('wifly_clock', {}))
+                    self.append('Reset check: ' + evidence)
                     text = ('Wi-Fi: ' + ('VERIFIED' if report.get('wifi_verified') else 'NOT VERIFIED') +
                             ' | Motor firmware: ' + ('VERIFIED' if report.get('motor_firmware_verified') else 'NOT VERIFIED') +
                             ' | Both motor positions: ' + ('VERIFIED' if report.get('motor_positions_verified') else 'NOT VERIFIED'))
@@ -1614,6 +1644,11 @@ class SetupApp(ttk.Frame):
                     self.append(text)
                     self.time_status.set(text)
                     self.time_zone.set(report.get('clock', {}).get('Zone setting (raw)', 'Not reported'))
+                    self.time_readback.set('Last board read (snapshot):\n' + '\n'.join(f'{key}: {value}' for key, value in {**report.get('clock', {}), **report.get('clock_comparison', {})}.items()) if report.get('clock') else 'Current read failed; no fresh board values available. ' + text)
+                    if report.get('clock'):
+                        evidence = self.check_uptime_evidence(report.get('adapter_identity', ''), report['clock'])
+                        self.time_readback.set(self.time_readback.get() + '\nReset check: ' + evidence)
+                    self.refresh_time_readback()
                     for field, value in report.get('clock', {}).items():
                         self.events.put({'event': 'diagnostic_row', 'device': 'WiFly clock', 'endpoint': field, 'status': 'READBACK', 'reply': str(value)})
                 elif kind == 'scan_done':

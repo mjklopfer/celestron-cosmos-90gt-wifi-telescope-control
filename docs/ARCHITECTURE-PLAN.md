@@ -77,3 +77,23 @@ capabilities that can be enabled independently.
 Protocol basis: [NexStar AUX observations, GPS/compass chapter](https://paquettefamily.ca/nexstar/NexStar_AUX_Commands_10.pdf).
 This is a reverse-engineered research document, not an official Celestron
 compatibility guarantee.
+
+
+Candidate GNSS hardware: SEQURE M10-25Q (GNSS serial NMEA/UBX, QMC5883L
+magnetometer over I2C). Manufacturer lists 5 V supply; verify UART logic and I2C
+pull-up voltages on the actual board before connecting ESP32 GPIO. This is not a
+complete tilt-sensing IMU; add an accelerometer/IMU for tilt compensation if the
+sensor tilts with the telescope. Keep it away from motor magnetic fields.
+[Manufacturer manual](https://flymod.net/download/sequre_m10_12_m10_18_m10_25q_gps_manual).
+
+
+Candidate holdover clock: DS3231 temperature-compensated, battery-backed I2C RTC,
+operated with ESP32-compatible 3.3 V signaling. Keep calendar registers in UTC;
+check oscillator-stop/validity status before trusting retained time, discipline
+from a valid GNSS time source, and expose age/source of the last synchronization.
+Choose breakout pull-ups and battery circuitry appropriate to the supply and
+battery; a DS3231 alone does not implement Celestron AUX.
+[Analog Devices datasheet](https://www.analog.com/media/en/technical-documentation/data-sheets/DS3231.pdf).
+
+See the [breakout-board wiring concept](ESP32-ACCESSORY-WIRING.md). Exact board
+selection, connector pinout and electrical bench validation remain pending.

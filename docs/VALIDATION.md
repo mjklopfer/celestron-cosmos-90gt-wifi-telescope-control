@@ -60,3 +60,18 @@ virtual environments, legacy experiment scripts and private handoff archives.
 Runtime addresses/interfaces are discovered or entered. Tests use synthetic device
 identities and network fixtures. Fixed 1.2.3.4 is the adapter protocol's normal direct
 address; cosmossetup is an explicitly documented simulator-only setup password.
+
+
+## 2026-11-16 clock readback and uptime-warning update
+
+- 136 unit/GUI tests passed, including clock UTC comparison, missing/unset date,
+  day-scale differences, counter discontinuities, identity separation, and a
+  read-only GUI request that bypasses write confirmation and editable settings.
+- Ruff and diff whitespace checks passed; Tk smoke test passed; wheel and sdist
+  built with `python -m build --no-isolation`.
+- Live read-only time operation completed with command-mode exit confirmed,
+  `applied=False`, `sync_requested=False`, `movement_sent=False`. At the sample,
+  reported RTC was approximately 1.6 seconds ahead of the local PC clock in UTC.
+- Uptime warning logic is automated-test verified; no physical reset or long-term
+  counter rollover was performed. PC-to-WiFly clock copying remains disabled.
+- ESP32 accessory wiring is a design concept, not an electrically tested build.

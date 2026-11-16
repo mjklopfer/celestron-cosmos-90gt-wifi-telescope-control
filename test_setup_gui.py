@@ -7,6 +7,25 @@ from skyqlink_setup import SetupApp
 
 
 class GuiTests(unittest.TestCase):
+    def test_time_dialog_readback_and_read_only_request(self):
+        from unittest.mock import patch
+        self.app.open_time_settings()
+        self.app.time_mode.set('Every N minutes')
+        self.app.time_enable.set('invalid unused edit')
+        with patch('skyqlink_setup.configure_time', return_value={'clock': {'Uptime': '12 s'}}) as read, patch('skyqlink_setup.messagebox.askyesno') as confirm:
+            self.app.start_time_settings(read_only=True)
+            deadline = time.monotonic() + 2
+            while not read.called and time.monotonic() < deadline:
+                self.root.update()
+                time.sleep(.01)
+            self.assertTrue(read.called)
+            self.assertIsNone(read.call_args.kwargs['enable'])
+            self.assertFalse(read.call_args.kwargs['sync_now'])
+            self.assertFalse(read.call_args.kwargs['persist'])
+            self.assertIsNone(read.call_args.kwargs['server_ip'])
+            confirm.assert_not_called()
+        self.assertTrue(self.app.time_readback_widget.winfo_exists())
+
     def setUp(self):
         self.calls = []
         self.motor_calls = []

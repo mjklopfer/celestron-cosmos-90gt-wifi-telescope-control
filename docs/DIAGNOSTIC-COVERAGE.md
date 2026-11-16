@@ -69,3 +69,26 @@ proof that no internal storage exists.
 Coverage is exhaustive only with respect to the explicitly listed, documented safe
 query catalog. It cannot establish every private endpoint or every firmware variant.
 Credential fields are redacted; private live captures are not committed.
+
+
+## Follow-up read-only pass, 2026-11-16
+
+The existing deep catalog completed without an operation error; WiFly identity
+and both motor positions were verified. Optional GPS/compass and RTC queries
+again had no matching replies. No newly verified endpoint was added. A missing
+reply cannot establish physical absence or prove that private commands do not
+exist. The wider documentation audit is not a claim of exhaustive firmware coverage.
+
+Unlike the earlier unset-clock snapshot, this pass reported a calendar RTC value,
+startup synchronization enabled, and a configured time server. A subsequent
+read-only time-dialog backend check reported WiFly approximately 1.6 seconds ahead
+of the computer using UTC Unix seconds, with no setting write, sync request or
+motion command. This verifies reading/comparison, not the mechanism that set the
+clock. The device's displayed zone and the PC's local zone differed; UTC comparison
+avoids treating that display difference as a clock error.
+
+SkySafari's [vendor setup guide](https://support.simulationcurriculum.com/hc/en-us/articles/115015943188-Scope-Setup-Help)
+says time/location are always sent for Celestron Wi-Fi. Destination, packet format,
+COSMOS behavior and whether this modifies the RN-171 clock remain to be observed.
+Existing bridge logs capture checksummed AUX frames in both directions, not all
+non-AUX bytes. Do not infer absence of a transfer from absent AUX records alone.
