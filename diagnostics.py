@@ -146,12 +146,13 @@ def decode_time_site(command, data):
     return list(data), ':'.join(f'{v:02d}' for v in data) + ' UTC (reported; not independently verified)'
 
 
-def read_time_site(probe, row, deep=False):
+def read_time_site(probe, row, deep=False, check_cancel=lambda: None):
     """Bounded optional-node reads; missing devices do not invalidate motor results."""
     results = {}
     for address, name, queries in TIME_SITE_QUERIES:
         fields = results[f'0x{address:02X}'] = {}
         for command, label in queries:
+            check_cancel()
             if not deep and command in (0x08, 0x55):
                 continue
             endpoint = f'AUX 0x{address:02X} / {label} 0x{command:02X}'
@@ -176,8 +177,12 @@ def read_time_site(probe, row, deep=False):
     return results
 
 
+class DiagnosticAborted(Exception):
+    """Cooperative cancellation; transport cleanup must still run."""
+
+
 @exclusive_endpoint
-def diagnose(host, port, callback=lambda event: None, deep=False):
+def diagnose(host, port, callback=lambda event: None, deep=False, cancel=None):
     """Read WiFly settings and both motor controllers, reporting replies and failures separately."""
     host, port = validate_endpoint(host, port)
     recorder = LiveRecorder(callback, ())
@@ -200,7 +205,12 @@ def diagnose(host, port, callback=lambda event: None, deep=False):
         report['rows'].append(item)
         recorder.record('diagnostic_row', **item)
 
+    def check_cancel():
+        if cancel is not None and cancel.is_set():
+            raise DiagnosticAborted()
+
     try:
+        check_cancel()
         check_direct_route(host)
         session = None
         try:
@@ -208,8 +218,10 @@ def diagnose(host, port, callback=lambda event: None, deep=False):
                 sock.settimeout(.2)
                 session = Session(sock, recorder)
                 try:
+                    check_cancel()
                     session.enter()
                     for command in (WIFI_QUERIES if deep else BASE_WIFI_QUERIES):
+                        check_cancel()
                         try:
                             reply = session.command(command)
                             row('Wi-Fi adapter', command, 'REPLY', reply)
@@ -222,18 +234,22 @@ def diagnose(host, port, callback=lambda event: None, deep=False):
                                 str(error) + '\n' + getattr(session, 'last_reply', ''))
                 finally:
                     report['command_mode_exit_confirmed'] = session.exit()
+        except DiagnosticAborted:
+            raise
         except Exception as error:
             row('Wi-Fi adapter', f'{host}:{port} / command mode', 'ERROR', str(error))
         if session and session.entered and not report.get('command_mode_exit_confirmed'):
             raise RuntimeError('Command-mode exit unconfirmed; AUX queries skipped')
 
         # A new connection restores the transparent AUX stream after command mode.
+        check_cancel()
         probe = AuxProbe(host, port, recorder)
         positions = {}
         motor_versions = {}
         try:
             probe.receive(.6)
             for axis, name in NODES.items():
+                check_cancel()
                 reply = probe.query(axis, 0xfe, attempts=2 if axis in AXES else 1)
                 endpoint = f'AUX 0x{axis:02X} / GET_VER 0xFE'
                 if reply is not None and len(reply) in (2, 4):
@@ -245,6 +261,7 @@ def diagnose(host, port, callback=lambda event: None, deep=False):
                     continue
                 # Two samples distinguish a valid stationary position from silence.
                 for sample in range(2):
+                    check_cancel()
                     reply = probe.query(axis, 0x01)
                     endpoint = f'AUX 0x{axis:02X} / GET_POSITION 0x01 / sample {sample + 1}'
                     if reply is not None and len(reply) == 3:
@@ -258,6 +275,7 @@ def diagnose(host, port, callback=lambda event: None, deep=False):
                         positions.pop(axis, None)
                         row(name, endpoint, 'NO VALID REPLY', 'Timed out' if reply is None else 'Unknown interpretation; raw ' + reply.hex())
                 for command, label in motor_queries(axis, deep):
+                    check_cancel()
                     endpoint = f'AUX 0x{axis:02X} / {label} 0x{command:02X}'
                     reply = probe.query(axis, command, attempts=1)
                     if reply is None:
@@ -271,9 +289,12 @@ def diagnose(host, port, callback=lambda event: None, deep=False):
                             row(name, endpoint, 'REPLY', f'{value}; raw {reply.hex()}')
             report['motor_positions_verified'] = len(positions) == len(AXES)
             report['motor_firmware_verified'] = all(a in motor_versions for a in AXES)
-            report['time_site'] = read_time_site(probe, row, deep)
+            report['time_site'] = read_time_site(probe, row, deep, check_cancel)
         finally:
             probe.close()
+    except DiagnosticAborted:
+        report['aborted'] = True
+        row('Session', 'Abort diagnostics', 'ABORTED', 'Cancelled by user; completed results retained')
     except Exception as error:
         report['error'] = sanitize(str(error))
         row('Connection', f'{host}:{port}', 'ERROR', report['error'])

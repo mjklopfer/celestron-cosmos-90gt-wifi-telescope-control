@@ -40,7 +40,7 @@ Validation date: November 16, 2026. Application baseline: `d0b92c9`.
   narrow-window scrolling/Fit width, scaled switch hit testing, and size reset
   with preservation of entered settings.
 - The desktop entry was launched through GLib's `Gio.DesktopAppInfo` API.
-  An X window titled **Celestron Cosmos 90GT Telescope WiFi Control** appeared;
+  An X window titled **Celestron Cosmos 90GT Telescope Wi-Fi Control** appeared;
   its 80% interface and View menu were visually checked. It remained running,
   disconnected, without new startup errors in the launcher log.
 - The desktop file passed `desktop-file-validate` after using a single main

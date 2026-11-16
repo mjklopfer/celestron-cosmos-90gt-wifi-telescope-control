@@ -84,6 +84,54 @@ class MotorServiceTests(unittest.TestCase):
                 return event
         self.fail('No event ' + kind)
 
+    def test_idle_delayed_reply_recovers_without_disconnect(self):
+        original = self.adapter.sendall
+        delayed = False
+        timer = None
+        retry_states = []
+        original_emit = self.controller.emit
+        def capture_emit(kind, **fields):
+            if kind == 'motor_feedback_retry':
+                retry_states.append(self.controller.connected.is_set())
+            original_emit(kind, **fields)
+        self.controller.emit = capture_emit
+        def delayed_send(frame):
+            nonlocal delayed, timer
+            if frame[3:5] == b'\x11\x01' and not delayed:
+                delayed = True
+                timer = threading.Timer(1.4, original, args=(frame,))
+                timer.start()
+            else:
+                original(frame)
+        self.adapter.sendall = delayed_send
+        try:
+            self.wait_event('motor_feedback_retry', timeout=4)
+            self.assertEqual(retry_states, [False])
+            self.wait_event('motor_feedback_restored', timeout=5)
+            self.assertTrue(self.controller.connected.is_set())
+            self.assertFalse(self.controller.report['errors'])
+            self.assertFalse(any(f[4] in (0x24, 0x25) and f[5] for _, f in self.adapter.sent))
+        finally:
+            if timer:
+                timer.join(2)
+
+    def test_persistent_idle_loss_disconnects_with_no_nonzero_motion(self):
+        original = self.adapter.sendall
+        self.adapter.sendall = lambda frame: None if frame[4] == 1 else original(frame)
+        self.wait_event('motor_feedback_retry', timeout=5)
+        self.wait_event('motor_disconnected', timeout=15)
+        self.assertTrue(any('Motor feedback timeout' in e for e in self.controller.report['errors']))
+        self.assertFalse(self.controller.connected.is_set())
+        self.assertFalse(any(f[4] in (0x24, 0x25) and f[5] for _, f in self.adapter.sent))
+
+    def test_idle_release_is_explicit_and_not_feedback_failure(self):
+        self.controller.idle_release = 10
+        self.controller.last_control_activity = time.monotonic() - 11
+        self.wait_event('motor_idle_release')
+        self.wait_event('motor_disconnected')
+        self.assertFalse(self.controller.report['errors'])
+        self.assertEqual(self.controller.report['idle_release_seconds'], 10)
+
     def test_read_values_and_timed_negative_jog_stop(self):
         self.controller.jog(0x10, -1, 6, .1)
         self.wait_event('motor_jog_finished')

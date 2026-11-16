@@ -1,6 +1,7 @@
 """Verify diagnostic classification and read-only query coverage without hardware."""
 from pathlib import Path
 import unittest
+import threading
 from unittest.mock import MagicMock, patch
 import diagnostics
 
@@ -47,6 +48,27 @@ class Probe:
 
 
 class DiagnosticTests(unittest.TestCase):
+    def test_abort_after_first_wifi_reply_exits_and_preserves_results(self):
+        cancel = threading.Event()
+        session = MagicMock()
+        session.command.return_value = 'WiFly RN-171 2.40-CEL'
+        session.exit.return_value = True
+        def callback(event):
+            if event['event'] == 'diagnostic_row' and event['device'] == 'Wi-Fi adapter':
+                cancel.set()
+        with patch.object(diagnostics, 'LiveRecorder', Recorder), \
+             patch.object(diagnostics, 'check_direct_route'), \
+             patch.object(diagnostics.socket, 'create_connection', return_value=MagicMock()), \
+             patch.object(diagnostics, 'Session', return_value=session), \
+             patch.object(diagnostics, 'AuxProbe') as probe:
+            report = diagnostics.diagnose('192.0.2.231', 2000, callback, cancel=cancel)
+        self.assertTrue(report['aborted'])
+        self.assertNotIn('error', report)
+        self.assertEqual(session.command.call_count, 1)
+        session.exit.assert_called_once()
+        probe.assert_not_called()
+        self.assertTrue(any(row['status'] == 'NOT QUERIED' for row in report['rows']))
+
     def test_time_site_decode_boundaries(self):
         self.assertEqual(diagnostics.decode_time_site(1, bytes(3))[0], 0)
         self.assertEqual(diagnostics.decode_time_site(2, bytes.fromhex('c00000'))[0], -90)

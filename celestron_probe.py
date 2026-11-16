@@ -53,8 +53,9 @@ class Recorder:
         """Save the final operation report and close its event log."""
         (self.directory / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         self.events.close()
-        print(json.dumps(report, indent=2))
-        print('Saved:', self.directory)
+        if os.environ.get('COSMOS90GT_QUIET_REPORTS') != '1':
+            print(json.dumps(report, indent=2))
+            print('Saved:', self.directory)
 
 
 def packet(destination, command):

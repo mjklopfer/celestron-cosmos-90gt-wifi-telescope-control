@@ -1,4 +1,4 @@
-# Celestron Cosmos 90GT Telescope WiFi Control
+# Celestron Cosmos 90GT Telescope Wi-Fi Control
 
 **Legacy Celestron SkyQLink Wi-Fi setup, telescope control, and a SkySafari / SkyPortal bridge.**
 
@@ -10,9 +10,21 @@ see [display sizing](#smaller-screens-and-optional-zoom-including-raspberry-pi).
 
 **Raspberry Pi desktop setup:** [Raspbian build, Buster fixes, versions and desktop launcher](docs/RASPBERRY-PI-DESKTOP.md).
 
+**User guide:** [Setup, controls, keyboard shortcuts, diagnostics, bridge, logs and configuration](docs/USER-GUIDE.md).
+Motor control now includes an explicit **Keyboard control** OFF/ON switch,
+consolidated **Controller Angle / Backlash Settings**, measured speed readouts,
+and intentional idle release. Diagnostics can be aborted while retaining results.
+The standalone `calibrate_telescope.py` records current settings and, with explicit
+motion options, measures timed jogs into a telescope configuration; see the
+[configuration instructions](docs/USER-GUIDE.md#generate-the-telescope-configuration).
+Optional [MCP automation](docs/MCP-CONTROL.md) and an experimental
+[tracking design](docs/TRACKING-DESIGN.md) are documented separately; native
+streaming is not yet hardware-verified. [Future backend architecture](docs/ARCHITECTURE-PLAN.md)
+records planned legacy/modern Celestron Wi-Fi support.
+
 [![Python checks](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml/badge.svg)](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml)
 
-Have a **Celestron Cosmos 90GT WiFi telescope** with the original **SkyQLink /
+Have a **Celestron Cosmos 90GT Wi-Fi telescope** with the original **SkyQLink /
 WiFly RN-171** module? This Python desktop application lets you configure its
 router Wi-Fi, drive the motors, inspect encoder positions, and bridge compatible
 astronomy apps to the original adapter. SkySafari is a tested example client.
@@ -44,7 +56,7 @@ behavior to control applications while communicating with the original module.
 
 ## Supported telescope and Wi-Fi hardware
 
-This project targets the **Celestron COSMOS 90GT WiFi telescope (model 22094)**
+This project targets the **Celestron COSMOS 90GT Wi-Fi telescope (model 22094)**
 and its **first-generation / Gen 1 / Version 1 Celestron SkyQLink Wi-Fi module**.
 The original radio is the **Roving Networks WiFly RN-171 (RN171)**, with
 Celestron-specific **2.40-CEL** firmware. Related names and functions used in
@@ -482,7 +494,7 @@ must be considered alongside the reported validity flags.
 This is a documented query catalog, not an exhaustive command/address scan.
 Command IDs are destination-specific: GPS 0x04 reads the year, while motor 0x04
 writes position. Diagnostic whitelists block motion, position, RTC, and firmware
-writes. Nothing sets time, synchronizes SNTP, or changes observing location.
+writes. Diagnostic scans do not set time, synchronize SNTP, or change observing location. The separate explicit settings dialogs are described below.
 
 Protocol reference: [NexStar AUX command observations](https://paquettefamily.ca/nexstar/NexStar_AUX_Commands_10.pdf).
 Software decoding and read-only guards are tested; live COSMOS GPS/RTC support
@@ -491,3 +503,88 @@ remains unverified. No optional hardware capability is inferred from a catalog r
 See [diagnostic coverage and live results](docs/DIAGNOSTIC-COVERAGE.md) for the
 unchecked, confirmation-guarded **Deep diagnostics** mode, supported readouts,
 clock/site provenance, unknown response encodings, and explicit exclusions.
+
+
+## Motor controls and settings update (2026-11-16)
+
+Tabs are Motor control, Bridge, Diagnostics, then Wi-Fi provisioning.
+Motor control releases its connection after **30 seconds without movement commands
+by default**. Select 10, 20, 30 seconds or Off for the next connection. Telemetry
+polling does not renew this idle period. Reconnect explicitly to continue. An
+in-flight read and Stop cleanup can extend actual closure beyond the nominal
+idle deadline. This is application sharing policy, not a verified WiFly lease.
+
+Set **Keyboard control** to ON (OFF at startup), then use plain keys while
+the Motor tab is selected and focus is outside an input. Ctrl/Alt are not required:
+**I** up, **J** left, **K** stop, **L** right, **M** down; **O** open/connect,
+**P** pause/disconnect. Releasing a held direction stops it; Escape stops both axes.
+
+Both local references and explicit controller angle writes validate decimal degrees
+when Set is pressed. **Azimuth: 0 to 360, no negative values** (100.52 or 060.84).
+**Elevation: -90 to +90** (-60.31 or 060.84). Leading zeros and surrounding spaces
+are accepted; valid entries normalize. Up to five decimal places are accepted.
+Commas, units, scientific notation, nonfinite values, excess precision and
+out-of-range values produce an error and send no setting. These are coordinate
+input ranges, not verified mechanical travel limits. Azimuth 360 is equivalent
+to 0. Encoder writes round to the nearest 24-bit count (~0.00002146 degrees).
+Negative elevation uses the motor's circular encoder representation; the settings
+editor converts readback above 180 degrees to a signed value for display.
+
+Local references change only this application's display and clear on disconnect;
+they do not align the telescope or write its encoder. The consolidated **Controller
+Angle / Backlash Settings** dialog contains local reference and hardware modes,
+reads current values, and offers deliberate
+encoder-reference and positive/negative backlash (integer 0-99) writes. Disconnect
+manual control and the bridge first. Writes require stationary encoder checks,
+confirmation, acknowledgement and matching readback. A failed readback can mean a
+setting changed without verification; read again before retrying. Encoder changes
+invalidate previous alignment assumptions. Live reads of both motors succeeded;
+**actual encoder and backlash writes have not been tested on the telescope**.
+
+Diagnostics offers a time-server dialog with Cloudflare, Google and a numeric
+server address, plus custom input. Test performs an SNTP query from this computer;
+it does not prove the WiFly module can reach that server. Push requires a recent
+successful test, resolves an IPv4 address, and selects disabled, once at startup,
+or every 2-1440 minutes. Sync now requests the configured server. Saving to flash
+is optional and saves ALL current WiFly RAM settings. The telescope needs network
+access to UDP 123. Timezone is displayed read-only: a supported setter for this
+custom firmware has not been established. These controls affect the WiFly clock,
+not telescope sky alignment. Server queries from Windows succeeded; **WiFly clock
+writes and synchronization have not been live-tested**.
+
+### Feedback-delay investigation and controlled failure
+
+WiFly RN-171 2.40-CEL / motors 5.24 sometimes returned delayed or batched encoder
+replies. Earlier code disconnected after one missed 1.2-second idle reply. Recorded
+failures occurred at different elapsed times; `IdleTimer=0` was reported, so there
+is no evidence of a built-in 30-second lease. Retrying individual axes still failed
+when both replies arrived in a burst after an approximately five-second gap.
+
+Idle recovery now disables movement, sends zero-rate Stops and retries complete
+encoder pairs for a bounded recovery window. Persistent loss closes the connection
+and reports a feedback timeout; idle expiration reports intentional release.
+Neither path resumes motion automatically. Active-motion feedback loss retains
+its separate stop path. A stationary 180-second live run recovered 20 delayed
+feedback episodes with no disconnect errors, without requesting motion. This
+establishes improved tolerance, **not the underlying transport root cause**.
+
+Detailed evidence, timing limitations, stale-reply caveats and remaining work are
+commented beside the recovery loop in `motor_control.py`. Remaining investigation:
+correlate TCP and AUX serial captures with WiFly counters; compare direct and
+infrastructure Wi-Fi and another host; distinguish RF loss, buffering, firmware
+scheduling and client receive behavior. No undocumented adapter tuning was applied.
+
+Diagnostics includes **Abort diagnostics**: stop new queries, exit WiFly command mode and close the connection, preserving completed results and marking unqueried endpoints. The current bounded query and cleanup may finish before cancellation completes.
+
+Session events are automatically saved to disk, with a summary when the operation finishes. **Clear displayed log…** asks for confirmation and clears only the on-screen text; it does not delete saved session files. Open Logs opens the recorded session directory.
+
+Known Position Reference displays polled encoder angles, proposed known coordinates, and their wrapped angular difference before setting a local reference. This is not a shared celestial alignment. No verified COSMOS endpoint for a universal sky-alignment model has been established; encoder writes must not be mistaken for one. The suspected lower mechanical elevation limit has not been verified.
+
+## Development status and next steps
+
+The [user guide](docs/USER-GUIDE.md) describes both-axis controller settings,
+timestamped readouts, backlash deltas, local reference sessions and keyboard control.
+Calibration profiles use the adapter MAC; an IP change requires a matching diagnostic
+read before updating the saved address. See the [development roadmap](docs/DEVELOPMENT-ROADMAP.md)
+for Raspberry Pi validation, the deferred companion API and experimental tracking.
+Current automated checks do not establish untested hardware-write behavior.

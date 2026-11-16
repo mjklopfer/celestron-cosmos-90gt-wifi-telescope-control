@@ -53,8 +53,12 @@ def version(data):
 
 class MotorController:
     def __init__(self, host, port, callback, socket_factory=socket.create_connection,
-                 recorder_factory=Recorder, route_check=check_direct_route):
+                 recorder_factory=Recorder, route_check=check_direct_route, idle_release=30):
         """Validate the destination and create command queues, watchdog and telemetry state."""
+        if idle_release not in (0, 10, 20, 30):
+            raise ValueError('Idle release must be Off, 10, 20, or 30 seconds')
+        self.idle_release = idle_release
+        self.last_control_activity = time.monotonic()
         self.host, self.port = validate_endpoint(host, port)
         self.callback, self.socket_factory = callback, socket_factory
         self.recorder_factory, self.route_check = recorder_factory, route_check
@@ -103,6 +107,7 @@ class MotorController:
             raise ValueError('Jog duration must be 0.1–2 seconds')
         if self.command_pending.is_set() or self.jog_in_progress.is_set() or self.stopping.is_set():
             raise RuntimeError('Wait for the current jog or stop to finish')
+        self.last_control_activity = time.monotonic()
         self.holding = hold
         self.lease_deadline = time.monotonic() + .4 if hold else 0
         self.command_pending.set()
@@ -110,6 +115,7 @@ class MotorController:
 
     def stop(self):
         """Request priority stopping through the service’s owning thread."""
+        self.last_control_activity = time.monotonic()
         self.holding = False
         self.stopping.set()
 
@@ -200,7 +206,9 @@ class MotorController:
         if self.disconnecting.is_set():
             return None
         self.send(axis, command)
-        end = time.monotonic() + timeout
+        requested_at = time.monotonic()
+        received_bytes = 0
+        end = requested_at + timeout
         while time.monotonic() < end:
             if self.active_axis is not None and self.holding and time.monotonic() >= self.lease_deadline:
                 self.stopping.set()
@@ -213,10 +221,15 @@ class MotorController:
                 continue
             if not data:
                 raise ConnectionError('Adapter closed the connection')
+            received_bytes += len(data)
             self.recorder.record('motor_rx', hex=data.hex())
             for frame in self.parser.feed(data):
                 if frame[2] == axis and frame[3] == 0x20 and frame[4] == command:
+                    self.emit('motor_reply', axis=axis, command=command,
+                              elapsed_seconds=time.monotonic() - requested_at, received_bytes=received_bytes)
                     return frame[5:-1]
+        self.emit('motor_request_timeout', axis=axis, command=command,
+                  elapsed_seconds=time.monotonic() - requested_at, received_bytes=received_bytes)
         return None
 
     def read_positions(self, attempts=1, publish=True, axes=None):
@@ -369,9 +382,15 @@ class MotorController:
                                       'Motor connection NOT verified; movement controls remain disabled.')
             self.connected.set()
             self.emit('motor_connected', host=self.host, port=self.port)
+            self.last_control_activity = time.monotonic()
             next_poll = 0
             while not self.disconnecting.is_set():
                 self.handle_stop()
+                if (self.idle_release and not self.command_pending.is_set()
+                        and time.monotonic() - self.last_control_activity >= self.idle_release):
+                    self.report['idle_release_seconds'] = self.idle_release
+                    self.emit('motor_idle_release', seconds=self.idle_release)
+                    break
                 try:
                     jog = self.commands.get_nowait()
                 except queue.Empty:
@@ -384,10 +403,78 @@ class MotorController:
                         self.perform_jog(*jog)
                     finally:
                         self.jog_in_progress.clear()
+                        self.last_control_activity = time.monotonic()
                     next_poll = time.monotonic() + 1
                 elif time.monotonic() >= next_poll:
                     if len(self.read_positions()) != len(AXES):
-                        raise ConnectionError('Encoder feedback lost; movement controls disabled')
+                        if self.disconnecting.is_set():
+                            break
+                        self.connected.clear()
+                        self.emit('motor_feedback_retry', message='Encoder reply delayed; movement disabled while retrying.')
+                        self.stop_both()
+                        # FIELD INVESTIGATION -- COSMOS 90GT, 2026-11-16:
+                        # WiFly RN-171 2.40-CEL / motor firmware 5.24 sometimes
+                        # delays or batches encoder replies. Earlier code made
+                        # a single missed 1.2-second idle request fatal. Failures
+                        # occurred at ~11, 14, 27, 44 and 65 seconds, not a fixed
+                        # 30-second lease. Readback: IdleTimer=0, FLAGS=0x7,
+                        # TCPMODE=0, FlushSize=1420, FlushTimer=10, UART=19200.
+                        # RSSI=-67 dBm, RTRY=2 and RTRYfail/RXdrop/RXerr=0 were
+                        # snapshots, not evidence excluding transient RF faults.
+                        #
+                        # A two-attempt per-axis retry failed after ~173 seconds:
+                        # a ~5-second gap ended in an 88-byte burst with replies
+                        # for both axes, after the first was marked missing.
+                        # Retrying whole pairs avoids preserving that earlier
+                        # failure. A stationary 180-second live run recovered
+                        # 20 episodes (30 request timeouts) with no disconnect
+                        # errors. This verifies tolerance in that run; it does
+                        # NOT establish or repair the underlying transport cause.
+                        #
+                        # Controlled failure: block movement, send zero-rate
+                        # Stops, require both replies in one recovery round,
+                        # then close/release if recovery fails. Never reconnect
+                        # automatically or resume previous motion. AUX replies
+                        # have no transaction IDs; matching late replies can be
+                        # stale. Active-motion feedback loss has its own prompt
+                        # stop path; these idle retries must not extend a slew.
+                        #
+                        # The default 30-second user-idle release is a separate
+                        # interface-sharing policy. Telemetry does not renew it.
+                        # Check it during recovery; an in-flight read and Stop
+                        # cleanup may delay closure beyond the nominal deadline.
+                        # The recovery window likewise admits a final bounded
+                        # request pair, so total elapsed time can exceed 10 s.
+                        #
+                        # TODO(root cause): correlate timestamped TCP capture
+                        # with AUX serial traffic and WiFly counters; compare
+                        # direct AP / infrastructure and a second host; isolate
+                        # RF loss, adapter buffering, firmware scheduling and
+                        # client receive handling. Preserve raw session logs.
+                        # Do not change undocumented WiFly flags or claim a
+                        # firmware idle timer without evidence from those tests.
+                        recovery_deadline = time.monotonic() + 10
+                        recovered = {}
+                        idle_expired = False
+                        while time.monotonic() < recovery_deadline and not self.disconnecting.is_set():
+                            if (self.idle_release and time.monotonic() - self.last_control_activity
+                                    >= self.idle_release):
+                                idle_expired = True
+                                break
+                            recovered = self.read_positions()
+                            if len(recovered) == len(AXES):
+                                break
+                            self.disconnecting.wait(.1)
+                        if self.disconnecting.is_set():
+                            break
+                        if idle_expired:
+                            self.report['idle_release_seconds'] = self.idle_release
+                            self.emit('motor_idle_release', seconds=self.idle_release)
+                            break
+                        if len(recovered) != len(AXES):
+                            raise ConnectionError('Motor feedback timeout. Connection released. Reconnect to continue moving.')
+                        self.connected.set()
+                        self.emit('motor_feedback_restored', message='Both encoder replies restored; movement enabled.')
                     next_poll = time.monotonic() + 1
                 self.disconnecting.wait(.02)
         except Exception as e:

@@ -89,6 +89,7 @@ class UiZoom:
             widget.column(column, width=round(width * self.scale), minwidth=round(minimum * self.scale))
         self.style.configure('Treeview', rowheight=round(self.rowheight * self.scale))
         self.app.bridge_switch.set_scale(self.scale)
+        self.app.keyboard_toggle.set_scale(self.scale)
         self.root.update_idletasks()
         self.app.resize_content()
 

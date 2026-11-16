@@ -13,7 +13,8 @@ class GuiTests(unittest.TestCase):
         self.motors = []
         owner = self
         class FakeMotor:
-            def __init__(self, host, port, callback):
+            def __init__(self, host, port, callback, *, idle_release=30):
+                self.idle_release = idle_release
                 self.callback = callback
                 self.host, self.port = host, port
                 owner.motors.append(self)
@@ -62,6 +63,47 @@ class GuiTests(unittest.TestCase):
         self.root.after(10, check)
         self.root.mainloop()
         self.assertFalse(self.app.busy)
+
+    def test_clear_display_requires_confirmation(self):
+        from unittest.mock import patch
+        self.app.append('Keep this until confirmed')
+        with patch('skyqlink_setup.messagebox.askyesno', return_value=False):
+            self.app.clear()
+        self.assertIn('Keep this until confirmed', self.app.console.get('1.0', 'end'))
+        with patch('skyqlink_setup.messagebox.askyesno', return_value=True):
+            self.app.clear()
+        self.assertEqual(self.app.console.get('1.0', 'end').strip(), '')
+
+    def test_signed_elevation_settings_readback(self):
+        self.app.events.put({'event': 'motor_settings_done', 'report': {
+            'axis': 0x11, 'values': {'degrees': 299.69,
+            'positive_backlash': 0, 'negative_backlash': 0}}})
+        self.drain_ui()
+        self.assertAlmostEqual(float(self.app.controller_fields[0x11]['angle'].get()), -60.31)
+        self.assertEqual(self.app.idle_release.get(), '30 seconds')
+
+    def test_two_axis_readouts_and_applied_local_history(self):
+        self.app.open_motor_settings()
+        for axis, degrees, positive in ((0x10, 123.0, 4), (0x11, 299.0, 7)):
+            self.app.events.put({'event': 'motor_settings_done', 'report': {'axis': axis,
+                'values': {'degrees': degrees, 'positive_backlash': positive, 'negative_backlash': 2}}})
+        self.drain_ui()
+        self.assertIn('123.00000', self.app.controller_readout[0x10].get())
+        self.assertIn('-61.00000', self.app.controller_readout[0x11].get())
+        self.assertIn('Read current values result at', self.app.controller_readout[0x10].get())
+        self.app.motor_ready = True
+        self.app.values[0x10]['encoder'].set('0')
+        self.app.last_positions[0x10] = time.monotonic()
+        self.app.reference_inputs[0x10].set('10')
+        self.app.set_position_reference(0x10)
+        original = self.app.local_history[0x10].get()
+        self.app.values[0x10]['encoder'].set('100')
+        self.app.refresh_reference_preview(0x10)
+        self.assertEqual(self.app.local_history[0x10].get(), original)
+        self.app.clear_local_references()
+        self.assertFalse(self.app.position_references)
+        self.assertTrue(self.app.local_history[0x10].get().startswith('Inactive'))
+        self.assertEqual(self.app.reference_inputs[0x10].get(), '0')
 
     def test_upload_worker_and_masked_transfer_log(self):
         app = self.app
@@ -182,8 +224,97 @@ class GuiTests(unittest.TestCase):
             self.finish_worker()
         self.assertTrue(self.app.diagnostic.call_args.kwargs['deep'])
 
+    def test_real_tk_keyboard_dispatch_and_focus_recovery(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        self.root.deiconify()
+        self.app.tabs.select(self.app.motor_tab)
+        self.root.update()
+        self.app.keyboard_toggle.invoke()
+        self.app.host_entry.focus_force()
+        self.app.connect_motors = Mock()
+        self.app.host_entry.event_generate('<KeyPress-o>')
+        self.app.connect_motors.assert_not_called()
+        self.app.focus_motor_shortcuts(SimpleNamespace(widget=self.app.motor_tab))
+        self.root.update()
+        self.assertEqual(self.root.focus_get(), self.app.motor_tab)
+        self.app.motor_tab.event_generate('<KeyPress-o>')
+        self.app.connect_motors.assert_called_once()
+        self.app.motor_ready = True
+        self.app.press_direction = Mock()
+        self.app.release_direction = Mock()
+        for key, axis, direction in [('i', 0x11, 1), ('j', 0x10, -1), ('l', 0x10, 1), ('m', 0x11, -1)]:
+            self.app.motor_tab.event_generate(f'<KeyPress-{key}>')
+            self.app.press_direction.assert_called_with(axis, direction)
+            self.app.motor_tab.event_generate(f'<KeyRelease-{key}>')
+            self.drain_ui()
+            self.assertIsNone(self.app.keyboard_direction)
+        self.assertEqual(self.app.release_direction.call_count, 4)
+        self.app.stop_motors = Mock()
+        self.app.disconnect_motors = Mock()
+        self.app.motor_tab.event_generate('<KeyPress-k>')
+        self.app.stop_motors.assert_called_once()
+        self.app.motor_tab.event_generate('<KeyPress-p>')
+        self.app.disconnect_motors.assert_called_once()
+        self.app.keyboard_toggle.invoke()
+        self.assertFalse(self.app.keyboard_enabled.get())
+        self.app.connect_motors.reset_mock()
+        self.app.motor_tab.event_generate('<KeyPress-o>')
+        self.app.connect_motors.assert_not_called()
+
+    def test_tabs_and_keyboard_entry_guards(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        self.assertEqual([self.app.tabs.tab(t, 'text') for t in self.app.tabs.tabs()],
+                         ['Motor control', 'Control Bridge', 'Diagnostics', 'Wi-Fi provisioning'])
+        self.app.tabs.select(self.app.motor_tab)
+        self.app.keyboard_enabled.set(True)
+        self.app.connect_motors = Mock()
+        self.app.disconnect_motors = Mock()
+        self.app.stop_motors = Mock()
+        e = SimpleNamespace(keysym='o', widget=self.app, state=0)
+        self.app.motor_key_press(e)
+        self.app.connect_motors.assert_called_once()
+        e.keysym = 'p'
+        self.app.motor_key_press(e)
+        self.app.stop_motors.assert_called_once()
+        self.app.disconnect_motors.assert_called_once()
+        e.keysym = 'o'
+        e.widget = self.app.host_entry
+        self.app.motor_key_press(e)
+        self.app.connect_motors.assert_called_once()
+
+    def test_windows_numlock_does_not_block_shortcuts(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        if self.root.tk.call('tk', 'windowingsystem') != 'win32':
+            self.skipTest('Windows modifier mapping')
+        self.app.tabs.select(self.app.motor_tab)
+        self.app.keyboard_enabled.set(True)
+        self.app.connect_motors = Mock()
+        self.app.motor_key_press(SimpleNamespace(keysym='o', widget=self.app, state=0x0008))
+        self.app.connect_motors.assert_called_once()
+        for modifiers in (0x0004, 0x20000, 0x20008):
+            self.app.motor_key_press(SimpleNamespace(keysym='o', widget=self.app, state=modifiers))
+        self.app.connect_motors.assert_called_once()
+
+    def test_reference_is_local_and_requires_fresh_feedback(self):
+        self.app.motor_ready = True
+        self.app.values[0x10]['encoder'].set(str((1 << 24) - 100))
+        self.app.last_positions[0x10] = time.monotonic()
+        self.app.reference_inputs[0x10].set('10')
+        self.app.set_position_reference(0x10)
+        self.assertEqual(self.app.position_references[0x10][1], 10)
+        self.assertFalse(self.motor_calls)
+        self.app.handle_motor_event({'event': 'motor_values', 'axis': 0x10, 'encoder': 100,
+            'angle': 0.002, 'relative': 0.004, 'firmware': '5.24', 'monotonic': time.monotonic()})
+        self.assertTrue(self.app.values[0x10]['referenced'].get().startswith('10.004'))
+        self.app.last_positions[0x11] = time.monotonic() - 5
+        self.app.set_position_reference(0x11)
+        self.assertNotIn(0x11, self.app.position_references)
+
     def test_diagnostics_present_replies_and_partial_verification(self):
-        def diagnostic(host, port, callback):
+        def diagnostic(host, port, callback, **options):
             callback({'event': 'diagnostic_row', 'device': 'Wi-Fi adapter', 'endpoint': 'ver',
                       'status': 'REPLY', 'reply': 'WiFly 2.40-CEL RN-171'})
             callback({'event': 'diagnostic_row', 'device': 'Azimuth', 'endpoint': 'GET_POSITION',
@@ -199,7 +330,7 @@ class GuiTests(unittest.TestCase):
         self.assertIn('RN-171', self.app.console.get('1.0', 'end'))
         self.assertIn('Both motor positions: NOT VERIFIED', self.app.diagnostic_status.get())
         self.assertFalse(self.app.motor_ready)
-        self.assertEqual(self.root.title(), 'Celestron Cosmos 90GT Telescope WiFi Control')
+        self.assertEqual(self.root.title(), 'Celestron Cosmos 90GT Telescope Wi-Fi Control')
         self.app.diagnostic_rows.selection_set(self.app.diagnostic_rows.get_children()[0])
         self.app.show_diagnostic_reply()
         self.assertIn('RN-171', self.app.diagnostic_details.get('1.0', 'end'))
@@ -253,7 +384,7 @@ class GuiTests(unittest.TestCase):
 
     def test_requested_tab_order_and_infrastructure_reprovisioning_notice(self):
         self.assertEqual([self.app.tabs.tab(t, 'text') for t in self.app.tabs.tabs()],
-                         ['Motor control', 'Diagnostics', 'Bridge', 'Wi-Fi provisioning'])
+                         ['Motor control', 'Control Bridge', 'Diagnostics', 'Wi-Fi provisioning'])
         self.app.preset(True)
         self.app.show_provisioned_network({'before': {'get wlan': 'SSID=ExistingNetwork\r\nJoin=1\r\nAuth=WPA2',
                                                     'get ip': 'DHCP=ON'}})
@@ -294,9 +425,9 @@ class GuiTests(unittest.TestCase):
             def start(self):
                 self.callback({'event': 'motor_error', 'message': 'Motor connection NOT verified'})
                 self.callback({'event': 'motor_disconnected', 'log_directory': '/tmp/first'})
-        def factory(host, port, callback):
+        def factory(host, port, callback, **options):
             attempts.append(host)
-            return FirstFailure(callback) if len(attempts) == 1 else original(host, port, callback)
+            return FirstFailure(callback) if len(attempts) == 1 else original(host, port, callback, **options)
         self.app.motor_factory = factory
         self.app.recovery = lambda *args, **kwargs: {'motor_positions_verified': True, 'positions': {}}
         self.app.connect_motors()
@@ -311,7 +442,7 @@ class GuiTests(unittest.TestCase):
     def test_failed_reconnect_does_not_restart_forever(self):
         attempts = []
         class FailingMotor:
-            def __init__(self, host, port, callback):
+            def __init__(self, host, port, callback, **options):
                 self.callback = callback
                 attempts.append(host)
             def start(self):

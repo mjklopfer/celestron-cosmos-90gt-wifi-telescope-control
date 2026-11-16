@@ -19,13 +19,15 @@ Issues = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-cont
 [project.optional-dependencies]
 dev = ["ruff>=0.9,<1", "build>=1.2,<2"]
 bundle = ["pyinstaller>=6,<7"]
+mcp = ["mcp>=1.9,<2"]
 
 [project.scripts]
 cosmos90gt = "skyqlink_setup:main"
 cosmos90gt-bridge = "bridge_mode:main"
+cosmos90gt-mcp = "cosmos_mcp:main"
 
 [tool.setuptools]
-py-modules = ["skyqlink_setup", "ui_zoom", "motor_control", "bridge_mode", "network_info", "endpoint_lock", "celestron_probe", "setup_backend", "wifly_configure", "diagnostics", "discover_modules", "recover_link", "verify_motors", "verify_bridge", "gui_hardware_check"]
+py-modules = ["skyqlink_setup", "ui_zoom", "motor_control", "bridge_mode", "network_info", "endpoint_lock", "celestron_probe", "setup_backend", "wifly_configure", "diagnostics", "time_settings", "motor_settings", "telescope_calibration", "calibrate_telescope", "cosmos_mcp", "position_control", "tracking_stream", "discover_modules", "recover_link", "verify_motors", "verify_bridge", "gui_hardware_check"]
 
 [tool.ruff]
 target-version = "py310"

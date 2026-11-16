@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python/Tk interface for Celestron Cosmos 90GT Telescope WiFi Control.
+"""Python/Tk interface for Celestron Cosmos 90GT Telescope Wi-Fi Control.
 
 Worker services own network operations and publish events; only the Tk thread
 updates widgets. Network-mode controls do not join Wi-Fi or move the mount switch."""
@@ -15,15 +15,18 @@ from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
 from setup_backend import operate, validate_endpoint, validate_port
 from wifly_configure import make_plan, SECURITY
+from motor_settings import motor_settings, parse_degrees, parse_backlash
 from motor_control import MotorController, AXES, relative_counts, relative_angle
 from discover_modules import scan_modules
 from diagnostics import diagnose
+from time_settings import configure_time, test_time_server, COMMON_TIME_SERVERS
 from recover_link import recover
 from bridge_mode import Bridge
 from network_info import network_interfaces, open_directory
 from ui_zoom import UiZoom, scale_argument
+from telescope_calibration import load_config, measured_rate, estimate_seconds, DEFAULT_CONFIG, profile_label, identify_profile, save_config
 
-APP_TITLE = 'Celestron Cosmos 90GT Telescope WiFi Control'
+APP_TITLE = 'Celestron Cosmos 90GT Telescope Wi-Fi Control'
 WIFI_SWITCH_HELP = (
     'Physical Wi-Fi mode switch — on the telescope mount, beside its power socket\n'
     'LEFT — Direct / ad hoc: the telescope provides its own SkyQLink-xx Wi-Fi network '
@@ -41,12 +44,14 @@ WIFI_SWITCH_HELP = (
 
 class BridgeRocker(tk.Canvas):
     """Two-position OFF/ON control with mouse and keyboard operation."""
-    def __init__(self, parent, variable, command):
+    def __init__(self, parent, variable, command, compact=False):
         """Create the accessible OFF/ON canvas and watch its BooleanVar."""
         super().__init__(parent, width=184, height=46, highlightthickness=1,
                          highlightbackground='#777777', takefocus=True, background='#30343b')
         self.variable, self.command = variable, command
-        self.ui_scale = 1.0
+        self.base_scale = .65 if compact else 1.0
+        self.ui_scale = self.base_scale
+        self.configure(width=round(184 * self.ui_scale), height=round(46 * self.ui_scale))
         self.trace_id = variable.trace_add('write', lambda *args: self.redraw())
         self.bind('<Button-1>', self.click)
         self.bind('<Left>', lambda event: self.choose(False))
@@ -79,9 +84,13 @@ class BridgeRocker(tk.Canvas):
 
     def set_scale(self, scale):
         """Resize both the drawing and its pointer hit boundary."""
-        self.ui_scale = scale
-        self.configure(width=round(184 * scale), height=round(46 * scale))
+        self.ui_scale = scale * self.base_scale
+        self.configure(width=round(184 * self.ui_scale), height=round(46 * self.ui_scale))
         self.redraw()
+
+    def invoke(self):
+        """Toggle the current selection, matching other toggle widgets."""
+        return self.choose(not self.variable.get())
 
     def choose(self, on):
         """Apply an enabled rocker selection and invoke its callback."""
@@ -133,7 +142,7 @@ class SetupApp(ttk.Frame):
         self.bridge_factory = bridge_factory
         self.bridge = None
         self.bridge_enabled = tk.BooleanVar(value=False)
-        self.bridge_status = tk.StringVar(value='Bridge OFF — experimental; infrastructure mode only')
+        self.bridge_status = tk.StringVar(value='Control Bridge OFF — no control software connected')
         self.bridge_bind = tk.StringVar()
         self.bridge_dual = tk.BooleanVar(value=False)
         self.bridge_last_error = None
@@ -142,7 +151,7 @@ class SetupApp(ttk.Frame):
         self.network_provider = network_interfaces
         self.bridge_listener = None
         self.bridge_upstream_local = None
-        self.bridge_endpoint = tk.StringVar(value='Computer listener: OFF — TCP 2000 / 3000 start with Bridge ON')
+        self.bridge_endpoint = tk.StringVar(value='Control app connection: unavailable while Control Bridge is OFF')
         self.connection_mode = tk.StringVar(value='direct')
         self.last_infrastructure_host = None
         self.mode_help = tk.StringVar(value='Direct / ad hoc: connect this computer to SkyQLink-xx, then use 1.2.3.4:2000.\nThe mode selector chooses connection settings; it does not change the telescope switch or your computer’s Wi-Fi.')
@@ -156,19 +165,26 @@ class SetupApp(ttk.Frame):
         self.connect_recovery_attempted = False
         self.reconnect_after_recovery = False
         self.auto_recover = tk.BooleanVar(value=True)
+        self.keyboard_direction = None
+        self.keyboard_release_id = None
+        self.keyboard_enabled = tk.BooleanVar(value=False)
+        self.keyboard_status = tk.StringVar(value='Keyboard control OFF')
         self.held = False
         self.drive_mode = tk.StringVar(value='hold')
         self.discovered = []
         self.selected_module = tk.StringVar()
         self.closing = False
         self.last_positions = {}
+        self.position_references = {}
+        self.reference_inputs = {axis: tk.StringVar(value="0") for axis in AXES}
+        self.idle_release = tk.StringVar(value='30 seconds')
         self.speed = tk.StringVar(value='6')
         self.duration = tk.StringVar(value='0.5')
         self.motor_status = tk.StringVar(value='Disconnected')
         self.motion_status = tk.StringVar(value='No movement measured yet')
         self.values = {axis: {field: tk.StringVar(value='—') for field in
                              ('encoder', 'angle', 'relative', 'firmware', 'age', 'before', 'after',
-                              'delta_counts', 'delta_degrees', 'stationary')} for axis in AXES}
+                              'delta_counts', 'delta_degrees', 'stationary', 'referenced')} for axis in AXES}
         self.log_directory = None
         self.host = tk.StringVar(value='1.2.3.4')
         self.port = tk.StringVar(value='2000')
@@ -187,7 +203,7 @@ class SetupApp(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
         ttk.Label(self, text=APP_TITLE, font=('TkDefaultFont', 20, 'bold')).grid(sticky='w')
-        ttk.Label(self, text='For Version 1 Celestron WiFi modules · Original SkyQLink RN-171', foreground='#666666').grid(row=1, sticky='w', pady=(2, 8))
+        ttk.Label(self, text='Celestron Wi-Fi Control Version 1 - SkyQLink RN-171', foreground='#666666').grid(row=1, sticky='w', pady=(2, 8))
 
         connection = ttk.LabelFrame(self, text='Telescope connection', padding=8)
         connection.grid(row=2, sticky='ew')
@@ -205,10 +221,10 @@ class SetupApp(ttk.Frame):
         self.direct_button = ttk.Radiobutton(presets, text='Direct / ad hoc', variable=self.connection_mode,
                                              value='direct', command=lambda: self.preset(False))
         self.direct_button.pack(side='left')
-        self.home_button = ttk.Radiobutton(presets, text='Infrastructure / house Wi-Fi', variable=self.connection_mode,
+        self.home_button = ttk.Radiobutton(presets, text='Infrastructure: Telescope and computer on a common access point', variable=self.connection_mode,
                                            value='infrastructure', command=lambda: self.preset(True))
         self.home_button.pack(side='left', padx=8)
-        self.scan_button = ttk.Button(presets, text='Discover Modules on LAN', command=self.scan_lan)
+        self.scan_button = ttk.Button(presets, text='Discover SkyQLink Modules', command=self.scan_lan)
         self.scan_button.pack(side='left', padx=8)
         self.scan_started = None
         self.scan_tick_id = None
@@ -226,7 +242,8 @@ class SetupApp(ttk.Frame):
         self.diagnostic_tab = ttk.Frame(self.tabs, padding=8)
         self.tabs.add(self.diagnostic_tab, text='Diagnostics')
         self.bridge_tab = ttk.Frame(self.tabs, padding=8)
-        self.tabs.add(self.bridge_tab, text='Bridge')
+        self.tabs.add(self.bridge_tab, text='Control Bridge')
+        self.tabs.insert(1, self.bridge_tab)
         self.tabs.add(self.provision_tab, text='Wi-Fi provisioning')
         self.build_bridge_tab()
         self.build_diagnostics_tab()
@@ -262,11 +279,24 @@ class SetupApp(ttk.Frame):
         self.read_button.pack(side='left')
         self.upload_button = ttk.Button(buttons, text='Upload & Save Wi-Fi Settings', command=lambda: self.start(True))
         self.upload_button.pack(side='left', padx=10)
-        self.progress = ttk.Progressbar(buttons, mode='indeterminate', length=100)
-        self.progress.pack(side='right')
         ttk.Label(self.provision_tab, text='Read settings and command replies appear in the Transfer log below the tabs; no popup opens. Logs are also saved.',
                   wraplength=780).grid(row=2, sticky='w', pady=(8, 0))
-        ttk.Label(self, textvariable=self.status, wraplength=760).grid(row=5, sticky='w', pady=(0, 10))
+        provisioning_help = ttk.LabelFrame(self.provision_tab, text='How to provision or change networks', padding=10)
+        provisioning_help.grid(row=4, sticky='ew', pady=10)
+        self.provision_direct_help = ttk.Label(provisioning_help, wraplength=790, text='INITIAL / RESET UNIT — Direct / ad hoc mode\n1. With telescope power off, set the physical Wi-Fi slider LEFT; power on. Join SkyQLink-xx from this computer.\n2. Select Direct / ad hoc above; use 1.2.3.4, port 2000. Disconnect other controllers and click Connect & Read Settings.\n3. Enter the target 2.4 GHz network name, security and password; click Upload & Save and check the verified save result.\n4. Power off, move the slider RIGHT, then power on. Join the same access point/LAN from this computer, select Infrastructure, and Discover SkyQLink Modules. Read settings again at the discovered address.\nA factory reset may erase saved credentials. This application does not perform a factory reset.')
+        self.provision_direct_help.pack(anchor='w', pady=(0, 10))
+        self.provision_infrastructure_help = ttk.Label(provisioning_help, wraplength=790, text='CHANGE AN EXISTING NETWORK — Infrastructure mode\n1. Leave the physical slider RIGHT and connect this computer to the telescope’s current access point/LAN. Select Infrastructure and discover its current address.\n2. Disconnect motors/bridge/other controllers. Read settings, enter the NEW network credentials, then Upload & Save.\n3. After the save is verified, power-cycle with the slider still RIGHT. The old address/connection may disappear.\n4. Connect this computer to the new access point/LAN, discover the new telescope address, and read back settings.\nNo ad hoc switch or factory reset is needed when the current network connection works. If access is lost, use the Direct / ad hoc procedure to recover access.')
+        self.provision_infrastructure_help.pack(anchor='w')
+        def highlight_provisioning(*args):
+            direct = self.connection_mode.get() == 'direct'
+            self.provision_direct_help.configure(foreground='#111111' if direct else '#777777')
+            self.provision_infrastructure_help.configure(foreground='#777777' if direct else '#111111')
+        self.connection_mode.trace_add('write', highlight_provisioning)
+        highlight_provisioning()
+        status_area = ttk.Frame(self)
+        status_area.grid(row=5, sticky='ew', pady=(0, 10))
+        ttk.Label(status_area, textvariable=self.status, wraplength=760).pack(side='left', fill='x', expand=True)
+        self.progress = ttk.Progressbar(status_area, mode='indeterminate', length=100)
 
         transfer = ttk.LabelFrame(self, text='Transfer log — credentials redacted', padding=8)
         transfer.grid(row=6, sticky='nsew')
@@ -280,14 +310,24 @@ class SetupApp(ttk.Frame):
         footer.grid(row=7, sticky='ew', pady=(10, 0))
         self.logs_button = ttk.Button(footer, text='Open Saved Logs', state='disabled', command=self.open_logs)
         self.logs_button.pack(side='left')
-        self.clear_button = ttk.Button(footer, text='Clear View', command=self.clear)
+        self.clear_button = ttk.Button(footer, text='Clear displayed log…', command=self.clear)
         self.clear_button.pack(side='left', padx=10)
+        recovery_option = ttk.LabelFrame(self, text='Motor connection troubleshooting', padding=6)
+        recovery_option.grid(row=8, sticky='ew', pady=6)
+        self.auto_recover_button = ttk.Checkbutton(recovery_option,
+            text='Allow one Wi-Fi module restart if Connect Motors fails', variable=self.auto_recover)
+        self.auto_recover_button.pack(anchor='w')
+        ttk.Label(recovery_option, text='Use when the telescope is powered on and other control apps are disconnected, but Connect Motors cannot obtain motor replies. When checked, a failed connection may restart the identified SkyQLink RN-171 module once, check both encoders, and retry connecting. Saved Wi-Fi settings are retained; unsaved settings may be lost. This interrupts the module connection, is not a factory reset, and does not command movement. If its IP address changes, use Discover SkyQLink Modules. Uncheck to prevent this automatic restart.', wraplength=820).pack(anchor='w')
         self.switch_help_label = ttk.Label(self.provision_tab, text=WIFI_SWITCH_HELP,
                                           wraplength=820)
         self.switch_help_label.grid(row=2, sticky='w', pady=(12, 0))
         self.append('Ready. Disconnect other connected apps (for example CFM or CPWI) before connecting here; the adapter shares one command stream.')
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<Escape>', lambda event: self.stop_motors())
+        root.bind('<KeyPress>', self.motor_key_press, add='+')
+        root.bind('<KeyRelease>', self.motor_key_release, add='+')
+        root.bind('<ButtonRelease-1>', self.focus_motor_shortcuts, add='+')
+        self.tabs.bind('<<NotebookTabChanged>>', lambda event: self.stop_motors() if self.keyboard_direction else None, add='+')
         root.bind('<ButtonRelease-1>', lambda event: self.release_direction(), add='+')
         root.bind('<FocusOut>', lambda event: root.after(50, self.stop_if_unfocused))
         root.bind('<MouseWheel>', self.scroll_window, add='+')
@@ -330,12 +370,6 @@ class SetupApp(ttk.Frame):
         self.motor_disconnect_button.pack(side='left', padx=8)
         ttk.Label(controls, textvariable=self.motor_status).pack(side='left', padx=8)
 
-        recovery_option = ttk.Frame(tab)
-        recovery_option.grid(row=4, column=0, columnspan=2, sticky='w', pady=6)
-        self.auto_recover_button = ttk.Checkbutton(recovery_option,
-            text='Recover a stalled adapter on Connect (one restart; saved Wi-Fi retained)', variable=self.auto_recover)
-        self.auto_recover_button.pack(side='left')
-
         pad = ttk.LabelFrame(tab, text='Four-direction motor control', padding=8)
         pad.grid(row=1, column=0, sticky='nsew', padx=(0, 12), pady=(12, 0))
         self.jog_buttons = []
@@ -355,18 +389,37 @@ class SetupApp(ttk.Frame):
         ttk.Label(pad, text='Speed (1–9)').grid(row=3, column=0, sticky='w', pady=(10, 4))
         self.speed_box = ttk.Combobox(pad, textvariable=self.speed, values=list(range(1, 10)), state='readonly', width=5)
         self.speed_box.grid(row=3, column=1, sticky='w', pady=(10, 4))
-        ttk.Label(pad, text='Seconds / click').grid(row=4, column=0, sticky='w')
+        rate_frame = ttk.Frame(pad)
+        rate_frame.grid(row=4, column=0, columnspan=3, sticky='ew', pady=6)
+        self.slew_rate_cells = {}
+        for column, title in enumerate(('Speed', 'AZ + / − °/s', 'EL + / − °/s')):
+            ttk.Label(rate_frame, text=title, font=('TkDefaultFont', 9, 'bold')).grid(row=0, column=column, padx=4)
+        for rate in range(1, 10):
+            ttk.Label(rate_frame, text=str(rate), font=('TkDefaultFont', 9)).grid(row=rate, column=0)
+            for column, axis in enumerate(AXES, 1):
+                value = self.slew_rate_cells[axis, rate] = tk.StringVar(value='— / —')
+                ttk.Label(rate_frame, textvariable=value, font=('TkFixedFont', 9)).grid(row=rate, column=column, padx=4)
+        self.calibration_note = tk.StringVar()
+        ttk.Label(rate_frame, textvariable=self.calibration_note, wraplength=310, font=('TkDefaultFont', 8)).grid(row=10, columnspan=3, sticky='w')
+        ttk.Button(rate_frame, text='Reload calibration', command=self.reload_calibration).grid(row=11, column=0, columnspan=2, sticky='w')
+        ttk.Button(rate_frame, text='Estimate degree jog', command=self.open_degree_estimate).grid(row=11, column=2)
+        self.reload_calibration()
+
+        ttk.Label(pad, text='Seconds / click').grid(row=5, column=0, sticky='w')
         self.duration_box = ttk.Combobox(pad, textvariable=self.duration, values=('0.25', '0.5', '1.0', '2.0'), state='readonly', width=5)
-        self.duration_box.grid(row=4, column=1, sticky='w')
-        ttk.Radiobutton(pad, text='Hold to move', variable=self.drive_mode, value='hold', command=self.stop_motors).grid(row=5, column=0, columnspan=2, sticky='w', pady=(8, 0))
-        ttk.Radiobutton(pad, text='Timed jog', variable=self.drive_mode, value='jog', command=self.stop_motors).grid(row=5, column=2, sticky='w', pady=(8, 0))
+        self.duration_box.grid(row=5, column=1, sticky='w')
+        ttk.Radiobutton(pad, text='Hold to move', variable=self.drive_mode, value='hold', command=self.stop_motors).grid(row=6, column=0, columnspan=2, sticky='w', pady=(8, 0))
+        ttk.Radiobutton(pad, text='Timed jog', variable=self.drive_mode, value='jog', command=self.stop_motors).grid(row=6, column=2, sticky='w', pady=(8, 0))
+
+        ttk.Label(pad, text='Idle release (next connection)').grid(row=7, column=0, sticky='w')
+        ttk.Combobox(pad, textvariable=self.idle_release, values=('Off', '10 seconds', '20 seconds', '30 seconds'), state='readonly', width=12).grid(row=7, column=1, columnspan=2, sticky='w')
 
         readout = ttk.LabelFrame(tab, text='Motor values', padding=8)
         readout.grid(row=1, column=1, sticky='nsew', pady=(12, 0))
         for column, label in enumerate(('Value', 'Azimuth', 'Elevation')):
             ttk.Label(readout, text=label, font=('TkDefaultFont', 12, 'bold')).grid(row=0, column=column, sticky='w', padx=(0, 14), pady=(0, 8))
         for row, (field, label) in enumerate((('encoder', 'Encoder counts'), ('angle', 'Raw angle'),
-                                             ('relative', 'Since connect'), ('firmware', 'Firmware'),
+                                             ('relative', 'Since connect'), ('referenced', 'Referenced angle'), ('firmware', 'Firmware'),
                                              ('age', 'Last update'), ('before', 'Before jog'),
                                              ('after', 'After jog'), ('delta_counts', 'Jog Δ counts'),
                                              ('delta_degrees', 'Jog Δ angle'), ('stationary', 'Stop check')), 1):
@@ -378,6 +431,316 @@ class SetupApp(ttk.Frame):
         ttk.Label(tab, textvariable=self.motion_status, wraplength=780,
                   font=('TkDefaultFont', 12, 'bold')).grid(row=3, column=0, columnspan=2, sticky='w', pady=8)
 
+        self.reference_current = {axis: tk.StringVar(value='—') for axis in AXES}
+        self.reference_delta = {axis: tk.StringVar(value='—') for axis in AXES}
+        for axis in AXES:
+            self.reference_inputs[axis].trace_add('write', lambda *_args, a=axis: self.refresh_reference_preview(a))
+
+        ttk.Label(pad, text='Keyboard control').grid(row=8, column=0, sticky='w', pady=(8, 0))
+        self.keyboard_toggle = BridgeRocker(pad, variable=self.keyboard_enabled,
+                                           command=self.toggle_keyboard_control, compact=True)
+        self.keyboard_toggle.grid(row=8, column=1, columnspan=2, sticky='w', pady=(8, 0))
+        ttk.Label(pad, textvariable=self.keyboard_status, wraplength=320).grid(row=9, column=0, columnspan=3, sticky='w')
+        ttk.Label(pad, text='I ↑ · J ← · K Stop · L → · M ↓\nO Open/connect · P Pause/disconnect. Works on this tab, outside text fields. Release a held key to stop; Escape always stops. After editing, click the motor panel to restore keyboard focus.', wraplength=320).grid(row=10, column=0, columnspan=3, sticky='w', pady=4)
+
+        self.motor_settings_window = None
+        self.controller_fields = {axis: {key: tk.StringVar(value='0' if key.startswith('delta') else '')
+            for key in ('angle', 'positive', 'negative', 'delta_positive', 'delta_negative')} for axis in AXES}
+        self.controller_readout = {axis: tk.StringVar(value='Not read. Press Read current values for this axis.') for axis in AXES}
+        self.controller_history = {axis: tk.StringVar(value='No change applied in this app session.') for axis in AXES}
+        self.controller_reads = {}
+        self.local_history = {axis: tk.StringVar(value='No local reference applied in this session.') for axis in AXES}
+        self.last_local_reference = {}
+        self.reference_poll_pending = set()
+        self.motor_setting_status = tk.StringVar(value='Disconnect manual motor control and Control Bridge before reading or writing hardware settings.')
+        ttk.Button(tab, text='Controller Angle / Backlash Settings', command=self.open_motor_settings).grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
+
+    def reload_calibration(self):
+        self.calibration = None
+        try:
+            self.calibration = load_config()
+            for (axis, rate), value in self.slew_rate_cells.items():
+                parts = []
+                for direction in (1, -1):
+                    try:
+                        parts.append(f'{measured_rate(self.calibration, axis, rate, direction):.4f}')
+                    except (ValueError, KeyError, TypeError):
+                        parts.append('—')
+                value.set(' / '.join(parts))
+            self.calibration_note.set('Measured pulse averages, not steady-state rates. Profile: '
+                                      + profile_label(self.calibration))
+        except (OSError, ValueError, KeyError, TypeError):
+            self.calibration = None
+            self.calibration_note.set('No usable calibration. Run calibrate_telescope.py separately.')
+            for value in self.slew_rate_cells.values():
+                value.set('— / —')
+
+    def open_degree_estimate(self):
+        window = tk.Toplevel(self)
+        window.title('Estimate timed degree jog')
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill='both', expand=True)
+        axis_name = tk.StringVar(value='Azimuth')
+        degrees = tk.StringVar(value='0.1')
+        result = tk.StringVar(value='Calculates duration only; no movement is sent.')
+        ttk.Label(frame, text='Axis').grid(row=0, column=0)
+        ttk.Combobox(frame, textvariable=axis_name, values=tuple(AXES.values()), state='readonly').grid(row=0, column=1)
+        ttk.Label(frame, text='Relative degrees (+ or −)').grid(row=1, column=0)
+        ttk.Entry(frame, textvariable=degrees).grid(row=1, column=1)
+        def apply_duration():
+            if self.jogging or self.busy or self.bridge is not None:
+                result.set('Stop current activity before changing the jog duration.')
+                return
+            try:
+                axis = next(a for a, name in AXES.items() if name == axis_name.get())
+                delta = parse_degrees(degrees.get(), -180, 180)
+                host, port = validate_endpoint(self.host.get(), self.port.get())
+                if self.calibration is None:
+                    raise ValueError(f'Load a measured profile from {DEFAULT_CONFIG}')
+                seconds = estimate_seconds(self.calibration, axis, int(self.speed.get()), delta, host, port)
+                self.duration.set(f'{seconds:.6f}')
+                self.drive_mode.set('jog')
+                direction = ('Right' if delta > 0 else 'Left') if axis == 0x10 else ('Up' if delta > 0 else 'Down')
+                result.set(f'Approx. {seconds:.4f}s at speed {self.speed.get()}. Timed jog selected. Close this dialog and use {direction}; no movement sent yet.')
+            except (ValueError, KeyError, TypeError) as error:
+                result.set(str(error))
+        ttk.Button(frame, text='Calculate and use duration', command=apply_duration).grid(row=2, columnspan=2, pady=8)
+        ttk.Label(frame, textvariable=result, wraplength=500).grid(row=3, columnspan=2, sticky='w')
+        ttk.Label(frame, text='Approximate only: one-second calibration includes ramps, backlash and network delay. Actual encoder movement is shown after a jog. Duration is limited to 0.1–2 seconds. Encoder-target GOTO commands are not enabled.', wraplength=500).grid(row=4, columnspan=2, sticky='w', pady=8)
+
+    def build_reference_controls(self, parent):
+        refs = ttk.LabelFrame(parent, text='Set Alignment Using Known Position Reference', padding=8)
+        refs.pack(fill='x', pady=8)
+        for column, label in enumerate(('Axis / range', 'Current (polled)', 'Known position', 'Proposed offset', '')):
+            ttk.Label(refs, text=label).grid(row=0, column=column, sticky='w', padx=5)
+        for row, axis in enumerate(AXES, 1):
+            bounds = '0 to 360°' if axis == 0x10 else '-90 to +90°'
+            ttk.Label(refs, text=f'{AXES[axis]} ({bounds})').grid(row=row, column=0, sticky='w', padx=5)
+            ttk.Label(refs, textvariable=self.reference_current[axis], width=15).grid(row=row, column=1)
+            ttk.Entry(refs, textvariable=self.reference_inputs[axis], width=12).grid(row=row, column=2)
+            ttk.Label(refs, textvariable=self.reference_delta[axis], width=18).grid(row=row, column=3)
+            ttk.Button(refs, text='Set local reference', command=lambda a=axis: self.set_position_reference(a)).grid(row=row, column=4, padx=8)
+        ttk.Label(refs, text='Connect Motors to poll positions. Point at a known object and enter its current azimuth/elevation. Offset = known minus current encoder angle, wrapped to ±180°. This sets LOCAL coordinates only; it does not program shared celestial alignment or tracking into the mount. Clears on disconnect.', wraplength=780).grid(row=3, column=0, columnspan=5, sticky='w', pady=5)
+        ttk.Label(refs, text='Examples: azimuth 100.52 or 060.84; elevation -60.31. Up to 5 decimals; leading zeros OK. Coordinate ranges are NOT safe mechanical travel limits.', wraplength=780).grid(row=4, column=0, columnspan=5, sticky='w')
+        for row, axis in enumerate(AXES, 5):
+            ttk.Button(refs, text=f'Poll {AXES[axis]} now', command=lambda a=axis: self.poll_local_reference(a)).grid(row=row, column=0, sticky='w', pady=5)
+            ttk.Label(refs, textvariable=self.local_history[axis], wraplength=470).grid(row=row, column=1, columnspan=3, sticky='w')
+            ttk.Button(refs, text='Reapply previous offset', command=lambda a=axis: self.reapply_local_reference(a)).grid(row=row, column=4)
+        ttk.Button(refs, text='Clear local references (zero offsets)', command=self.clear_local_references).grid(row=7, columnspan=5, sticky='w', pady=5)
+        ttk.Label(refs, text='Local mode changes only this app’s displayed coordinates. Disconnect or lost feedback clears active offsets; previous applied values remain inactive history until this app closes. No hardware settings are reset. Reapply only if the mount has not been powered off, moved manually or realigned. Otherwise establish a new known-position reference.', wraplength=780).grid(row=8, columnspan=5, sticky='w')
+
+
+
+    def open_motor_settings(self):
+        if self.motor_settings_window and self.motor_settings_window.winfo_exists():
+            self.motor_settings_window.lift()
+            return
+        window = self.motor_settings_window = tk.Toplevel(self)
+        window.title('Controller Angle / Backlash Settings')
+        shell = ttk.Frame(window, padding=12)
+        shell.pack(fill='both', expand=True)
+        mode = tk.StringVar(value='local')
+        modes = ttk.Frame(shell)
+        modes.pack(fill='x')
+        local = ttk.Frame(shell)
+        self.build_reference_controls(local)
+        frame = ttk.Frame(shell)
+        def select_mode():
+            local.pack_forget()
+            frame.pack_forget()
+            (local if mode.get() == 'local' else frame).pack(fill='both', expand=True)
+        ttk.Radiobutton(modes, text='Local reference (this app only)', variable=mode, value='local', command=select_mode).pack(side='left', padx=6)
+        ttk.Radiobutton(modes, text='Telescope controller (shared raw encoder / backlash)', variable=mode, value='controller', command=select_mode).pack(side='left', padx=6)
+        select_mode()
+        ttk.Label(frame, text='Telescope controller mode changes settings stored in each motor controller. Other apps can observe those settings. Setting an encoder angle changes its coordinate origin without moving the telescope; it does not create a celestial alignment. Backlash compensates gear play when direction changes. Disconnect manual motor control and other apps before reading or writing.', wraplength=860).grid(row=0, column=0, columnspan=2, sticky='w', pady=8)
+        for column, axis in enumerate(AXES):
+            panel = ttk.LabelFrame(frame, text=AXES[axis], padding=10)
+            panel.grid(row=1, column=column, sticky='nsew', padx=5)
+            frame.columnconfigure(column, weight=1)
+            ttk.Label(panel, text='Current values from telescope', font=('TkDefaultFont', 11, 'bold')).grid(row=0, columnspan=2, sticky='w')
+            ttk.Label(panel, textvariable=self.controller_readout[axis], wraplength=390, justify='left').grid(row=1, columnspan=2, sticky='w', pady=5)
+            ttk.Button(panel, text='Read current values', command=lambda a=axis: self.run_motor_settings(axis=a)).grid(row=2, columnspan=2, sticky='w', pady=5)
+            ttk.Label(panel, text='New values to send (editing does not write)', font=('TkDefaultFont', 10, 'bold')).grid(row=3, columnspan=2, sticky='w', pady=5)
+            fields = self.controller_fields[axis]
+            for row, key, label in ((4, 'angle', 'Encoder angle (degrees)'), (6, 'positive', 'Positive-direction backlash'), (7, 'negative', 'Negative-direction backlash'), (9, 'delta_positive', 'Positive-direction delta'), (10, 'delta_negative', 'Negative-direction delta')):
+                ttk.Label(panel, text=label).grid(row=row, column=0, sticky='w', pady=3)
+                ttk.Entry(panel, textvariable=fields[key], width=14).grid(row=row, column=1, padx=5)
+            ttk.Button(panel, text='Set encoder angle', command=lambda a=axis: self.run_motor_settings('position', a)).grid(row=5, columnspan=2, sticky='w')
+            ttk.Button(panel, text='Apply absolute backlash', command=lambda a=axis: self.run_motor_settings('backlash', a)).grid(row=8, columnspan=2, sticky='w', pady=4)
+            ttk.Button(panel, text='Preview / apply backlash delta', command=lambda a=axis: self.run_motor_settings('delta', a)).grid(row=11, columnspan=2, sticky='w', pady=4)
+            ttk.Label(panel, text='Last applied change (retained until app closes)', font=('TkDefaultFont', 10, 'bold')).grid(row=12, columnspan=2, sticky='w', pady=5)
+            ttk.Label(panel, textvariable=self.controller_history[axis], wraplength=390, justify='left').grid(row=13, columnspan=2, sticky='w')
+        ttk.Label(frame, text='Angles: Azimuth 0–360°; Elevation -90 to +90°. Up to 5 decimals; examples 100.52, 060.84, -60.31 (elevation only). These are coordinate ranges, not mechanical travel limits.\nBacklash: 0–99 whole-number controller units, NOT degrees. Positive/negative names identify travel direction; both absolute settings are nonnegative. Deltas may be -99 to +99, but the result must stay 0–99. Spaces, leading zeros and integral decimals (2.0 → 2) normalize; fractions and invalid signs are rejected. Delta writes recheck the source values before writing.', wraplength=860).grid(row=2, columnspan=2, sticky='w', pady=8)
+        ttk.Label(frame, textvariable=self.motor_setting_status, wraplength=860).grid(row=3, columnspan=2, sticky='w')
+
+    def run_motor_settings(self, operation=None, axis=0x10):
+        if self.busy or self.motor is not None or self.bridge is not None:
+            self.motor_setting_status.set('Disconnect manual motors and bridge before reading/editing controller settings.')
+            return
+        expected = None
+        try:
+            host, port = validate_endpoint(self.host.get(), self.port.get())
+            fields = self.controller_fields[axis]
+            changes = {}
+            preview = ''
+            if operation == 'position':
+                changes = {4: parse_degrees(fields['angle'].get(), *((0, 360) if axis == 0x10 else (-90, 90)))}
+                fields['angle'].set(f'{changes[4]:.5f}'.rstrip('0').rstrip('.'))
+                preview = f'New encoder angle: {changes[4]:.5f}°'
+            elif operation in ('backlash', 'delta'):
+                keys = ('delta_positive', 'delta_negative') if operation == 'delta' else ('positive', 'negative')
+                numbers = [parse_backlash(fields[k].get(), delta=operation == 'delta') for k in keys]
+                for key, value in zip(keys, numbers, strict=True):
+                    fields[key].set(str(value))
+                if operation == 'delta':
+                    previous = self.controller_reads.get(axis)
+                    if not previous or previous['endpoint'] != (host, port) or time.monotonic() - previous['time'] > 60:
+                        raise ValueError('Read current values for this axis first (within 60 seconds), then apply the delta.')
+                    expected = (previous['values']['positive_backlash'], previous['values']['negative_backlash'])
+                    resulting = [old + delta for old, delta in zip(expected, numbers, strict=True)]
+                    preview = f'Positive: {expected[0]} {numbers[0]:+d} → {resulting[0]}; Negative: {expected[1]} {numbers[1]:+d} → {resulting[1]}'
+                    numbers = resulting
+                changes = dict(zip((0x10, 0x11), numbers, strict=True))
+                preview = preview or f'Positive backlash → {numbers[0]}; Negative backlash → {numbers[1]}'
+            from motor_settings import setting_packet
+            for command, value in changes.items():
+                setting_packet(axis, command, value)
+        except (ValueError, KeyError) as error:
+            self.motor_setting_status.set(str(error))
+            return
+        if changes and not messagebox.askyesno('Confirm controller change',
+                f'{AXES[axis]}\n{preview}\nKeep stationary with other apps disconnected. Encoder changes invalidate alignment assumptions. Backlash changes motion compensation. Write and verify these values?', parent=self.motor_settings_window or self.root):
+            return
+        self.set_busy(True)
+        self.motor_setting_status.set(f'{AXES[axis]}: reading current values…' if not changes else f'{AXES[axis]}: applying and verifying change…')
+        self.controller_readout[axis].set('Reading telescope… Previous values are not current.')
+        self.controller_reads.pop(axis, None)
+        def worker():
+            try:
+                options = {'expected_backlash': expected} if expected is not None else {}
+                report = motor_settings(host, port, axis, changes=changes, callback=self.events.put, **options)
+            except Exception as error:
+                report = {'error': str(error), 'axis': axis}
+            self.events.put({'event': 'motor_settings_done', 'report': report,
+                             'operation': operation, 'preview': preview, 'endpoint': (host, port)})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def clear_local_references(self):
+        self.position_references.clear()
+        for axis in AXES:
+            self.values[axis]['referenced'].set('—')
+            self.reference_inputs[axis].set('0')
+            if axis in self.last_local_reference:
+                self.local_history[axis].set('Inactive — ' + self.last_local_reference[axis]['description'])
+        self.motion_status.set('No local reference — showing raw motor coordinates.')
+
+    def poll_local_reference(self, axis):
+        if not self.motor_ready or self.motor is None:
+            self.motion_status.set('Connect Motors first. Local polling uses the existing motor connection.')
+            return
+        self.reference_poll_pending.add(axis)
+        self.reference_current[axis].set('Waiting for next poll…')
+        self.motion_status.set(f'Waiting for the next fresh {AXES[axis]} reading from the motor polling loop.')
+
+    def reapply_local_reference(self, axis):
+        previous = self.last_local_reference.get(axis)
+        if not previous or not self.motor_ready or self.jogging or time.monotonic() - self.last_positions.get(axis, 0) > 3:
+            self.motion_status.set('Previous reference and fresh stationary motor feedback are required.')
+            return
+        if previous['endpoint'] != (self.host.get(), self.port.get()):
+            self.motion_status.set('Previous reference belongs to a different connection address; establish a new reference.')
+            return
+        if not messagebox.askyesno('Reapply previous local offset?', 'Confirm the telescope has NOT been powered off, moved manually or realigned. This restores only the previous local offset; it does not restore hardware alignment.', parent=self.motor_settings_window or self.root):
+            return
+        current = int(self.values[axis]['encoder'].get()) * 360 / (1 << 24)
+        known = (current + previous['offset']) % 360
+        if axis == 0x11 and known > 180:
+            known -= 360
+        self.reference_inputs[axis].set(f'{known:.5f}')
+        self.set_position_reference(axis)
+
+    def refresh_reference_preview(self, axis):
+        try:
+            current = int(self.values[axis]['encoder'].get()) * 360 / (1 << 24)
+        except ValueError:
+            self.reference_current[axis].set('—')
+            self.reference_delta[axis].set('—')
+            return
+        if axis == 0x11 and current > 180:
+            current -= 360
+        self.reference_current[axis].set(f'{current:.5f}°')
+        try:
+            low, high = (0, 360) if axis == 0x10 else (-90, 90)
+            known = parse_degrees(self.reference_inputs[axis].get(), low, high)
+            delta = (known - current + 180) % 360 - 180
+            self.reference_delta[axis].set(f'{delta:+.5f}°')
+        except ValueError:
+            self.reference_delta[axis].set('Invalid input')
+
+    def set_position_reference(self, axis):
+        if not self.motor_ready or self.jogging or self.held or self.bridge is not None:
+            self.motion_status.set('Connect motors and stop movement before setting a reference.')
+            return
+        if time.monotonic() - self.last_positions.get(axis, 0) > 3:
+            self.motion_status.set('Fresh encoder feedback is required for a reference.')
+            return
+        try:
+            low, high = (0, 360) if axis == 0x10 else (-90, 90)
+            degrees = parse_degrees(self.reference_inputs[axis].get(), low, high)
+            self.reference_inputs[axis].set(f'{degrees:.5f}'.rstrip('0').rstrip('.'))
+            encoder = int(self.values[axis]['encoder'].get())
+        except ValueError as error:
+            self.motion_status.set(str(error))
+            return
+        self.position_references[axis] = (encoder, degrees)
+        offset = (degrees - encoder * 360 / (1 << 24) + 180) % 360 - 180
+        description = f"Applied {dt.datetime.now().strftime('%H:%M:%S')}: encoder {encoder}, known {degrees:.5f}°, offset {offset:+.5f}°"
+        self.last_local_reference[axis] = {'offset': offset, 'description': description, 'endpoint': (self.host.get(), self.port.get())}
+        self.local_history[axis].set('Active — ' + description)
+
+        self.values[axis]['referenced'].set(f'{degrees:.5f}°')
+        self.motion_status.set(f'{AXES[axis]} reference set locally. No movement or encoder write sent.')
+        self.append(f'{AXES[axis]} local reference: encoder {encoder} = {degrees:.5f} degrees')
+
+    def start_time_settings(self, sync_now=False):
+        if self.busy or self.motor is not None or self.bridge is not None:
+            self.status.set('Disconnect motors and stop the bridge before changing WiFly time.')
+            return
+        try:
+            host, port = validate_endpoint(self.host.get(), self.port.get())
+            mode = self.time_mode.get()
+            enable = None if sync_now else (0 if mode == 'Disabled' else 1 if mode == 'At startup' else int(self.time_enable.get()))
+            if mode == 'Every N minutes' and not sync_now and not 2 <= enable <= 1440:
+                raise ValueError('Use an interval between 2 and 1440 minutes')
+            server_ip = None
+            if not sync_now and enable != 0:
+                tested = self.tested_time_server
+                if not tested or tested['host'] != self.time_server.get().strip() or time.monotonic() - tested['tested_at'] > 300:
+                    raise ValueError('Test the selected server successfully within five minutes before pushing it')
+                server_ip = tested['ip']
+        except ValueError as error:
+            self.status.set(str(error))
+            self.time_status.set(str(error))
+            return
+        persist = self.time_persist.get() and not sync_now
+        message = ('Request WiFly time from its configured SNTP server now? Internet/UDP 123 access is required.'
+                   if sync_now else f'Write WiFly time enable={enable}? 0=off, 1=startup, larger values=minutes. This does not align the telescope.')
+        if server_ip:
+            message += f'\nServer: {self.time_server.get()} → {server_ip}:123'
+        if persist:
+            message += '\nSave writes ALL current WiFly RAM settings to flash, not just time settings.'
+        if not messagebox.askyesno('Change WiFly clock', message, parent=self.winfo_toplevel()):
+            return
+        self.set_busy(True)
+        def worker():
+            try:
+                result = configure_time(host, port, enable=enable, sync_now=sync_now,
+                                        persist=persist, server_ip=server_ip, callback=self.events.put)
+            except Exception as error:
+                result = {'error': str(error)}
+            self.events.put({'event': 'time_settings_done', 'report': result})
+        threading.Thread(target=worker, daemon=True).start()
+
     def build_diagnostics_tab(self):
         """Create query results and the full-response inspection panel."""
         tab = self.diagnostic_tab
@@ -388,6 +751,10 @@ class SetupApp(ttk.Frame):
         diagnostic_controls.grid(row=0, columnspan=2, sticky='ew')
         self.diagnostic_button = ttk.Button(diagnostic_controls, text='Run read-only diagnostics', command=self.start_diagnostics)
         self.diagnostic_button.pack(side='left')
+        self.diagnostic_cancel = threading.Event()
+        self.diagnostic_running = False
+        self.diagnostic_abort_button = ttk.Button(diagnostic_controls, text='Abort diagnostics', state='disabled', command=self.abort_diagnostics)
+        self.diagnostic_abort_button.pack(side='left', padx=8)
         self.deep_diagnostics = tk.BooleanVar(value=False)
         ttk.Checkbutton(diagnostic_controls, text='Deep diagnostics', variable=self.deep_diagnostics).pack(side='left', padx=8)
         self.recovery_button = ttk.Button(diagnostic_controls, text='Restart Wi-Fi adapter & recheck motors', command=self.start_recovery)
@@ -410,45 +777,96 @@ class SetupApp(ttk.Frame):
                   'Restart & recheck restarts the RN-171, retains saved Wi-Fi settings, and checks motor replies. Disconnect motors first.',
                   wraplength=800).grid(row=4, columnspan=2, sticky='w')
 
+        self.time_window = None
+        self.time_enable = tk.StringVar(value='60')
+        self.time_mode = tk.StringVar(value='At startup')
+        self.time_server = tk.StringVar(value=COMMON_TIME_SERVERS[0])
+        self.time_zone = tk.StringVar(value='Not read')
+        self.time_status = tk.StringVar(value='Test a server from this computer before pushing a new server address.')
+        self.time_persist = tk.BooleanVar(value=False)
+        self.tested_time_server = None
+        self.time_apply_button = ttk.Button(tab, text='Time server settings…', command=self.open_time_settings)
+        self.time_apply_button.grid(row=5, sticky='w', pady=6)
+        self.time_sync_button = self.time_apply_button
+
+    def open_time_settings(self):
+        if self.time_window and self.time_window.winfo_exists():
+            self.time_window.lift()
+            return
+        window = self.time_window = tk.Toplevel(self)
+        window.title('WiFly time server settings')
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill='both', expand=True)
+        ttk.Label(frame, text='Time server (hostname or IPv4)').grid(row=0, column=0, sticky='w')
+        ttk.Combobox(frame, textvariable=self.time_server, values=COMMON_TIME_SERVERS, width=30).grid(row=0, column=1)
+        ttk.Button(frame, text='Test from this computer', command=self.test_selected_time_server).grid(row=1, column=1, sticky='w', pady=6)
+        ttk.Label(frame, text='Automatic sync').grid(row=2, column=0, sticky='w')
+        ttk.Combobox(frame, textvariable=self.time_mode, values=('Disabled', 'At startup', 'Every N minutes'), state='readonly').grid(row=2, column=1)
+        ttk.Label(frame, text='Interval (2–1440 minutes)').grid(row=3, column=0, sticky='w')
+        ttk.Spinbox(frame, from_=2, to=1440, textvariable=self.time_enable, width=10).grid(row=3, column=1, sticky='w')
+        ttk.Label(frame, text='WiFly timezone number (readback)').grid(row=4, column=0, sticky='w')
+        ttk.Entry(frame, textvariable=self.time_zone, state='readonly', width=15).grid(row=4, column=1, sticky='w')
+        ttk.Label(frame, text='7 = UTC−07:00 in WiFly documentation. Setter unverified. Run diagnostics to refresh.', wraplength=500).grid(row=5, columnspan=2, sticky='w', pady=6)
+        ttk.Checkbutton(frame, text='Save ALL current WiFly settings to flash', variable=self.time_persist).grid(row=6, columnspan=2, sticky='w')
+        ttk.Button(frame, text='Push server and sync mode', command=self.start_time_settings).grid(row=7, column=0, pady=8)
+        ttk.Button(frame, text='Sync clock now', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
+        ttk.Label(frame, textvariable=self.time_status, wraplength=500).grid(row=8, columnspan=2, sticky='w')
+        ttk.Label(frame, text='The telescope needs its own route to UDP 123. A successful PC test does not prove telescope access. Names are resolved and pushed as IPv4 addresses.', wraplength=500).grid(row=9, columnspan=2, sticky='w', pady=8)
+
+    def test_selected_time_server(self):
+        host = self.time_server.get().strip()
+        self.tested_time_server = None
+        self.time_status.set('Testing SNTP from this computer…')
+        def worker():
+            try:
+                result = test_time_server(host)
+            except Exception as error:
+                result = {'error': str(error), 'host': host}
+            self.events.put({'event': 'time_server_test_done', 'report': result})
+        threading.Thread(target=worker, daemon=True).start()
+
     def build_bridge_tab(self):
         """Create bridge controls, interface selection and relay status readbacks."""
         tab = self.bridge_tab
         tab.columnconfigure(0, weight=1)
+        ttk.Label(tab, text='This feature allows your local computer to create a proxy link between the SkyQLink telescope and control software that uses modern Celestron Wi-Fi connections. It relays telescope commands and replies for one controlling application at a time. Alignment and tracking calculations remain the responsibility of the control software.', wraplength=820).grid(row=0, sticky='w', pady=(0, 8))
         self.bridge_switch = BridgeRocker(tab, variable=self.bridge_enabled, command=self.toggle_bridge)
-        self.bridge_switch.grid(row=0, sticky='w')
-        ttk.Label(tab, textvariable=self.bridge_status, wraplength=820).grid(row=1, sticky='w', pady=6)
+        self.bridge_switch.grid(row=1, sticky='w')
+        ttk.Label(tab, textvariable=self.bridge_status, wraplength=820).grid(row=2, sticky='w', pady=6)
         settings = ttk.Frame(tab)
-        settings.grid(row=2, sticky='ew')
+        settings.grid(row=3, sticky='ew')
         self.bridge_ip_help = tk.StringVar()
         ttk.Label(settings, textvariable=self.bridge_ip_help).pack(side='left')
         self.bridge_bind_entry = ttk.Entry(settings, textvariable=self.bridge_bind, width=20)
         self.bridge_bind_entry.pack(side='left', padx=8)
-        self.bridge_dual_box = ttk.Checkbutton(tab, text='Two interfaces: direct SkyQLink upstream + separate router LAN for phone',
+        self.bridge_dual_box = ttk.Checkbutton(tab, text='Two Interface Mode',
                                               variable=self.bridge_dual, command=self.update_controls)
-        self.bridge_dual_box.grid(row=3, sticky='w', pady=4)
+        self.bridge_dual_box.grid(row=4, sticky='w', pady=4)
+        ttk.Label(tab, text='Use two network adapters when this computer connects directly to the telescope’s SkyQLink Wi-Fi and reaches the control application through a separate network.', wraplength=780).grid(row=4, column=0, sticky='w', pady=(30, 0))
+        self.bridge_dual_box.grid_configure(sticky='nw')
         self.bridge_interface_help = tk.StringVar()
-        inventory = ttk.LabelFrame(tab, text='Computer network interfaces', padding=6)
+        inventory = ttk.LabelFrame(tab, text='Local System Network Interfaces', padding=6)
         ttk.Label(inventory, textvariable=self.bridge_interface_help, wraplength=780).pack(anchor='w')
-        inventory.grid(row=4, sticky='ew', pady=5)
+        inventory.grid(row=5, sticky='ew', pady=5)
         self.interface_table = ttk.Treeview(inventory, columns=('interface', 'name', 'ip', 'state', 'role'),
                                             show='headings', height=4, selectmode='browse')
         for field, label, width in (('interface', 'Interface', 70), ('name', 'Adapter / connection', 180),
-                                    ('ip', 'Current IPv4', 140), ('state', 'State', 90), ('role', 'Bridge listener', 240)):
+                                    ('ip', 'Current IPv4', 140), ('state', 'State', 90), ('role', 'Connection role', 240)):
             self.interface_table.heading(field, text=label)
             self.interface_table.column(field, width=width)
         self.interface_table.pack(fill='x')
         self.interface_table.bind('<<TreeviewSelect>>', self.select_bridge_interface)
-        self.interface_refresh_button = ttk.Button(inventory, text='Refresh computer IPs', command=self.refresh_network_interfaces)
+        self.interface_refresh_button = ttk.Button(inventory, text='Refresh Adapter IPs', command=self.refresh_network_interfaces)
         self.interface_refresh_button.pack(anchor='w', pady=4)
         ttk.Label(inventory, textvariable=self.bridge_endpoint, wraplength=800).pack(anchor='w')
-        ttk.Label(tab, text='Default: use the same home/router LAN for the computer, telescope and phone. '
+        ttk.Label(tab, text='Default: use the same home/router LAN for the computer, telescope and control software. '
                   'In a compatible control app choose Celestron WiFi and Access Point mode. SkySafari is a tested example. The bridge advertises on UDP 55555 '
                   'and listens on this computer’s TCP 2000 (management: TCP 3000). '
-                  'The telescope IP above remains the upstream destination.\n'
-                  'ON locks the other tabs. OFF sends Stop and closes the bridge. '
+                  'The Telescope IP address at the top identifies the telescope. Your control application connects to this computer’s bridge address below.\n'
+                  'ON locks the other tabs. OFF attempts to stop both motors and closes the bridge; check the log for acknowledgement. '
                   'Clients can command real movement while connected. '
-                  'App compatibility is experimental; router client isolation or blocked broadcasts can prevent discovery.',
-                  wraplength=820).grid(row=5, sticky='w', pady=8)
+                  'SkySafari has been tested in documented configurations. Other applications and long-duration reliability remain unverified. The bridge emulates selected discovery and management features, not every feature of a modern adapter. Router client isolation or blocked broadcasts can prevent discovery.',
+                  wraplength=820).grid(row=6, sticky='w', pady=8)
         self.bridge_firewall_label = ttk.Label(tab, foreground='#b36b00', wraplength=820,
                   text='FIREWALL / LOCAL NETWORK: allow this Python application incoming TCP 2000 and 3000 '
                   'from your local network, and outgoing UDP broadcasts to port 55555. '
@@ -456,15 +874,15 @@ class SetupApp(ttk.Frame):
                   'Do not forward these ports from the Internet. A listening socket does not verify firewall access.\n'
                   'Two-interface option: manually connect one Wi-Fi adapter to SkyQLink and another Wi-Fi/Ethernet adapter '
                   'to the router LAN. Enter the computer’s router-LAN IP above. The app does not configure or share networks.')
-        self.bridge_firewall_label.grid(row=6, sticky='w', pady=6)
-        readout = ttk.LabelFrame(tab, text='Observed encoder feedback — no injected polling while client connected', padding=6)
-        readout.grid(row=7, sticky='ew')
+        self.bridge_firewall_label.grid(row=7, sticky='w', pady=6)
+        readout = ttk.LabelFrame(tab, text='Motor positions reported through the control application', padding=6)
+        readout.grid(row=8, sticky='ew')
         for row, axis in enumerate(AXES):
             ttk.Label(readout, text=AXES[axis]).grid(row=row, column=0, padx=8)
             for column, field in enumerate(('encoder', 'angle', 'firmware', 'age'), start=1):
                 ttk.Label(readout, textvariable=self.values[axis][field], width=17).grid(row=row, column=column)
         self.bridge_console = ScrolledText(tab, height=8, wrap='word', state='disabled', font=('TkFixedFont', 10))
-        self.bridge_console.grid(row=8, sticky='ew', pady=8)
+        self.bridge_console.grid(row=9, sticky='ew', pady=8)
 
     def refresh_network_interfaces(self):
         """Request a fresh interface inventory on a worker thread."""
@@ -484,9 +902,9 @@ class SetupApp(ttk.Frame):
         self.interface_table.delete(*self.interface_table.get_children())
         for row in self.interface_rows:
             role = (f'TCP {self.bridge_listener[1]} / {self.bridge_listener[2]}'
-                    if self.bridge_listener and row['ip'] == self.bridge_listener[0] else 'Not listening')
+                    if self.bridge_listener and row['ip'] == self.bridge_listener[0] else 'Not used for control app connections')
             if self.bridge_upstream_local and row['ip'] == self.bridge_upstream_local[0]:
-                role += ' · to telescope'
+                role += ' · connects to telescope'
             self.interface_table.insert('', 'end', values=(row['interface'], row['name'], row['ip'], row['state'], role))
 
     def select_bridge_interface(self, event=None):
@@ -499,7 +917,7 @@ class SetupApp(ttk.Frame):
             if ip == '—':
                 self.bridge_status.set('This interface has no IPv4 address. Connect it to the router LAN first.')
             elif ip.startswith('127.'):
-                self.bridge_status.set('Loopback is local to this computer. Choose a router-LAN interface for the phone.')
+                self.bridge_status.set('Loopback is local to this computer. Choose the interface on the network used by telescope-control software.')
             else:
                 self.bridge_bind.set(ip)
 
@@ -515,7 +933,7 @@ class SetupApp(ttk.Frame):
             return
         if self.busy or self.motor is not None or (self.connection_mode.get() != 'infrastructure' and not self.bridge_dual.get()):
             self.bridge_enabled.set(False)
-            self.bridge_status.set('Select Infrastructure / house Wi-Fi and disconnect motor control first.')
+            self.bridge_status.set('Select Infrastructure: Telescope and computer on a common access point and disconnect motor control first.')
             return
         if self.bridge_dual.get() and not self.bridge_bind.get().strip():
             self.bridge_enabled.set(False)
@@ -553,11 +971,11 @@ class SetupApp(ttk.Frame):
         if kind == 'bridge_ready' and event.get('bind_host'):
             self.bridge_listener = (event['bind_host'], event['listen_port'], event['management_port'])
             self.bridge_upstream_local = event.get('upstream_local')
-            self.bridge_endpoint.set(f'Computer IP: {event["bind_host"]} — telescope control TCP {event["listen_port"]}; '
+            self.bridge_endpoint.set(f'Control app connection address: {event["bind_host"]}:{event["listen_port"]} — '
                                      f'management TCP {event["management_port"]}; discovery UDP 55555. Firewall access unverified.')
             if self.bridge_upstream_local:
                 self.bridge_endpoint.set(self.bridge_endpoint.get() +
-                    f'\nOutbound telescope connection: {self.bridge_upstream_local[0]}:{self.bridge_upstream_local[1]}'
+                    f'\nComputer-to-telescope connection: {self.bridge_upstream_local[0]}:{self.bridge_upstream_local[1]}'
                     f' → {self.host.get()}:{self.port.get()}')
             self.show_network_interfaces()
         if kind == 'bridge_off':
@@ -565,7 +983,7 @@ class SetupApp(ttk.Frame):
             self.bridge_listener = None
             self.bridge_upstream_local = None
             self.bridge_enabled.set(False)
-            self.bridge_endpoint.set('Computer listener: OFF — no bridge ports open')
+            self.bridge_endpoint.set('Control app connection: closed — Control Bridge is OFF')
             self.show_network_interfaces()
             message = 'Bridge OFF — ' + (self.bridge_last_error or 'telescope connection closed; see Stop/readback log.')
             if event.get('stop_replies') and not all(event['stop_replies'].values()):
@@ -613,6 +1031,12 @@ class SetupApp(ttk.Frame):
             self.diagnostic_details.insert('end', self.diagnostic_replies.get(selected[0], ''))
             self.diagnostic_details.configure(state='disabled')
 
+    def abort_diagnostics(self):
+        if self.diagnostic_running:
+            self.diagnostic_cancel.set()
+            self.diagnostic_abort_button.configure(state='disabled')
+            self.diagnostic_status.set('Aborting after the current bounded query; closing connection and preserving results…')
+
     def start_diagnostics(self):
         """Queue read-only adapter and motor checks under exclusive ownership."""
         if self.busy or self.motor is not None or self.bridge is not None:
@@ -639,11 +1063,14 @@ class SetupApp(ttk.Frame):
         self.diagnostic_details.delete('1.0', 'end')
         self.diagnostic_details.configure(state='disabled')
         self.set_busy(True)
+        self.diagnostic_cancel.clear()
+        self.diagnostic_running = True
+        self.diagnostic_abort_button.configure(state='normal')
         self.diagnostic_status.set(f'Testing {host}:{port} — waiting for replies…')
         self.tabs.select(self.diagnostic_tab)
         def worker():
             try:
-                report = self.diagnostic(host, port, callback=self.events.put, **({'deep': True} if deep else {}))
+                report = self.diagnostic(host, port, callback=self.events.put, cancel=self.diagnostic_cancel, **({'deep': True} if deep else {}))
             except Exception as error:
                 report = {'error': str(error)}
             self.events.put({'event': 'diagnostic_done', 'report': report})
@@ -661,7 +1088,7 @@ class SetupApp(ttk.Frame):
         self.host.set(address)
         self.port.set('2000')
         self.status.set('Enter or discover the telescope’s router-assigned IP; DHCP addresses may change.' if home else
-                        'Direct / ad hoc: connect this computer to SkyQLink-xx. No SSID-prefix discovery is used.')
+                        'Direct / ad hoc: connect this computer to SkyQLink-xx. Use Discover SkyQLink Modules to check the connection.')
 
     def update_mode_help(self):
         """Explain the selected connection mode and refresh control availability."""
@@ -691,7 +1118,7 @@ class SetupApp(ttk.Frame):
         self.scan_started = time.monotonic()
         self.scan_button.configure(text='Scanning…')
         self.tick_scan()
-        self.append(f'SCAN LAN — verify motor/adapter firmware replies on TCP {port}; no movement or setting changes.')
+        self.append(f'DISCOVERY — check motor/adapter firmware replies on TCP {port}; no movement or setting changes.')
         scan_mode = self.connection_mode.get()
         def worker():
             try:
@@ -728,11 +1155,11 @@ class SetupApp(ttk.Frame):
 
     def update_controls(self):
         """Refresh widget locks and conditional shared-network interface guidance."""
-        self.bridge_ip_help.set('Computer IP on the app’s network — required' if self.bridge_dual.get() else 'Computer LAN IP (blank = automatic)')
+        self.bridge_ip_help.set('Control app connection address — required' if self.bridge_dual.get() else 'Control app connection address (blank = automatic)')
         self.bridge_interface_help.set(
-            'Select this computer’s IP on the network shared with your phone/control app. For example, select Ethernet when the phone uses house Wi-Fi. Do not select telescope-facing Wi-Fi.'
+            'Select this computer’s IP on the network shared with telescope-control software. For example, select Ethernet when the control software uses that LAN. Do not select telescope-facing Wi-Fi.'
             if self.bridge_dual.get() else
-            'Select this computer’s local IP reachable from the control app. This chooses the bridge listening address, not a Wi-Fi network or the telescope IP.')
+            'Select this computer’s local IP reachable from the control app. The control application will connect to this address on your computer. Selecting it does not change Wi-Fi networks or the telescope address.')
         locked = self.busy or self.motor is not None or self.bridge is not None
         for tab in (self.motor_tab, self.diagnostic_tab, self.provision_tab):
             self.tabs.tab(tab, state='disabled' if self.bridge is not None else 'normal')
@@ -748,6 +1175,8 @@ class SetupApp(ttk.Frame):
             widget.configure(state='disabled' if locked else 'normal')
         self.diagnostic_button.configure(state='disabled' if locked else 'normal')
         self.recovery_button.configure(state='disabled' if locked else 'normal')
+        self.time_apply_button.configure(state='disabled' if locked else 'normal')
+        self.time_sync_button.configure(state='disabled' if locked else 'normal')
         self.auto_recover_button.configure(state='disabled' if locked else 'normal')
         self.security_box.configure(state='disabled' if locked else 'readonly')
         self.motor_connect_button.configure(state='disabled' if locked else 'normal')
@@ -766,7 +1195,8 @@ class SetupApp(ttk.Frame):
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
-            self.motor = self.motor_factory(host, port, self.events.put)
+            idle = {'Off': 0, '10 seconds': 10, '20 seconds': 20, '30 seconds': 30}[self.idle_release.get()]
+            self.motor = self.motor_factory(host, port, self.events.put, idle_release=idle)
             self.connect_request_active = True
             self.connect_recovery_attempted = recover_attempted
             self.last_motor_error = None
@@ -795,6 +1225,78 @@ class SetupApp(ttk.Frame):
         except (ValueError, RuntimeError) as e:
             self.status.set(str(e))
 
+    def toggle_keyboard_control(self):
+        """Explicit opt-in takes focus; switching off releases any held motion."""
+        if self.keyboard_enabled.get():
+            self.keyboard_status.set('Keyboard control ON — click this panel after editing')
+            self.motor_tab.focus_set()
+        else:
+            self.stop_motors()
+            self.keyboard_status.set('Keyboard control OFF')
+
+    def focus_motor_shortcuts(self, event):
+        """Clicks outside editors release stale Entry/Combobox keyboard focus.
+
+        ttk buttons/labels do not consistently take focus on all platforms. An
+        IP or speed editor could therefore retain focus after clicking controls,
+        causing the intentional text-entry guard to ignore every motor shortcut.
+        Keep editors protected; focus only this main window's Motor tab.
+        """
+        if (self.keyboard_enabled.get() and self.tabs.select() == str(self.motor_tab)
+                and event.widget.winfo_toplevel() == self.root
+                and event.widget.winfo_class() not in
+                ('Entry', 'TEntry', 'Text', 'TCombobox', 'Spinbox', 'TSpinbox')):
+            self.motor_tab.focus_set()
+
+    def motor_key_press(self, event):
+        key = event.keysym.lower()
+        # Tk on Windows uses Mod1 (0x0008) for Num Lock, not Alt. Blocking
+        # 0x000C therefore disabled every shortcut with Num Lock enabled.
+        # Windows Alt is 0x20000; X11 uses Mod1 for Alt. Keep Ctrl blocked.
+        alt_mask = 0x20000 if self.root.tk.call('tk', 'windowingsystem') == 'win32' else 0x0008
+        if (not self.keyboard_enabled.get() or event.widget.winfo_toplevel() != self.root or self.tabs.select() != str(self.motor_tab) or self.busy or self.bridge is not None
+                or event.widget.winfo_class() in ('Entry', 'TEntry', 'Text', 'TCombobox', 'Spinbox', 'TSpinbox')
+                or event.state & (0x0004 | alt_mask)):
+            return
+        if key == 'o':
+            self.connect_motors()
+            return 'break'
+        if key == 'p':
+            self.stop_motors()
+            self.disconnect_motors()
+            return 'break'
+        if key == 'k':
+            self.stop_motors()
+            return 'break'
+        mapping = {'i': (0x11, 1), 'm': (0x11, -1), 'j': (0x10, -1), 'l': (0x10, 1)}
+        if key not in mapping:
+            return
+        if self.keyboard_direction == key:
+            if self.keyboard_release_id:
+                self.after_cancel(self.keyboard_release_id)
+                self.keyboard_release_id = None
+            return 'break'
+        if self.keyboard_direction or not self.motor_ready or self.jogging:
+            return 'break'
+        self.keyboard_direction = key
+        if self.drive_mode.get() == 'hold':
+            self.press_direction(*mapping[key])
+        else:
+            self.timed_direction(*mapping[key])
+        return 'break'
+
+    def motor_key_release(self, event):
+        if event.keysym.lower() != self.keyboard_direction:
+            return
+        if self.keyboard_release_id:
+            self.after_cancel(self.keyboard_release_id)
+        def released():
+            self.keyboard_release_id = None
+            self.keyboard_direction = None
+            self.release_direction()
+        self.keyboard_release_id = self.after(30, released)
+        return 'break'
+
     def timed_direction(self, axis, direction):
         """Run the chosen direction for the selected bounded duration."""
         if self.drive_mode.get() == 'jog':
@@ -819,6 +1321,10 @@ class SetupApp(ttk.Frame):
 
     def stop_motors(self):
         """Request priority Stop and clear held-button state."""
+        self.keyboard_direction = None
+        if self.keyboard_release_id:
+            self.after_cancel(self.keyboard_release_id)
+            self.keyboard_release_id = None
         self.held = False
         if self.motor:
             self.motor.stop()
@@ -868,6 +1374,10 @@ class SetupApp(ttk.Frame):
 
     def clear(self):
         """Clear the displayed transfer log without deleting saved evidence."""
+        if not messagebox.askyesno('Clear displayed log?',
+                'Clear the on-screen log? Saved session logs will NOT be deleted. '
+                'Use Open Logs to access saved files.', parent=self.winfo_toplevel()):
+            return
         self.console.configure(state='normal')
         self.console.delete('1.0', 'end')
         self.console.configure(state='disabled')
@@ -878,9 +1388,11 @@ class SetupApp(ttk.Frame):
         self.clear_button.configure(state='disabled' if value else 'normal')
         self.update_controls()
         if value:
+            self.progress.pack(side='right', padx=8)
             self.progress.start(12)
         else:
             self.progress.stop()
+            self.progress.pack_forget()
 
     def start(self, apply):
         """Validate provisioning inputs and queue a read or explicitly confirmed settings upload."""
@@ -923,7 +1435,7 @@ class SetupApp(ttk.Frame):
                         self.append('COMPUTER NETWORK: ' + event['error'])
                 elif kind.startswith('bridge_'):
                     self.handle_bridge_event(event)
-                elif kind.startswith('motor_'):
+                elif kind.startswith('motor_') and kind != 'motor_settings_done':
                     self.handle_motor_event(event)
                 elif kind == 'scan_progress':
                     self.status.set(event['message'])
@@ -965,11 +1477,24 @@ class SetupApp(ttk.Frame):
                     values['firmware'].set(event['firmware'])
                     self.last_positions[event['axis']] = event['monotonic']
                 elif kind == 'diagnostic_done':
+                    self.diagnostic_running = False
+                    self.diagnostic_abort_button.configure(state='disabled')
                     self.set_busy(False)
                     report = event['report']
+                    if self.calibration is not None and not report.get('saved_report'):
+                        try:
+                            identify_profile(self.calibration, report)
+                            save_config(self.calibration)
+                            self.reload_calibration()
+                            self.append('Calibration matched by adapter MAC; network address updated.')
+                        except (ValueError, OSError, KeyError) as error:
+                            self.append('Calibration identity: ' + str(error))
+                    self.time_zone.set(report.get('wifly_clock', {}).get('Zone setting (raw)', 'Not reported'))
                     text = ('Wi-Fi: ' + ('VERIFIED' if report.get('wifi_verified') else 'NOT VERIFIED') +
                             ' | Motor firmware: ' + ('VERIFIED' if report.get('motor_firmware_verified') else 'NOT VERIFIED') +
                             ' | Both motor positions: ' + ('VERIFIED' if report.get('motor_positions_verified') else 'NOT VERIFIED'))
+                    if report.get('aborted'):
+                        text = 'ABORTED — partial results retained | ' + text
                     if report.get('saved_report'):
                         text = 'SAVED TEST RESULT — ' + text
                     if report.get('error'):
@@ -979,12 +1504,60 @@ class SetupApp(ttk.Frame):
                     self.append(text)
                     self.log_directory = report.get('log_directory')
                     self.logs_button.configure(state='normal' if self.log_directory else 'disabled')
+                elif kind == 'motor_settings_done':
+                    self.set_busy(False)
+                    result = event['report']
+                    text = result.get('error') or f"{AXES[result['axis']]} settings read back successfully"
+                    self.motor_setting_status.set(text)
+                    self.append(text)
+                    axis = result['axis']
+                    if result.get('values'):
+                        values = result['values']
+                        degrees = values['degrees']
+                        if axis == 0x11 and degrees > 180:
+                            degrees -= 360
+                        stamp = dt.datetime.now().strftime('%H:%M:%S')
+                        source = 'Verified after Apply' if result.get('writes') else 'Read current values result'
+                        self.controller_readout[axis].set(f"{source} at {stamp}\nEncoder angle: {degrees:.5f}°\nPositive-direction backlash: {values['positive_backlash']}\nNegative-direction backlash: {values['negative_backlash']}")
+                        fields = self.controller_fields[axis]
+                        fields['angle'].set(f'{degrees:.5f}')
+                        fields['positive'].set(str(values['positive_backlash']))
+                        fields['negative'].set(str(values['negative_backlash']))
+                        self.controller_reads[axis] = {'values': dict(values), 'time': time.monotonic(), 'endpoint': event.get('endpoint', (self.host.get(), int(self.port.get())))}
+                    else:
+                        self.controller_reads.pop(axis, None)
+                        self.controller_readout[axis].set('Read failed — current telescope values unknown. ' + result.get('error', 'No values returned.'))
+                    if result.get('writes'):
+                        verified = not result.get('error') and all(w.get('verified') for w in result['writes'])
+                        self.controller_history[axis].set(dt.datetime.now().strftime('%H:%M:%S') + ' — ' + ('Verified: ' if verified else 'UNCERTAIN / partial change: ') + event.get('preview', 'Controller setting write'))
+                        self.clear_local_references()
+                elif kind == 'time_server_test_done':
+                    result = event['report']
+                    if result['host'] != self.time_server.get().strip():
+                        continue
+                    self.tested_time_server = None if result.get('error') else result
+                    self.time_status.set(result.get('error') or f"PC reply: {result['ip']} · {result['utc']} · {result['round_trip_ms']} ms. Telescope not tested.")
+                elif kind == 'time_settings_done':
+                    self.set_busy(False)
+                    report = event['report']
+                    self.log_directory = report.get('log_directory')
+                    self.logs_button.configure(state='normal' if self.log_directory else 'disabled')
+                    text = report.get('error') or ('WiFly clock text available' if report.get('clock_text_available') else 'WiFly operation completed; clock remains unset or unverified')
+                    if report.get('applied'):
+                        text += ' | setting read back; ' + ('saved to flash' if report.get('saved') else 'RAM only')
+                    self.status.set(text)
+                    self.diagnostic_status.set(text)
+                    self.append(text)
+                    self.time_status.set(text)
+                    self.time_zone.set(report.get('clock', {}).get('Zone setting (raw)', 'Not reported'))
+                    for field, value in report.get('clock', {}).items():
+                        self.events.put({'event': 'diagnostic_row', 'device': 'WiFly clock', 'endpoint': field, 'status': 'READBACK', 'reply': str(value)})
                 elif kind == 'scan_done':
                     self.scan_started = None
                     if self.scan_tick_id is not None:
                         self.root.after_cancel(self.scan_tick_id)
                         self.scan_tick_id = None
-                    self.scan_button.configure(text='Discover Modules on LAN')
+                    self.scan_button.configure(text='Discover SkyQLink Modules')
                     self.set_busy(False)
                     report = event['report']
                     matches = report.get('matches', [])
@@ -1066,6 +1639,7 @@ class SetupApp(ttk.Frame):
         if self.held and self.motor_ready and self.motor is not None:
             self.motor.renew_hold()
         if self.closing and self.motor is None and self.bridge is None:
+            self.progress.stop()
             self.root.destroy()
             return
         self.poll_id = self.after(100, self.poll)
@@ -1077,6 +1651,12 @@ class SetupApp(ttk.Frame):
             axis = event['axis']
             values = self.values[axis]
             values['encoder'].set(str(event['encoder']))
+            if axis in self.position_references:
+                origin, degrees = self.position_references[axis]
+                referenced = degrees + relative_angle(event['encoder'], origin)
+                if axis == 0x10:
+                    referenced %= 360
+                values['referenced'].set(f'{referenced:.5f}°')
             values['angle'].set(f'{event["angle"]:.5f}°')
             values['relative'].set(f'{event["relative"]:+.5f}°')
             values['firmware'].set(event['firmware'])
@@ -1086,6 +1666,23 @@ class SetupApp(ttk.Frame):
                     values['delta_counts'].set(f'{relative_counts(event["encoder"], int(before)):+d}')
                     values['delta_degrees'].set(f'{relative_angle(event["encoder"], int(before)):+.5f}°')
             self.last_positions[axis] = event['monotonic']
+            self.refresh_reference_preview(axis)
+            if axis in self.reference_poll_pending:
+                self.reference_poll_pending.discard(axis)
+                self.motion_status.set(f'{AXES[axis]} position polled at {dt.datetime.now().strftime("%H:%M:%S")}.')
+        elif kind == 'motor_feedback_retry':
+            self.clear_local_references()
+            self.motor_ready = False
+            self.motor_status.set('Waiting for encoder feedback')
+            self.motion_status.set(event['message'])
+        elif kind == 'motor_feedback_restored':
+            self.motor_ready = True
+            self.motor_status.set('Motor encoder connection verified')
+            self.motion_status.set(event['message'])
+        elif kind == 'motor_idle_release':
+            self.motor_ready = False
+            self.motion_status.set(f'Idle release after {event["seconds"]} seconds. Reconnect to continue moving.')
+            self.status.set(self.motion_status.get())
         elif kind == 'motor_connected':
             self.connect_request_active = False
             self.motor_ready = True
@@ -1094,6 +1691,15 @@ class SetupApp(ttk.Frame):
             self.motion_status.set('Live encoder feedback verified on both axes. Ready for movement.')
             self.append(f'MOTORS connected to {event["host"]}:{event["port"]}')
         elif kind == 'motor_disconnected':
+            self.clear_local_references()
+            self.controller_reads.clear()
+            for axis in AXES:
+                self.controller_readout[axis].set('Not current after disconnect. Press Read current values.')
+            for values in self.values.values():
+                values['referenced'].set('—')
+            for axis in AXES:
+                self.reference_current[axis].set('—')
+                self.reference_delta[axis].set('—')
             retry_with_restart = (self.connect_request_active and self.auto_recover.get()
                                   and not self.connect_recovery_attempted and not self.closing
                                   and self.last_motor_error is not None
@@ -1204,6 +1810,7 @@ class SetupApp(ttk.Frame):
         self.after_cancel(self.poll_id)
         if self.scan_tick_id is not None:
             self.root.after_cancel(self.scan_tick_id)
+        self.progress.stop()
         self.root.destroy()
 
 
