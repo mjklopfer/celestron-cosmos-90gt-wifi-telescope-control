@@ -277,7 +277,7 @@ class SetupApp(ttk.Frame):
         buttons.grid(row=1, sticky='ew', pady=(16, 0))
         self.read_button = ttk.Button(buttons, text='Connect & Read Settings', command=lambda: self.start(False))
         self.read_button.pack(side='left')
-        self.upload_button = ttk.Button(buttons, text='Upload & Save Wi-Fi Settings', command=lambda: self.start(True))
+        self.upload_button = ttk.Button(buttons, text='Upload & Save Wi-Fi Settings…', command=lambda: self.start(True))
         self.upload_button.pack(side='left', padx=10)
         ttk.Label(self.provision_tab, text='Read settings and command replies appear in the Transfer log below the tabs; no popup opens. Logs are also saved.',
                   wraplength=780).grid(row=2, sticky='w', pady=(8, 0))
@@ -404,7 +404,7 @@ class SetupApp(ttk.Frame):
         self.calibration_note = tk.StringVar()
         ttk.Label(rate_frame, textvariable=self.calibration_note, wraplength=310, font=('TkDefaultFont', 8)).grid(row=10, columnspan=3, sticky='w')
         ttk.Button(rate_frame, text='Reload calibration', command=self.reload_calibration).grid(row=11, column=0, columnspan=2, sticky='w')
-        ttk.Button(rate_frame, text='Estimate degree jog', command=self.open_degree_estimate).grid(row=11, column=2)
+        ttk.Button(rate_frame, text='Estimate degree jog…', command=self.open_degree_estimate).grid(row=11, column=2)
         self.reload_calibration()
 
         ttk.Label(pad, text='Seconds / click').grid(row=5, column=0, sticky='w')
@@ -456,7 +456,7 @@ class SetupApp(ttk.Frame):
         self.last_local_reference = {}
         self.reference_poll_pending = set()
         self.motor_setting_status = tk.StringVar(value='To read hardware settings, click Disconnect on the Motor control tab if connected, and switch Control Bridge OFF if running. Leave the telescope powered on.')
-        ttk.Button(tab, text='Controller Angle / Backlash Settings', command=self.open_motor_settings).grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
+        ttk.Button(tab, text='Controller Angle / Backlash Settings…', command=self.open_motor_settings).grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
 
     def reload_calibration(self):
         self.calibration = None
@@ -529,7 +529,7 @@ class SetupApp(ttk.Frame):
         for row, axis in enumerate(AXES, 5):
             ttk.Button(refs, text=f'Poll {AXES[axis]} now', command=lambda a=axis: self.poll_local_reference(a)).grid(row=row, column=0, sticky='w', pady=5)
             ttk.Label(refs, textvariable=self.local_history[axis], wraplength=470).grid(row=row, column=1, columnspan=3, sticky='w')
-            ttk.Button(refs, text='Reapply previous offset', command=lambda a=axis: self.reapply_local_reference(a)).grid(row=row, column=4)
+            ttk.Button(refs, text='Reapply previous offset…', command=lambda a=axis: self.reapply_local_reference(a)).grid(row=row, column=4)
         ttk.Button(refs, text='Clear local references (zero offsets)', command=self.clear_local_references).grid(row=7, columnspan=3, sticky='w', pady=5)
         self.copy_button(refs, lambda: '\n\n'.join(f'{AXES[a]}\nCurrent: {self.reference_current[a].get()}\nKnown position: {self.reference_inputs[a].get()}\nProposed offset: {self.reference_delta[a].get()}\n{self.local_history[a].get()}' for a in AXES)).grid(row=7, column=3, columnspan=2, sticky='w')
         ttk.Label(refs, text='Local mode changes only this app’s displayed coordinates. Disconnect or lost feedback clears active offsets; previous applied values remain inactive history until this app closes. No hardware settings are reset. Reapply only if the mount has not been powered off, moved manually or realigned. Otherwise establish a new known-position reference.', wraplength=780).grid(row=8, columnspan=5, sticky='w')
@@ -616,9 +616,9 @@ class SetupApp(ttk.Frame):
             for row, key, label in ((4, 'angle', 'Encoder angle (degrees)'), (6, 'positive', 'Positive-direction backlash'), (7, 'negative', 'Negative-direction backlash'), (9, 'delta_positive', 'Positive-direction delta'), (10, 'delta_negative', 'Negative-direction delta')):
                 ttk.Label(panel, text=label).grid(row=row, column=0, sticky='w', pady=3)
                 ttk.Entry(panel, textvariable=fields[key], width=14).grid(row=row, column=1, padx=5)
-            ttk.Button(panel, text='Set encoder angle', command=lambda a=axis: self.run_motor_settings('position', a)).grid(row=5, columnspan=2, sticky='w')
-            ttk.Button(panel, text='Apply absolute backlash', command=lambda a=axis: self.run_motor_settings('backlash', a)).grid(row=8, columnspan=2, sticky='w', pady=4)
-            ttk.Button(panel, text='Preview / apply backlash delta', command=lambda a=axis: self.run_motor_settings('delta', a)).grid(row=11, columnspan=2, sticky='w', pady=4)
+            ttk.Button(panel, text='Set encoder angle…', command=lambda a=axis: self.run_motor_settings('position', a)).grid(row=5, columnspan=2, sticky='w')
+            ttk.Button(panel, text='Apply absolute backlash…', command=lambda a=axis: self.run_motor_settings('backlash', a)).grid(row=8, columnspan=2, sticky='w', pady=4)
+            ttk.Button(panel, text='Preview / apply backlash delta…', command=lambda a=axis: self.run_motor_settings('delta', a)).grid(row=11, columnspan=2, sticky='w', pady=4)
             ttk.Label(panel, text='Last applied change (retained until app closes)', font=('TkDefaultFont', 10, 'bold')).grid(row=12, columnspan=2, sticky='w', pady=5)
             ttk.Label(panel, textvariable=self.controller_history[axis], wraplength=390, justify='left').grid(row=13, columnspan=2, sticky='w')
             self.copy_button(panel, lambda a=axis: AXES[a] + '\n' + self.controller_readout[a].get() + '\nLast applied change: ' + self.controller_history[a].get()).grid(row=14, columnspan=2, sticky='w', pady=4)
@@ -845,7 +845,7 @@ class SetupApp(ttk.Frame):
         self.time_status = tk.StringVar(value='Test a server from this computer before pushing a new server address.')
         self.time_persist = tk.BooleanVar(value=False)
         self.tested_time_server = None
-        self.time_apply_button = ttk.Button(tab, text='Time / Time Server Settings', command=self.open_time_settings)
+        self.time_apply_button = ttk.Button(tab, text='Time / Time Server Settings…', command=self.open_time_settings)
         self.time_apply_button.grid(row=5, sticky='w', pady=6)
         self.time_sync_button = self.time_apply_button
 
@@ -868,8 +868,8 @@ class SetupApp(ttk.Frame):
         ttk.Entry(frame, textvariable=self.time_zone, state='readonly', width=15).grid(row=4, column=1, sticky='w')
         ttk.Label(frame, text='7 = UTC−07:00 in WiFly documentation. Setter unverified. Run diagnostics to refresh.', wraplength=500).grid(row=5, columnspan=2, sticky='w', pady=6)
         ttk.Checkbutton(frame, text='Save ALL current WiFly settings to flash', variable=self.time_persist).grid(row=6, columnspan=2, sticky='w')
-        ttk.Button(frame, text='Push server and sync mode', command=self.start_time_settings).grid(row=7, column=0, pady=8)
-        ttk.Button(frame, text='Sync clock now', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
+        ttk.Button(frame, text='Push server and sync mode…', command=self.start_time_settings).grid(row=7, column=0, pady=8)
+        ttk.Button(frame, text='Sync clock now…', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
         ttk.Label(frame, textvariable=self.time_status, wraplength=500).grid(row=8, columnspan=2, sticky='w')
         self.copy_button(frame, lambda: 'Time server: ' + self.time_server.get() + '\nTimezone readback: ' + self.time_zone.get() + '\n' + self.time_status.get()).grid(row=10, columnspan=2, sticky='w')
         ttk.Label(frame, text='The telescope needs its own route to UDP 123. A successful PC test does not prove telescope access. Names are resolved and pushed as IPv4 addresses.', wraplength=500).grid(row=9, columnspan=2, sticky='w', pady=8)

@@ -90,7 +90,7 @@ Hold/Timed jog mode applies to keyboard directions as well.
 
 ### Position reference and controller settings
 
-Open **Controller Angle / Backlash Settings**. This contains both former
+Open **Controller Angle / Backlash Settings…**. This contains both former
 reference controls and the hardware settings; choose the intended mode:
 
 - **Local reference (this app only):** connect motors, point at a known object,
@@ -127,7 +127,7 @@ zeros and integral decimals normalize (`002.0` becomes `2`); fractions such as
 `0.2`, negative absolute values, and out-of-range entries are rejected.
 
 To adjust by a delta, read that axis within 60 seconds, enter signed whole-number
-deltas, and select **Preview / apply backlash delta**. The confirmation shows
+deltas, and select **Preview / apply backlash delta…**. The confirmation shows
 current + delta = proposed value for each direction. For example, 10 - 2 = 8.
 A result outside 0–99 is rejected. Before writing, the backend reads the source
 values again and aborts if they changed. Reads and edits are separate actions.
@@ -148,7 +148,7 @@ explanation. A user-confirmed rounding offer remains future work.
 
 The table displays measured pulse-average degrees/second separately for each
 axis, speed and direction, when a matching calibration configuration is present.
-Use **Reload calibration** after generating a new file. **Estimate degree jog**
+Use **Reload calibration** after generating a new file. **Estimate degree jog…**
 converts the requested relative angle into a timed jog using the matching sample.
 It sets direction-related duration guidance and the timed-jog duration; it does
 not move the telescope. Press the appropriate direction to execute the jog.
@@ -214,7 +214,7 @@ does not brute-force every command number. **Abort diagnostics** stops new
 queries and retains completed results. The active bounded query and connection
 cleanup can take time to finish. Coverage is described in [Diagnostic coverage](DIAGNOSTIC-COVERAGE.md).
 
-**Time / Time Server Settings** can test a common or custom server from this computer
+**Time / Time Server Settings…** can test a common or custom server from this computer
 and request that the WiFly module use its IPv4 address. Choose disabled, once at
 startup, or every 2–1440 minutes; Sync now requests an immediate synchronization.
 A recent successful computer test is required before pushing a new server.
@@ -329,3 +329,7 @@ WiFly documents Zone=7 as UTC-7 for its displayed clock, not an automatic daylig
 saving rule. Calendar UTC is derived from RTC; raw Time text is kept separate.
 Custom 2.40-CEL display/synchronization behavior still requires live verification.
 See [WiFly manual, section 3.11](https://ww1.microchip.com/downloads/en/DeviceDoc/50002230B.pdf).
+
+Button naming: a trailing ellipsis (**…**) means another dialog or confirmation
+opens before the action is completed. Immediate actions such as Read current
+values, Disconnect, STOP and Copy to Clipboard have no ellipsis.

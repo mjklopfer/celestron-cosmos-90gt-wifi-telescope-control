@@ -129,3 +129,21 @@ Never assume that a 1-degree/s sky track fits within a 3-degree/s azimuth axis.
   required JavaScript; export capability/schema was not verified in this audit.
 - Operator also supplied ISSInfo, community/forum and video examples. Those
   have not been used as validated numerical specifications.
+
+## Geographic-location endpoint audit and UI decision
+
+Recorded 2026-11-16 at the operator's request. We have not established a writable
+geographic-location endpoint on this COSMOS. No latitude/longitude setting is
+verified for WiFly RN-171 / 2.40-CEL, and no motor-controller command accepting an
+observing site for onboard tracking calculations has been verified.
+
+The documented AUX GPS interface provides latitude/longitude read commands;
+that is not evidence of a general site-location write command. The recorded
+COSMOS diagnostic run received no matching optional GPS/RTC replies. This does
+not prove those devices or undiscovered endpoints can never exist.
+
+Decision: do not add a hardware geographic-location settings menu without a
+verified endpoint. Future computer-side observing-site configuration for orbit
+or launch prediction must be clearly labeled local to the application; it must
+not imply that coordinates were written to the telescope or that autonomous
+tracking/shared celestial alignment was established.
