@@ -44,3 +44,36 @@ between backends without verification. Endpoint ownership remains exclusive.
 5. Publish a tested hardware/firmware/client matrix. Shared celestial alignment,
    autonomous tracking, time/site persistence and higher-rate motion remain
    separate capabilities to establish, not assumptions of the new transport.
+
+## Deferred: ESP32 Wi-Fi, GPS, compass and RTC accessory
+
+Requested 2026-11-16; viable as a research prototype, not implemented or verified
+on COSMOS. Combine an AUX/Wi-Fi bridge with a GNSS receiver, magnetometer/IMU
+and optional battery-backed RTC. Keep transport and emulated accessories separate
+capabilities that can be enabled independently.
+
+- Emulate documented GPS/compass replies at AUX address `0xB0`: location, UTC
+  date/time, validity, satellite status and compass response. The documented
+  `0xA0` compass read returns only eight direction codes, not a degree heading or
+  a writable setting. Offer precise heading/tilt through a separate API rather
+  than inventing a new payload for the legacy command.
+- Validate magnetometer calibration, tilt compensation, mounting orientation,
+  magnetic interference from motors/steel, and magnetic versus true north.
+  Compass plus GPS supplies initial reference information, not proven celestial
+  alignment or autonomous tracking.
+- Use GPS UTC to discipline the RTC; report holdover age and validity honestly
+  when GPS is unavailable. Never report a retained location as a fresh fix.
+- Investigate optional `0xB2` RTC emulation separately: the known interface is
+  model dependent. A physical RTC does not require presenting this AUX address
+  if clients only consume GPS time replies.
+- Verify AUX electrical levels, bus arbitration, timing and address conflicts
+  before attachment. Do not impersonate an accessory already on the bus.
+- Capture actual client requests to establish whether COSMOS, a hand controller,
+  or control software requests and caches this information. Supplying replies
+  does not establish a writable site endpoint in the motor controllers.
+- Validate separately: packet fixtures, bench electrical tests, read-only client
+  compatibility, restart/no-fix behavior, then supervised alignment tests.
+
+Protocol basis: [NexStar AUX observations, GPS/compass chapter](https://paquettefamily.ca/nexstar/NexStar_AUX_Commands_10.pdf).
+This is a reverse-engineered research document, not an official Celestron
+compatibility guarantee.

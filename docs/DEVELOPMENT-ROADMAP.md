@@ -68,3 +68,39 @@ Follow the [backend architecture plan](ARCHITECTURE-PLAN.md) for future ESP32/
 ESP8266 AUX and modern Celestron Wi-Fi support. Keep transport, motion service,
 adapter settings and bridge roles separate. Expose only capabilities verified on
 the selected backend. New transport support must not destabilize legacy control.
+
+The architecture plan also records a deferred ESP32 GPS/compass/RTC accessory
+emulator alongside the Wi-Fi bridge. Client consumption of these replies and
+COSMOS compatibility require verification; no shared alignment is promised.
+
+## Planned: uptime evidence for potentially stale references
+
+Not implemented as of 2026-11-16. Diagnostics displays uptime, restart/wake counts
+and RTC/RAW values; it does not retain and compare them to detect resets. Existing
+disconnect/lost-feedback handling already clears active local offsets.
+
+- Compare samples for the same verified adapter identity, recording host monotonic
+  elapsed time and sample freshness. Collect at safe diagnostic/connect boundaries;
+  do not interrupt motor traffic to enter WiFly command mode for periodic polling.
+- A decrease in uptime is evidence of a possible adapter restart or counter
+  discontinuity, not proof that the motor controllers lost power. Correlate restart
+  counters and fresh encoder readings; do not infer a reset from connection loss.
+- The Microchip manual documents seconds for UpTime but does not establish its
+  counter width or rollover behavior for customized firmware `2.40-CEL`. Do not
+  assume a 32-bit millisecond counter or a 49.7-day wrap. Only classify rollover
+  when a verified modulus and elapsed-time-consistent transition support it;
+  otherwise report uncertainty. Long sampling gaps also limit classification.
+- Calendar RTC time may change during synchronization. It is not the reset detector.
+  The manual describes RAW as a 64-bit counter at 32,768 Hz; its full-width wrap
+  is approximately 17.8 million years, but that does not establish UpTime's width
+  or this customized firmware's behavior.
+- Warn: "Adapter uptime restarted or changed unexpectedly. Previous local
+  references may be stale; establish a new reference before reapplying offsets."
+  Clear active local references conservatively on detected discontinuity; retain
+  history as inactive and never automatically restore it or write motor settings.
+- Test normal progression, restart, verified rollover, missing samples, clock
+  sync, host restart and changed device identity before enabling this feature.
+
+Reference: [Microchip WiFly manual, section 3.11](https://ww1.microchip.com/downloads/en/DeviceDoc/50002230B.pdf).
+This manual is newer than the installed customized firmware; verify behavior
+on hardware before claiming reliable reboot detection.
