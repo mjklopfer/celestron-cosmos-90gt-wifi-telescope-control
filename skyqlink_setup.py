@@ -340,8 +340,8 @@ class SetupApp(ttk.Frame):
         pad.grid(row=1, column=0, sticky='nsew', padx=(0, 12), pady=(12, 0))
         self.jog_buttons = []
         for text, row, col, axis, direction in (
-                ('Up / ALT +', 0, 1, 0x11, 1), ('Left / AZ −', 1, 0, 0x10, -1),
-                ('Right / AZ +', 1, 2, 0x10, 1), ('Down / ALT −', 2, 1, 0x11, -1)):
+                ('Up / EL +', 0, 1, 0x11, 1), ('Left / AZ −', 1, 0, 0x10, -1),
+                ('Right / AZ +', 1, 2, 0x10, 1), ('Down / EL −', 2, 1, 0x11, -1)):
             button = ttk.Button(pad, text=text, command=lambda a=axis, d=direction: self.timed_direction(a, d), state='disabled')
             button.bind('<ButtonPress-1>', lambda event, a=axis, d=direction: self.press_direction(a, d))
             button.bind('<ButtonRelease-1>', lambda event: self.release_direction())
@@ -363,7 +363,7 @@ class SetupApp(ttk.Frame):
 
         readout = ttk.LabelFrame(tab, text='Motor values', padding=8)
         readout.grid(row=1, column=1, sticky='nsew', pady=(12, 0))
-        for column, label in enumerate(('Value', 'Azimuth', 'Altitude')):
+        for column, label in enumerate(('Value', 'Azimuth', 'Elevation')):
             ttk.Label(readout, text=label, font=('TkDefaultFont', 12, 'bold')).grid(row=0, column=column, sticky='w', padx=(0, 14), pady=(0, 8))
         for row, (field, label) in enumerate((('encoder', 'Encoder counts'), ('angle', 'Raw angle'),
                                              ('relative', 'Since connect'), ('firmware', 'Firmware'),

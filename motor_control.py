@@ -10,7 +10,7 @@ from celestron_probe import FrameParser, Recorder
 from setup_backend import validate_endpoint, check_direct_route
 from endpoint_lock import EndpointLease
 
-AXES = {0x10: 'Azimuth', 0x11: 'Altitude'}
+AXES = {0x10: 'Azimuth', 0x11: 'Elevation'}
 COUNTS_PER_TURN = 1 << 24
 
 

@@ -161,5 +161,5 @@ class DiagnosticTests(unittest.TestCase):
         self.assertTrue(report['wifi_verified'])
         self.assertFalse(report['motor_positions_verified'])
         self.assertFalse(report['motor_firmware_verified'])
-        self.assertTrue(any(r['device'] == 'Altitude motor' and r['status'] == 'NO VALID REPLY'
+        self.assertTrue(any(r['device'] == 'Elevation motor' and r['status'] == 'NO VALID REPLY'
                             for r in report['rows']))
