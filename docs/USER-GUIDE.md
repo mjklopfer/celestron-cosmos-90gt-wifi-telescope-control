@@ -26,7 +26,7 @@ GUI changes have not been rechecked on every platform. See [validation](VALIDATI
 
 ## Connect to the telescope
 
-Only one application should control the telescope at a time. Disconnect phone
+Only one application should control the telescope at a time. **Disconnect** means clicking the Disconnect button on the Motor control tab to release this application’s connection; it does not mean unplugging motor cables or turning off telescope power. For the bridge, switch Control Bridge OFF. Wait for an active operation to finish before starting another. Disconnect phone
 apps, other desktop controllers and this application's bridge before manual
 motor control, diagnostics or settings work.
 

@@ -33,7 +33,7 @@ WIFI_SWITCH_HELP = (
     'Connect your computer to that network and use 1.2.3.4:2000.\n'
     'RIGHT — Infrastructure: with router settings saved, the telescope joins that Wi-Fi network. '
     'Connect your computer to the same router LAN and use the telescope’s assigned IP, port 2000.\n'
-    'After saving router settings: stop and disconnect motor control, power OFF the telescope, '
+    'After saving router settings: on Motor control click STOP, then Disconnect if connected; switch Control Bridge OFF if running. Power OFF the telescope, '
     'move this physical slider to RIGHT, then power ON. If it is already RIGHT, leave it there. '
     'Discover the telescope’s new IP after it joins the router.\n'
     'The Direct / Infrastructure selector in this app only selects connection settings; '
@@ -285,7 +285,7 @@ class SetupApp(ttk.Frame):
         provisioning_help.grid(row=4, sticky='ew', pady=10)
         self.provision_direct_help = ttk.Label(provisioning_help, wraplength=790, text='INITIAL / RESET UNIT — Direct / ad hoc mode\n1. With telescope power off, set the physical Wi-Fi slider LEFT; power on. Join SkyQLink-xx from this computer.\n2. Select Direct / ad hoc above; use 1.2.3.4, port 2000. Disconnect other controllers and click Connect & Read Settings.\n3. Enter the target 2.4 GHz network name, security and password; click Upload & Save and check the verified save result.\n4. Power off, move the slider RIGHT, then power on. Join the same access point/LAN from this computer, select Infrastructure, and Discover SkyQLink Modules. Read settings again at the discovered address.\nA factory reset may erase saved credentials. This application does not perform a factory reset.')
         self.provision_direct_help.pack(anchor='w', pady=(0, 10))
-        self.provision_infrastructure_help = ttk.Label(provisioning_help, wraplength=790, text='CHANGE AN EXISTING NETWORK — Infrastructure mode\n1. Leave the physical slider RIGHT and connect this computer to the telescope’s current access point/LAN. Select Infrastructure and discover its current address.\n2. Disconnect motors/bridge/other controllers. Read settings, enter the NEW network credentials, then Upload & Save.\n3. After the save is verified, power-cycle with the slider still RIGHT. The old address/connection may disappear.\n4. Connect this computer to the new access point/LAN, discover the new telescope address, and read back settings.\nNo ad hoc switch or factory reset is needed when the current network connection works. If access is lost, use the Direct / ad hoc procedure to recover access.')
+        self.provision_infrastructure_help = ttk.Label(provisioning_help, wraplength=790, text='CHANGE AN EXISTING NETWORK — Infrastructure mode\n1. Leave the physical slider RIGHT and connect this computer to the telescope’s current access point/LAN. Select Infrastructure and discover its current address.\n2. Click Disconnect on Motor control if connected; switch Control Bridge OFF if running. Disconnect the telescope in other controlling apps. Read settings, enter the NEW network credentials, then Upload & Save.\n3. After the save is verified, power-cycle with the slider still RIGHT. The old address/connection may disappear.\n4. Connect this computer to the new access point/LAN, discover the new telescope address, and read back settings.\nNo ad hoc switch or factory reset is needed when the current network connection works. If access is lost, use the Direct / ad hoc procedure to recover access.')
         self.provision_infrastructure_help.pack(anchor='w')
         def highlight_provisioning(*args):
             direct = self.connection_mode.get() == 'direct'
@@ -455,7 +455,7 @@ class SetupApp(ttk.Frame):
         self.local_history = {axis: tk.StringVar(value='No local reference applied in this session.') for axis in AXES}
         self.last_local_reference = {}
         self.reference_poll_pending = set()
-        self.motor_setting_status = tk.StringVar(value='Disconnect manual motor control and Control Bridge before reading or writing hardware settings.')
+        self.motor_setting_status = tk.StringVar(value='To read hardware settings, click Disconnect on the Motor control tab if connected, and switch Control Bridge OFF if running. Leave the telescope powered on.')
         ttk.Button(tab, text='Controller Angle / Backlash Settings', command=self.open_motor_settings).grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
 
     def reload_calibration(self):
@@ -587,7 +587,7 @@ class SetupApp(ttk.Frame):
         ttk.Radiobutton(modes, text='Local reference (this app only)', variable=mode, value='local', command=select_mode).pack(side='left', padx=6)
         ttk.Radiobutton(modes, text='Telescope controller (shared raw encoder / backlash)', variable=mode, value='controller', command=select_mode).pack(side='left', padx=6)
         select_mode()
-        ttk.Label(frame, text='Telescope controller mode changes settings stored in each motor controller. Other apps can observe those settings. Setting an encoder angle changes its coordinate origin without moving the telescope; it does not create a celestial alignment. Backlash compensates gear play when direction changes. Disconnect manual motor control and other apps before reading or writing.', wraplength=860).grid(row=0, column=0, columnspan=2, sticky='w', pady=8)
+        ttk.Label(frame, text='Telescope controller mode changes settings stored in each motor controller. Other apps can observe those settings. Setting an encoder angle changes its coordinate origin without moving the telescope; it does not create a celestial alignment. Backlash compensates gear play when direction changes. Before reading or writing, click Disconnect on the Motor control tab if connected. In any other controlling app, disconnect its telescope connection. Leave the telescope powered on.', wraplength=860).grid(row=0, column=0, columnspan=2, sticky='w', pady=8)
         for column, axis in enumerate(AXES):
             panel = ttk.LabelFrame(frame, text=AXES[axis], padding=10)
             panel.grid(row=1, column=column, sticky='nsew', padx=5)
@@ -630,7 +630,7 @@ class SetupApp(ttk.Frame):
 
     def run_motor_settings(self, operation=None, axis=0x10):
         if self.busy or self.motor is not None or self.bridge is not None:
-            self.motor_setting_status.set('Disconnect manual motors and bridge before reading/editing controller settings.')
+            self.motor_setting_status.set('Settings are unavailable during another operation. Wait for it to finish; if Motor control is connected, click Disconnect on that tab. If Control Bridge is running, switch it OFF. Leave the telescope powered on.')
             return
         expected = None
         try:
@@ -759,7 +759,7 @@ class SetupApp(ttk.Frame):
 
     def start_time_settings(self, sync_now=False):
         if self.busy or self.motor is not None or self.bridge is not None:
-            self.status.set('Disconnect motors and stop the bridge before changing WiFly time.')
+            self.status.set('Time settings are unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running. Leave the telescope powered on.')
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
@@ -834,7 +834,7 @@ class SetupApp(ttk.Frame):
         self.diagnostic_replies = {}
         self.diagnostic_rows.bind('<<TreeviewSelect>>', self.show_diagnostic_reply)
         ttk.Label(tab, text='Select a row for raw hex and decoded values. Optional AUX devices may not reply. No motion or configuration writes.\n'
-                  'Restart & recheck restarts the RN-171, retains saved Wi-Fi settings, and checks motor replies. Disconnect motors first.',
+                  'The Restart Wi-Fi adapter & recheck motors button restarts the radio module and then reads motor positions. It retains saved Wi-Fi settings. Before using it, click Disconnect on the Motor control tab if connected; leave telescope power on.',
                   wraplength=800).grid(row=4, columnspan=2, sticky='w')
 
         self.time_window = None
@@ -997,7 +997,7 @@ class SetupApp(ttk.Frame):
             return
         if self.busy or self.motor is not None or (self.connection_mode.get() != 'infrastructure' and not self.bridge_dual.get()):
             self.bridge_enabled.set(False)
-            self.bridge_status.set('Select Infrastructure: Telescope and computer on a common access point and disconnect motor control first.')
+            self.bridge_status.set('For a shared access-point connection, select Infrastructure above. If Motor control is connected, click Disconnect on that tab before switching Control Bridge ON.')
             return
         if self.bridge_dual.get() and not self.bridge_bind.get().strip():
             self.bridge_enabled.set(False)
@@ -1068,7 +1068,7 @@ class SetupApp(ttk.Frame):
     def start_recovery(self, reconnect=False):
         """Queue a verified adapter restart, optionally followed by motor reconnection."""
         if self.busy or self.motor is not None or self.bridge is not None:
-            self.status.set('Disconnect motors before restarting the Wi-Fi adapter.')
+            self.status.set('Restart is unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running. Leave telescope power on.')
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
@@ -1104,7 +1104,7 @@ class SetupApp(ttk.Frame):
     def start_diagnostics(self):
         """Queue read-only adapter and motor checks under exclusive ownership."""
         if self.busy or self.motor is not None or self.bridge is not None:
-            self.status.set('Disconnect motors before running diagnostics.')
+            self.status.set('Diagnostics is unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running. Leave telescope power on.')
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
@@ -1166,7 +1166,7 @@ class SetupApp(ttk.Frame):
     def scan_lan(self):
         """Validate discovery settings and start bounded module identification."""
         if self.busy or self.motor is not None or self.bridge is not None:
-            self.status.set('Disconnect motor control before starting discovery.')
+            self.status.set('Discovery is unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running.')
             return
         if self.connection_mode.get() == 'infrastructure' and self.host.get().strip() == '1.2.3.4':
             self.status.set('1.2.3.4 is the direct-connect address. Select Direct / ad hoc mode, or enter the telescope’s house-network IP.')
@@ -1461,7 +1461,7 @@ class SetupApp(ttk.Frame):
     def start(self, apply):
         """Validate provisioning inputs and queue a read or explicitly confirmed settings upload."""
         if self.busy or self.motor is not None or self.bridge is not None:
-            self.status.set('Disconnect motor control before entering Wi-Fi command mode.')
+            self.status.set('Wi-Fi settings are unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running.')
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
