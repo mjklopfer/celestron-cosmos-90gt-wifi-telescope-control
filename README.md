@@ -201,6 +201,35 @@ Python. No local developer account, fixed MAC address, home SSID or saved router
 password is required. Infrastructure addresses are entered or discovered at run time.
 The interface inventory uses native names supplied by the host OS.
 
+### Verified Windows 11 setup
+
+On **November 15, 2026**, a fresh clone of commit `7e7f543` was installed and
+launched on **Windows 11 Pro (build 26100), using Python 3.14 with Tcl/Tk**.
+No Windows-specific source changes or additional runtime requirements beyond
+the instructions above were needed. The desktop window was visually checked
+and remained responsive while disconnected from the telescope.
+
+Validation used `python -m pip install -e '.[dev]'` to include the documented
+developer tools; ordinary use only needs `python -m pip install -e .`.
+Results on that PC:
+
+- All **88 automated tests passed** using mock devices and loopback sockets.
+- `ruff check .` passed.
+- `python -m build` produced a source distribution and Python wheel.
+- `python -m skyqlink_setup --smoke-test` passed, and the normal GUI launched.
+
+The passing test suite emitted a Tcl progress-bar callback warning during GUI
+cleanup (`can't invoke "winfo" command: application has been destroyed`). This
+remains an issue to investigate; no corresponding error was observed in the
+normal application launch.
+
+The documented `COSMOS90GT_DATA_DIR` override was used to keep runtime data in
+the checkout; it is optional. A standalone Windows executable was not built.
+**Real telescope connectivity, motor control, Wi-Fi provisioning, bridge access
+through Windows Firewall, and endurance operation remain unverified on Windows.**
+These results establish software installation and startup on the tested PC,
+not hardware compatibility or operation on every Windows 11 configuration.
+
 ## Telescope Wi-Fi modes and physical switch
 
 The physical Wi-Fi slider is on the telescope mount beside its power connection.
