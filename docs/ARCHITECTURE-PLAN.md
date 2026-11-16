@@ -10,8 +10,8 @@ to that legacy adapter.
 
 Future ESP32/ESP8266-to-AUX work may provide another transport and additional
 features. The application should eventually support both direct motor control
-and bridge roles with legacy SkyQLink and a modern Celestron Wi-Fi-compatible
-interface. The name is **Celestron**, not Skytron. Compatibility must be verified
+with either legacy SkyQLink or a modern Celestron Wi-Fi-compatible
+interface. The desktop Control Bridge remains exclusive to the legacy SkyQLink path. The name is **Celestron**, not Skytron. Compatibility must be verified
 for each actual implementation, rather than inferred from an advertised identity.
 
 ## Proposed separation
@@ -40,7 +40,8 @@ between backends without verification. Endpoint ownership remains exclusive.
 2. Define a capability/version handshake and test a backend service contract.
 3. Verify motion and limits with supervised bounded tests; calibrate per device.
 4. Add GUI connection selection and capability-dependent controls, then MCP
-   reporting and bridge integration; retain legacy regression tests.
+   reporting. Disable Control Bridge for the direct modern adapter mode; retain
+   legacy regression tests.
 5. Publish a tested hardware/firmware/client matrix. Shared celestial alignment,
    autonomous tracking, time/site persistence and higher-rate motion remain
    separate capabilities to establish, not assumptions of the new transport.
@@ -97,3 +98,53 @@ battery; a DS3231 alone does not implement Celestron AUX.
 
 See the [breakout-board wiring concept](ESP32-ACCESSORY-WIRING.md). Exact board
 selection, connector pinout and electrical bench validation remain pending.
+
+
+## Direct adapter mode decision (2026-11-16)
+
+This is a distinct hardware/firmware subproject within the overall project.
+Only after the real AUX adapter is implemented and verified, add Motor control
+connection choices such as **Legacy SkyQLink (RN-171)** and **Celestron Wi-Fi
+(direct ESP32 adapter)**. The ESP32 connects directly to the mount's AUX bus.
+The desktop Control Bridge has no role in this mode: disable it with a clear
+explanation, stop any existing bridge before switching, and never start its
+listener/discovery automatically. Mode changes require disconnection and clear
+session references. Keep legacy WiFly provisioning/time controls unavailable in
+the direct mode; expose ESP32 settings through its own verified capability API.
+
+The current `hardware/esp32-simulator` explicitly has no physical AUX UART/GPIO
+interface. A working simulator/network connection is not evidence of electrical
+or arbitration compatibility. Real AUX support and this mode selector are not
+implemented by the current desktop clock update.
+
+Before claiming compatibility, require:
+
+1. A reviewed connector/cable netlist and power budget, 3.3 V-safe receive paths,
+   inactive TX/BUSY drivers at startup/reset and power sequencing without backfeed.
+2. Hardware-timed serial transmission and confirmed stop-bit configuration.
+   Older AUX notes specify 19200 8N1; newer HomeBrew development notes report 8N2.
+   Resolve this against the chosen implementation and real COSMOS captures;
+   do not equate ordinary PC RTS/CTS with the complete AUX arbitration protocol.
+3. Sense bus availability, assert/release BUSY correctly, wait the required guard
+   time, complete the final stop bit before releasing TX, and handle contention,
+   echoes, malformed/partial frames, bounded queues and reply deadlines.
+4. GPS/RTC emulator address-conflict checks, honest validity and no fabricated
+   accessory replies; transparent forwarding must not silently rewrite unrelated
+   commands or claim a different motor model merely to pass a client handshake.
+5. Bench scope/logic-analyzer evidence before a read-only mount test, followed by
+   supervised movement/Stop, disconnect/reconnect and client-compatibility tests.
+   Record hardware revision, firmware and ESP32 core versions in the test matrix.
+
+Reference review:
+- [Mark Lord's earlier ESP32 AUX implementation, archived v3.8](https://github.com/g7ltt/Celestron-GPS-WiFi-BT-Interface/blob/main/esp32_wifi-V3.8.ino):
+  separate BUSY handling, timing and echo processing are explicit concerns. This
+  is a historical reference, not a current compatibility guarantee.
+- [HomeBrew author discussion of current UART behavior](https://www.cloudynights.com/forums/topic/854327-homebrew-gen3-pcb-wifibtgpsmusbrelay/page/84/).
+- [HBG3 documentation mirror](https://github.com/Mraanderson/HBG3): the mirror
+  notes restrictions on redistribution of newer source. Review permissions before
+  reuse; this project has not imported that firmware. Public interface observations
+  and our independently written tests should be recorded with source provenance.
+
+No Celestron certification or complete official AUX conformance specification
+has been established. Describe the result as tested interoperability with named
+mount/client versions, not universal or certified compliance.

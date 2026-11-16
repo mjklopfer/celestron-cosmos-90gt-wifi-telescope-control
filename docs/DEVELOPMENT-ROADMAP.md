@@ -109,3 +109,7 @@ on hardware before claiming reliable reboot detection.
 PC-to-WiFly clock copying remains unimplemented until the 2.40-CEL write command
 is verified. Investigate SkySafari traffic; its documented time/site transfer
 does not identify which device stores those values.
+
+The future direct ESP32/Celestron Wi-Fi mode is separate from legacy SkyQLink.
+Control Bridge is disabled in that mode; add the selector only after physical
+AUX validation, not merely simulator success. See the architecture acceptance gates.
