@@ -208,7 +208,7 @@ light, GPS or RTC is physically present. Missing optional devices can time out.
 Available WiFly clock state, uptime/counters, timezone, time-server settings,
 and responding AUX readings are reported; unset time is not a valid calendar date.
 
-**Deep diagnostics** starts unchecked and requires a warning confirmation. It
+**Deep Diagnostics Read** starts unchecked and requires a warning confirmation. It
 adds allowlisted reads that can be more intrusive to the shared connection; it
 does not brute-force every command number. **Abort diagnostics** stops new
 queries and retains completed results. The active bounded query and connection
@@ -315,3 +315,17 @@ automation. The [tracking plan](TRACKING-DESIGN.md) separates implemented simula
 and experimental native control from future Orbitron/TLE/launch producers.
 Native streaming is unverified on this device and disabled by default. Do not
 interpret this interface as a completed ISS or rocket tracker.
+
+Every log/output panel offers **Copy to Clipboard**, copying its complete displayed
+output without clearing it. Diagnostics has separate buttons for the full result
+set and the selected row’s complete reply. The full-response panel explicitly
+refers to the table above. Copying does not include hidden password-entry fields.
+
+**Clock semantics:** Test from this computer queries the selected server; it does
+not set either clock. Sync clock now asks WiFly to synchronize with its configured
+SNTP server, not the PC clock. The server timestamp includes date and time; the
+RTC is UTC-based Unix seconds. The application does not add a timezone offset.
+WiFly documents Zone=7 as UTC-7 for its displayed clock, not an automatic daylight-
+saving rule. Calendar UTC is derived from RTC; raw Time text is kept separate.
+Custom 2.40-CEL display/synchronization behavior still requires live verification.
+See [WiFly manual, section 3.11](https://ww1.microchip.com/downloads/en/DeviceDoc/50002230B.pdf).

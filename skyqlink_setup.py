@@ -296,6 +296,7 @@ class SetupApp(ttk.Frame):
         status_area = ttk.Frame(self)
         status_area.grid(row=5, sticky='ew', pady=(0, 10))
         ttk.Label(status_area, textvariable=self.status, wraplength=760).pack(side='left', fill='x', expand=True)
+        self.copy_button(status_area, self.status.get).pack(side='right', padx=4)
         self.progress = ttk.Progressbar(status_area, mode='indeterminate', length=100)
 
         transfer = ttk.LabelFrame(self, text='Transfer log — credentials redacted', padding=8)
@@ -306,6 +307,7 @@ class SetupApp(ttk.Frame):
                                    font=('TkFixedFont', 11), background='#17212b', foreground='#e7edf3',
                                    insertbackground='white', relief='flat')
         self.console.grid(sticky='nsew')
+        self.copy_button(transfer, lambda: self.console.get('1.0', 'end-1c')).grid(row=1, sticky='w', pady=4)
         footer = ttk.Frame(self)
         footer.grid(row=7, sticky='ew', pady=(10, 0))
         self.logs_button = ttk.Button(footer, text='Open Saved Logs', state='disabled', command=self.open_logs)
@@ -426,6 +428,7 @@ class SetupApp(ttk.Frame):
             ttk.Label(readout, text=label, font=('TkDefaultFont', 11)).grid(row=row, column=0, sticky='w', pady=2, padx=(0, 12))
             for column, axis in enumerate(AXES, 1):
                 ttk.Label(readout, textvariable=self.values[axis][field], font=('TkFixedFont', 11)).grid(row=row, column=column, sticky='w', padx=(0, 12))
+        self.copy_button(readout, self.motor_output).grid(row=12, columnspan=3, sticky='w', pady=5)
         ttk.Label(tab, text='Hold an arrow to drive; release to stop. Escape stops both axes. Encoder angles are not aligned sky coordinates.',
                   wraplength=780).grid(row=2, column=0, columnspan=2, sticky='w', pady=(10, 0))
         ttk.Label(tab, textvariable=self.motion_status, wraplength=780,
@@ -506,6 +509,7 @@ class SetupApp(ttk.Frame):
                 result.set(str(error))
         ttk.Button(frame, text='Calculate and use duration', command=apply_duration).grid(row=2, columnspan=2, pady=8)
         ttk.Label(frame, textvariable=result, wraplength=500).grid(row=3, columnspan=2, sticky='w')
+        self.copy_button(frame, result.get).grid(row=5, columnspan=2, sticky='w')
         ttk.Label(frame, text='Approximate only: one-second calibration includes ramps, backlash and network delay. Actual encoder movement is shown after a jog. Duration is limited to 0.1–2 seconds. Encoder-target GOTO commands are not enabled.', wraplength=500).grid(row=4, columnspan=2, sticky='w', pady=8)
 
     def build_reference_controls(self, parent):
@@ -526,10 +530,41 @@ class SetupApp(ttk.Frame):
             ttk.Button(refs, text=f'Poll {AXES[axis]} now', command=lambda a=axis: self.poll_local_reference(a)).grid(row=row, column=0, sticky='w', pady=5)
             ttk.Label(refs, textvariable=self.local_history[axis], wraplength=470).grid(row=row, column=1, columnspan=3, sticky='w')
             ttk.Button(refs, text='Reapply previous offset', command=lambda a=axis: self.reapply_local_reference(a)).grid(row=row, column=4)
-        ttk.Button(refs, text='Clear local references (zero offsets)', command=self.clear_local_references).grid(row=7, columnspan=5, sticky='w', pady=5)
+        ttk.Button(refs, text='Clear local references (zero offsets)', command=self.clear_local_references).grid(row=7, columnspan=3, sticky='w', pady=5)
+        self.copy_button(refs, lambda: '\n\n'.join(f'{AXES[a]}\nCurrent: {self.reference_current[a].get()}\nKnown position: {self.reference_inputs[a].get()}\nProposed offset: {self.reference_delta[a].get()}\n{self.local_history[a].get()}' for a in AXES)).grid(row=7, column=3, columnspan=2, sticky='w')
         ttk.Label(refs, text='Local mode changes only this app’s displayed coordinates. Disconnect or lost feedback clears active offsets; previous applied values remain inactive history until this app closes. No hardware settings are reset. Reapply only if the mount has not been powered off, moved manually or realigned. Otherwise establish a new known-position reference.', wraplength=780).grid(row=8, columnspan=5, sticky='w')
 
 
+
+    def copy_button(self, parent, provider):
+        return ttk.Button(parent, text='Copy to Clipboard', command=lambda: self.copy_output(provider))
+
+    def copy_output(self, provider):
+        # Preserve the original output/status; copying must not erase the error
+        # the operator is trying to report. Providers snapshot on the Tk thread.
+        text = str(provider())
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+
+    def table_output(self, table):
+        columns = table['columns']
+        rows = ['\t'.join(str(table.heading(c, 'text')) for c in columns)]
+        rows.extend('\t'.join(map(str, table.item(item, 'values'))) for item in table.get_children())
+        return '\n'.join(rows)
+
+    def diagnostics_output(self):
+        sections = [self.diagnostic_status.get()]
+        for item in self.diagnostic_rows.get_children():
+            values = self.diagnostic_rows.item(item, 'values')
+            sections.append(' | '.join(map(str, values[:3])) + '\n' + self.diagnostic_replies.get(item, ''))
+        return '\n\n'.join(sections)
+
+    def motor_output(self):
+        sections = [self.motor_status.get(), self.motion_status.get()]
+        for axis, name in AXES.items():
+            sections.append(name + '\n' + '\n'.join(f'{key}: {value.get()}' for key, value in self.values[axis].items()))
+        sections.append('Measured pulse averages (degrees/second):\n' + '\n'.join(f'{AXES[axis]} speed {rate}: {value.get()}' for (axis, rate), value in self.slew_rate_cells.items()))
+        return '\n\n'.join(sections)
 
     def open_motor_settings(self):
         if self.motor_settings_window and self.motor_settings_window.winfo_exists():
@@ -586,10 +621,12 @@ class SetupApp(ttk.Frame):
             ttk.Button(panel, text='Preview / apply backlash delta', command=lambda a=axis: self.run_motor_settings('delta', a)).grid(row=11, columnspan=2, sticky='w', pady=4)
             ttk.Label(panel, text='Last applied change (retained until app closes)', font=('TkDefaultFont', 10, 'bold')).grid(row=12, columnspan=2, sticky='w', pady=5)
             ttk.Label(panel, textvariable=self.controller_history[axis], wraplength=390, justify='left').grid(row=13, columnspan=2, sticky='w')
+            self.copy_button(panel, lambda a=axis: AXES[a] + '\n' + self.controller_readout[a].get() + '\nLast applied change: ' + self.controller_history[a].get()).grid(row=14, columnspan=2, sticky='w', pady=4)
         ttk.Label(frame, text='Angles: Azimuth 0–360°; Elevation -90 to +90°. Up to 5 decimals; examples 100.52, 060.84, -60.31 (elevation only). These are coordinate ranges, not mechanical travel limits.\nBacklash: 0–99 whole-number controller units, NOT degrees. Positive/negative names identify travel direction; both absolute settings are nonnegative. Deltas may be -99 to +99, but the result must stay 0–99. Spaces, leading zeros and integral decimals (2.0 → 2) normalize; fractions and invalid signs are rejected. Delta writes recheck the source values before writing.', wraplength=860).grid(row=2, columnspan=2, sticky='w', pady=8)
         status_box = ttk.LabelFrame(frame, text='Settings operation status', padding=6)
         status_box.grid(row=3, columnspan=2, sticky='ew', pady=(6, 0))
         ttk.Label(status_box, textvariable=self.motor_setting_status, wraplength=840).pack(anchor='w')
+        self.copy_button(status_box, self.motor_setting_status.get).pack(anchor='w', pady=3)
 
     def run_motor_settings(self, operation=None, axis=0x10):
         if self.busy or self.motor is not None or self.bridge is not None:
@@ -774,7 +811,7 @@ class SetupApp(ttk.Frame):
         self.diagnostic_abort_button = ttk.Button(diagnostic_controls, text='Abort diagnostics', state='disabled', command=self.abort_diagnostics)
         self.diagnostic_abort_button.pack(side='left', padx=8)
         self.deep_diagnostics = tk.BooleanVar(value=False)
-        ttk.Checkbutton(diagnostic_controls, text='Deep diagnostics', variable=self.deep_diagnostics).pack(side='left', padx=8)
+        ttk.Checkbutton(diagnostic_controls, text='Deep Diagnostics Read', variable=self.deep_diagnostics).pack(side='left', padx=8)
         self.recovery_button = ttk.Button(diagnostic_controls, text='Restart Wi-Fi adapter & recheck motors', command=self.start_recovery)
         self.recovery_button.pack(side='left', padx=12)
         ttk.Label(tab, textvariable=self.diagnostic_status, wraplength=800).grid(row=1, sticky='w', pady=6)
@@ -787,8 +824,13 @@ class SetupApp(ttk.Frame):
         scrollbar = ttk.Scrollbar(tab, orient='vertical', command=self.diagnostic_rows.yview)
         scrollbar.grid(row=2, column=1, sticky='ns')
         self.diagnostic_rows.configure(yscrollcommand=scrollbar.set)
-        self.diagnostic_details = ScrolledText(tab, height=5, wrap='word', state='disabled', font=('TkFixedFont', 10))
-        self.diagnostic_details.grid(row=3, columnspan=2, sticky='ew', pady=6)
+        detail_panel = ttk.LabelFrame(tab, text='Selected diagnostic result — full response', padding=6)
+        detail_panel.grid(row=3, columnspan=2, sticky='ew', pady=6)
+        ttk.Label(detail_panel, text='Select a row in the table above to view its complete reply here.').pack(anchor='w')
+        self.diagnostic_details = ScrolledText(detail_panel, height=5, wrap='word', state='disabled', font=('TkFixedFont', 10))
+        self.diagnostic_details.pack(fill='x')
+        self.copy_button(detail_panel, lambda: self.diagnostic_details.get('1.0', 'end-1c')).pack(anchor='w', pady=4)
+        self.copy_button(diagnostic_controls, self.diagnostics_output).pack(side='left', padx=6)
         self.diagnostic_replies = {}
         self.diagnostic_rows.bind('<<TreeviewSelect>>', self.show_diagnostic_reply)
         ttk.Label(tab, text='Select a row for raw hex and decoded values. Optional AUX devices may not reply. No motion or configuration writes.\n'
@@ -829,6 +871,7 @@ class SetupApp(ttk.Frame):
         ttk.Button(frame, text='Push server and sync mode', command=self.start_time_settings).grid(row=7, column=0, pady=8)
         ttk.Button(frame, text='Sync clock now', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
         ttk.Label(frame, textvariable=self.time_status, wraplength=500).grid(row=8, columnspan=2, sticky='w')
+        self.copy_button(frame, lambda: 'Time server: ' + self.time_server.get() + '\nTimezone readback: ' + self.time_zone.get() + '\n' + self.time_status.get()).grid(row=10, columnspan=2, sticky='w')
         ttk.Label(frame, text='The telescope needs its own route to UDP 123. A successful PC test does not prove telescope access. Names are resolved and pushed as IPv4 addresses.', wraplength=500).grid(row=9, columnspan=2, sticky='w', pady=8)
 
     def test_selected_time_server(self):
@@ -876,6 +919,7 @@ class SetupApp(ttk.Frame):
         self.interface_table.bind('<<TreeviewSelect>>', self.select_bridge_interface)
         self.interface_refresh_button = ttk.Button(inventory, text='Refresh Adapter IPs', command=self.refresh_network_interfaces)
         self.interface_refresh_button.pack(anchor='w', pady=4)
+        self.copy_button(inventory, lambda: self.table_output(self.interface_table)).pack(anchor='w')
         ttk.Label(inventory, textvariable=self.bridge_endpoint, wraplength=800).pack(anchor='w')
         ttk.Label(tab, text='Default: use the same home/router LAN for the computer, telescope and control software. '
                   'In a compatible control app choose Celestron WiFi and Access Point mode. SkySafari is a tested example. The bridge advertises on UDP 55555 '
@@ -899,8 +943,10 @@ class SetupApp(ttk.Frame):
             ttk.Label(readout, text=AXES[axis]).grid(row=row, column=0, padx=8)
             for column, field in enumerate(('encoder', 'angle', 'firmware', 'age'), start=1):
                 ttk.Label(readout, textvariable=self.values[axis][field], width=17).grid(row=row, column=column)
+        self.copy_button(readout, self.motor_output).grid(row=2, columnspan=5, sticky='w', pady=3)
         self.bridge_console = ScrolledText(tab, height=8, wrap='word', state='disabled', font=('TkFixedFont', 10))
         self.bridge_console.grid(row=9, sticky='ew', pady=8)
+        self.copy_button(tab, lambda: self.bridge_status.get() + '\n' + self.bridge_endpoint.get() + '\n' + self.bridge_console.get('1.0', 'end-1c')).grid(row=10, sticky='w')
 
     def refresh_network_interfaces(self):
         """Request a fresh interface inventory on a worker thread."""
@@ -1066,7 +1112,7 @@ class SetupApp(ttk.Frame):
             self.status.set(str(error))
             return
         deep = self.deep_diagnostics.get()
-        if deep and not messagebox.askyesno('Deep diagnostics',
+        if deep and not messagebox.askyesno('Deep Diagnostics Read',
                 'Poll additional model-dependent AUX registers and extended WiFly settings?\n'
                 'This takes longer and may disrupt an older controller connection. Keep the mount stationary and other controllers disconnected.\n'
                 'No motion, setting, reset, or firmware commands will be sent.', parent=self.winfo_toplevel()):
