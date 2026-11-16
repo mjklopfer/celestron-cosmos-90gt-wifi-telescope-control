@@ -214,7 +214,7 @@ does not brute-force every command number. **Abort diagnostics** stops new
 queries and retains completed results. The active bounded query and connection
 cleanup can take time to finish. Coverage is described in [Diagnostic coverage](DIAGNOSTIC-COVERAGE.md).
 
-**Time server settings** can test a common or custom server from this computer
+**Time / Time Server Settings** can test a common or custom server from this computer
 and request that the WiFly module use its IPv4 address. Choose disabled, once at
 startup, or every 2–1440 minutes; Sync now requests an immediate synchronization.
 A recent successful computer test is required before pushing a new server.

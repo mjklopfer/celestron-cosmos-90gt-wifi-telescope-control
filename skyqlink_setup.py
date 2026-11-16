@@ -845,7 +845,7 @@ class SetupApp(ttk.Frame):
         self.time_status = tk.StringVar(value='Test a server from this computer before pushing a new server address.')
         self.time_persist = tk.BooleanVar(value=False)
         self.tested_time_server = None
-        self.time_apply_button = ttk.Button(tab, text='Time server settings…', command=self.open_time_settings)
+        self.time_apply_button = ttk.Button(tab, text='Time / Time Server Settings', command=self.open_time_settings)
         self.time_apply_button.grid(row=5, sticky='w', pady=6)
         self.time_sync_button = self.time_apply_button
 
@@ -854,7 +854,7 @@ class SetupApp(ttk.Frame):
             self.time_window.lift()
             return
         window = self.time_window = tk.Toplevel(self)
-        window.title('WiFly time server settings')
+        window.title('Time / Time Server Settings')
         frame = ttk.Frame(window, padding=12)
         frame.pack(fill='both', expand=True)
         ttk.Label(frame, text='Time server (hostname or IPv4)').grid(row=0, column=0, sticky='w')
