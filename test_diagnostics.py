@@ -72,24 +72,53 @@ class DiagnosticTests(unittest.TestCase):
             for command, _ in queries:
                 packet(address, command)
         for address in (0x10, 0x11):
-            for command, _ in diagnostics.MOTOR_SETTING_QUERIES:
+            for command, _ in diagnostics.motor_queries(address):
                 packet(address, command)
             for command in (2, 4, 6, 7, 0x24, 0x25, 0x38, 0x39, 0x46, 0x81, 0xfd):
                 with self.assertRaises(ValueError):
                     packet(address, command)
 
+    def test_clock_sources_and_deep_default(self):
+        result = diagnostics.clock_summary({'show t t': 'Time NOT SET\nUpTime=919 s\nRTC=919\nRAW=1cbd7da',
+                                            'get time': 'TimeEna=0\nZone=7'})
+        self.assertEqual(result['Status'], 'Unset')
+        self.assertEqual(result['RTC counter'], '919')
+        self.assertEqual(result['Calendar UTC'], 'Not reported')
+        self.assertIn('UTC-07:00', result['Zone interpretation'])
+        dated = diagnostics.clock_summary({'show t t': 'Time=00:00:00\nRTC=1704067200'})
+        self.assertIn('2024-01-01T00:00:00', dated['Calendar UTC'])
+        self.assertEqual(result['Zone setting (raw)'], '7')
+        self.assertEqual(result['Time server'], 'Not reported')
+        self.assertLess(len(diagnostics.endpoint_catalog()), len(diagnostics.endpoint_catalog(True)))
+        self.assertNotIn('get everything', [q for _, q in diagnostics.endpoint_catalog()])
+
+    def test_extended_decoders_and_axis_scope(self):
+        from celestron_probe import packet
+        from wifly_configure import sanitize
+        self.assertIn('90.00000', diagnostics.decode_motor_setting(0x3c, bytes.fromhex('400000')))
+        self.assertIn('Yes', diagnostics.decode_motor_setting(0x3b, b'\xff'))
+        self.assertIn('3D fix', diagnostics.decode_time_site(8, bytes.fromhex('e000'))[1])
+        self.assertIn('unverified', diagnostics.decode_time_site(0x55, b'\xab')[1])
+        self.assertNotIn('secret123', sanitize('FTP Pass=secret123'))
+        for device, command in ((0x11, 0x3b), (0x11, 0x3c), (0x10, 0x12), (0x11, 0x18)):
+            with self.assertRaises(ValueError):
+                packet(device, command)
+        for command, raw in ((0x3c, b'\x00'), (0x3b, b'\x01'), (0xfc, b'\xff')):
+            with self.assertRaises(ValueError):
+                diagnostics.decode_motor_setting(command, raw)
+
     def test_invalid_reply_does_not_hide_other_optional_fields(self):
         probe = MagicMock()
         probe.query.side_effect = [b'\x00', b'\x01', bytes(3), bytes.fromhex('c00000'),
                                    b'\x02\x1e', b'\x07\xea', b'\x0c\x22\x38',
-                                   b'\x08\x05', b'\x0b', None, b'\x07\xea', b'\x0c\x22\x38']
+                                   b'\x08\x05', b'\x0b', b'\xe0\x00', b'\xab', None, b'\x07\xea', b'\x0c\x22\x38']
         rows = []
-        result = diagnostics.read_time_site(probe, lambda *args: rows.append(args))
+        result = diagnostics.read_time_site(probe, lambda *args: rows.append(args), deep=True)
         self.assertEqual(result['0xB0']['DATE']['status'], 'INVALID REPLY')
         self.assertFalse(result['0xB0']['TIME_VALID']['value'])
         self.assertEqual(result['0xB0']['LONGITUDE']['value'], -90)
         self.assertEqual(result['0xB2']['UTC_TIME']['value'], [12, 34, 56])
-        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(rows), 14)
 
     def run_diagnostic(self, missing=None):
         Probe.missing_axis = missing
@@ -101,7 +130,7 @@ class DiagnosticTests(unittest.TestCase):
              patch.object(diagnostics.socket, 'create_connection', return_value=MagicMock()), \
              patch.object(diagnostics, 'Session', Session), \
              patch.object(diagnostics, 'AuxProbe', Probe):
-            report = diagnostics.diagnose('192.0.2.231', 2000, events.append)
+            report = diagnostics.diagnose('192.0.2.231', 2000, events.append, deep=True)
         return report, events
 
     def test_valid_zero_positions_and_optional_node_timeout(self):
@@ -112,9 +141,9 @@ class DiagnosticTests(unittest.TestCase):
         self.assertFalse(report['settings_changed'])
         self.assertFalse(report['movement_sent'])
         self.assertEqual(Session.commands, list(diagnostics.WIFI_QUERIES))
-        self.assertTrue(all(command in (1, 0x13, 0x40, 0x41, 0x47, 0xfc, 0xfe)
+        self.assertTrue(all(command in (1, 0x12, 0x13, 0x15, 0x18, 0x3b, 0x3c, 0x40, 0x41, 0x47, 0xfc, 0xfe)
                             for axis, command in Probe.calls if axis in (0x10, 0x11)))
-        self.assertEqual(len(report['time_site']['0xB0']), 9)
+        self.assertEqual(len(report['time_site']['0xB0']), 11)
         self.assertTrue(all(v['status'] == 'NO REPLY' for v in report['time_site']['0xB0'].values()))
         self.assertEqual(len([e for e in events if e['event'] == 'diagnostic_position']), 4)
         self.assertNotIn('test-secret', str(report) + str(events))

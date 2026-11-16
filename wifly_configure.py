@@ -50,7 +50,7 @@ def sanitize(text, secrets=()):
     """Redact credentials and protocol password fields from captured text."""
     for secret in sorted((s for s in secrets if s), key=len, reverse=True):
         text = text.replace(secret, '[REDACTED]')
-    return re.sub(r'(?im)^.*(?:passphrase|passkey|password|(?:wlan\s+phrase)|(?:\b(?:key|phrase)\s*=)).*$',
+    return re.sub(r'(?im)^.*(?:passphrase|passkey|password|(?:\bpass\s*=)|(?:wlan\s+phrase)|(?:\b(?:key|phrase)\s*=)).*$',
                   '[credential field redacted]', text)
 
 

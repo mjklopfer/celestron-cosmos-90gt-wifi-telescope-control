@@ -11,7 +11,7 @@ import threading
 import time
 import json
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
 from setup_backend import operate, validate_endpoint, validate_port
 from wifly_configure import make_plan, SECURITY
@@ -388,6 +388,8 @@ class SetupApp(ttk.Frame):
         diagnostic_controls.grid(row=0, columnspan=2, sticky='ew')
         self.diagnostic_button = ttk.Button(diagnostic_controls, text='Run read-only diagnostics', command=self.start_diagnostics)
         self.diagnostic_button.pack(side='left')
+        self.deep_diagnostics = tk.BooleanVar(value=False)
+        ttk.Checkbutton(diagnostic_controls, text='Deep diagnostics', variable=self.deep_diagnostics).pack(side='left', padx=8)
         self.recovery_button = ttk.Button(diagnostic_controls, text='Restart Wi-Fi adapter & recheck motors', command=self.start_recovery)
         self.recovery_button.pack(side='left', padx=12)
         ttk.Label(tab, textvariable=self.diagnostic_status, wraplength=800).grid(row=1, sticky='w', pady=6)
@@ -621,6 +623,12 @@ class SetupApp(ttk.Frame):
         except ValueError as error:
             self.status.set(str(error))
             return
+        deep = self.deep_diagnostics.get()
+        if deep and not messagebox.askyesno('Deep diagnostics',
+                'Poll additional model-dependent AUX registers and extended WiFly settings?\n'
+                'This takes longer and may disrupt an older controller connection. Keep the mount stationary and other controllers disconnected.\n'
+                'No motion, setting, reset, or firmware commands will be sent.', parent=self.winfo_toplevel()):
+            return
         self.diagnostic_rows.delete(*self.diagnostic_rows.get_children())
         self.diagnostic_replies.clear()
         self.last_positions.clear()
@@ -635,7 +643,7 @@ class SetupApp(ttk.Frame):
         self.tabs.select(self.diagnostic_tab)
         def worker():
             try:
-                report = self.diagnostic(host, port, callback=self.events.put)
+                report = self.diagnostic(host, port, callback=self.events.put, **({'deep': True} if deep else {}))
             except Exception as error:
                 report = {'error': str(error)}
             self.events.put({'event': 'diagnostic_done', 'report': report})

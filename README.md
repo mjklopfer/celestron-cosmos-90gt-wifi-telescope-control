@@ -487,3 +487,7 @@ writes. Nothing sets time, synchronizes SNTP, or changes observing location.
 Protocol reference: [NexStar AUX command observations](https://paquettefamily.ca/nexstar/NexStar_AUX_Commands_10.pdf).
 Software decoding and read-only guards are tested; live COSMOS GPS/RTC support
 remains unverified. No optional hardware capability is inferred from a catalog row.
+
+See [diagnostic coverage and live results](docs/DIAGNOSTIC-COVERAGE.md) for the
+unchecked, confirmation-guarded **Deep diagnostics** mode, supported readouts,
+clock/site provenance, unknown response encodings, and explicit exclusions.

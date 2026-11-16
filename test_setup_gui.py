@@ -167,6 +167,21 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(app.held)
         self.assertEqual(self.motor_calls[-1], 'stop')
 
+    def test_deep_diagnostics_requires_confirmation(self):
+        from unittest.mock import Mock, patch
+        self.assertFalse(self.app.deep_diagnostics.get())
+        self.app.deep_diagnostics.set(True)
+        self.app.diagnostic = Mock(return_value={})
+        with patch('skyqlink_setup.messagebox.askyesno', return_value=False) as warning:
+            self.app.start_diagnostics()
+            warning.assert_called_once()
+        self.app.diagnostic.assert_not_called()
+        self.assertFalse(self.app.busy)
+        with patch('skyqlink_setup.messagebox.askyesno', return_value=True):
+            self.app.start_diagnostics()
+            self.finish_worker()
+        self.assertTrue(self.app.diagnostic.call_args.kwargs['deep'])
+
     def test_diagnostics_present_replies_and_partial_verification(self):
         def diagnostic(host, port, callback):
             callback({'event': 'diagnostic_row', 'device': 'Wi-Fi adapter', 'endpoint': 'ver',
