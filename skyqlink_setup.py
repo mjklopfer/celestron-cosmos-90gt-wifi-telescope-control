@@ -556,9 +556,25 @@ class SetupApp(ttk.Frame):
         for column, axis in enumerate(AXES):
             panel = ttk.LabelFrame(frame, text=AXES[axis], padding=10)
             panel.grid(row=1, column=column, sticky='nsew', padx=5)
-            frame.columnconfigure(column, weight=1)
+            frame.columnconfigure(column, weight=1, uniform='controller_axes')
             ttk.Label(panel, text='Current values from telescope', font=('TkDefaultFont', 11, 'bold')).grid(row=0, columnspan=2, sticky='w')
-            ttk.Label(panel, textvariable=self.controller_readout[axis], wraplength=390, justify='left').grid(row=1, columnspan=2, sticky='w', pady=5)
+            # Fixed-height readouts keep corresponding controls aligned when one
+            # axis has a reply and the other is unread, busy or reporting an error.
+            readout = ScrolledText(panel, height=5, width=45, wrap='word',
+                                   font=('TkDefaultFont', 9), relief='flat', borderwidth=1)
+            readout.grid(row=1, columnspan=2, sticky='ew', pady=5)
+            variable = self.controller_readout[axis]
+            def render_readout(*_args, widget=readout, value=variable):
+                widget.configure(state='normal')
+                widget.delete('1.0', 'end')
+                widget.insert('1.0', value.get())
+                widget.configure(state='disabled')
+            render_readout()
+            trace_id = variable.trace_add('write', render_readout)
+            def remove_readout_trace(event, widget=readout, value=variable, trace=trace_id):
+                if event.widget == widget:
+                    value.trace_remove('write', trace)
+            readout.bind('<Destroy>', remove_readout_trace, add='+')
             ttk.Button(panel, text='Read current values', command=lambda a=axis: self.run_motor_settings(axis=a)).grid(row=2, columnspan=2, sticky='w', pady=5)
             ttk.Label(panel, text='New values to send (editing does not write)', font=('TkDefaultFont', 10, 'bold')).grid(row=3, columnspan=2, sticky='w', pady=5)
             fields = self.controller_fields[axis]
@@ -571,7 +587,9 @@ class SetupApp(ttk.Frame):
             ttk.Label(panel, text='Last applied change (retained until app closes)', font=('TkDefaultFont', 10, 'bold')).grid(row=12, columnspan=2, sticky='w', pady=5)
             ttk.Label(panel, textvariable=self.controller_history[axis], wraplength=390, justify='left').grid(row=13, columnspan=2, sticky='w')
         ttk.Label(frame, text='Angles: Azimuth 0–360°; Elevation -90 to +90°. Up to 5 decimals; examples 100.52, 060.84, -60.31 (elevation only). These are coordinate ranges, not mechanical travel limits.\nBacklash: 0–99 whole-number controller units, NOT degrees. Positive/negative names identify travel direction; both absolute settings are nonnegative. Deltas may be -99 to +99, but the result must stay 0–99. Spaces, leading zeros and integral decimals (2.0 → 2) normalize; fractions and invalid signs are rejected. Delta writes recheck the source values before writing.', wraplength=860).grid(row=2, columnspan=2, sticky='w', pady=8)
-        ttk.Label(frame, textvariable=self.motor_setting_status, wraplength=860).grid(row=3, columnspan=2, sticky='w')
+        status_box = ttk.LabelFrame(frame, text='Settings operation status', padding=6)
+        status_box.grid(row=3, columnspan=2, sticky='ew', pady=(6, 0))
+        ttk.Label(status_box, textvariable=self.motor_setting_status, wraplength=840).pack(anchor='w')
 
     def run_motor_settings(self, operation=None, axis=0x10):
         if self.busy or self.motor is not None or self.bridge is not None:
