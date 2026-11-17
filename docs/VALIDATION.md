@@ -86,7 +86,7 @@ address; cosmossetup is an explicitly documented simulator-only setup password.
   counter rollover was performed. PC-to-WiFly clock copying remains disabled.
 - ESP32 accessory wiring is a design concept, not an electrically tested build.
 
-## macOS layout report after UI refresh
+## Historical macOS layout report after UI refresh (resolved below)
 
 The user reports that the program runs on macOS but formatting differs. The latest visual layout has not been verified on macOS. Custom tab styling copies a clam tab element into the native theme; larger fonts/padding and selected-page height are additional possible contributors. The cause is unconfirmed pending a screenshot and macOS/Tk version. Track this as an open visual-compatibility issue, not a confirmed functional failure or a verified fix.
 

@@ -50,6 +50,10 @@ layout. The user confirmed improved Mac rendering after the November 16, 2026
 relaunch; this appearance review does not repeat telescope hardware tests.
 See [Mac appearance notes](MACOS-APPEARANCE.md) and [validation](VALIDATION.md).
 
+## Complete runtime-switch reference
+
+See [every launch option, default, usage case and limitation](RUNTIME-OPTIONS.md) for the GUI, bridge, calibration, MCP environment and shipped diagnostic/verification commands. It also distinguishes on-screen switches from command-line flags and lists the Pi desktop launch actions.
+
 ## Connect to the telescope
 
 Only one application should control the telescope at a time. **Disconnect** means clicking the Disconnect button on the Motor control tab to release this application’s connection; it does not mean unplugging motor cables or turning off telescope power. For the bridge, switch Control Bridge OFF. Wait for an active operation to finish before starting another. Disconnect phone

@@ -202,6 +202,8 @@ Optional development tools are installed with `pip install -e ".[dev]"`; MCP use
 Python must include SSL for secure package downloads and Tk for the window;
 a Linux SSH session also needs access to an existing graphical display.
 
+The [complete runtime-option reference](docs/RUNTIME-OPTIONS.md) lists every GUI launch switch and the separate bridge/calibration tools, with defaults, examples, when to use each and when not to use it.
+
 ## Install and run
 
 Download this repository using Git (or use GitHub's **Code → Download ZIP**):
