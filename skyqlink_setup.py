@@ -217,7 +217,7 @@ class SetupApp(ttk.Frame):
         connection = ttk.LabelFrame(self, text='Telescope connection', padding=8)
         connection.grid(row=2, sticky='ew')
         connection.columnconfigure(1, weight=1)
-        ttk.Label(connection, text='Telescope IP address').grid(row=0, column=0, sticky='w', padx=(0, 12))
+        ttk.Label(connection, text='Telescope Wi-Fi interface IP address').grid(row=0, column=0, sticky='w', padx=(0, 12))
         self.host_entry = ttk.Entry(connection, textvariable=self.host)
         self.host_entry.grid(row=0, column=1, sticky='ew')
         ttk.Label(connection, text='Port').grid(row=0, column=2, padx=(18, 10))

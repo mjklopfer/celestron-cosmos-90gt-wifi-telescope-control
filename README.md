@@ -343,7 +343,7 @@ known direct endpoint. It is not a general network inventory tool.
 
 ## Bridge: two addresses with different purposes
 
-**Telescope IP address** identifies SkyQLink. **This computer’s IP on the shared infrastructure network** identifies the local adapter on the control device's network,
+**Telescope Wi-Fi interface IP address** identifies SkyQLink. **This computer’s IP on the shared infrastructure network** identifies the local adapter on the control device's network,
 not a MAC address. Select that adapter in **Local System Network Interfaces** to
 fill the field; selecting it does not join a Wi-Fi network.
 

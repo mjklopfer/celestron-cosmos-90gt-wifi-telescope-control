@@ -78,9 +78,8 @@ profile writer. Runtime loading never invents a missing keymap. Missing/invalid
 maps disable the rocker and clear the mapping text; Esc remains fixed. Calibration
 regeneration preserves the map. Rate measurements now live in a separate dialog;
 no usable measurements disables its button. CSV and Excel/TSV copying are separate.
-README and user guide reflect these changes. User visual review and commit/push
-remain outstanding; do not describe this batch as published.
+README and user guide reflect these changes. The subsequent user-authorized release was committed and pushed; see the release validation below.
 
-Follow-up: bridge connection options now use separate indented bullets. Direct/ad hoc guidance dims in Infrastructure mode; option descriptions remain active when Two Interface Mode is selected because they can still apply. Provisioning includes a port/address Note separating legacy TCP 2000, modern TCP 3000 and UDP 55555 discovery, and optional UDP 123 time sync. GUI smoke test and lint passed; visual review remains pending.
+Follow-up: bridge connection options now use separate indented bullets. Direct/ad hoc guidance dims in Infrastructure mode; option descriptions remain active when Two Interface Mode is selected because they can still apply. Provisioning includes a port/address Note separating legacy TCP 2000, modern TCP 3000 and UDP 55555 discovery, and optional UDP 123 time sync. GUI smoke test and lint passed; earlier visual-review limitations are recorded above.
 
 Release validation: full Windows suite passed 142 tests after correcting a stale label assertion. Follow-up bridge layout tests cover the latest address guidance; lint, smoke and package build results are recorded in VALIDATION.md. The user requested publication before any Raspberry Pi deployment. No new hardware movement was performed in this UI review.

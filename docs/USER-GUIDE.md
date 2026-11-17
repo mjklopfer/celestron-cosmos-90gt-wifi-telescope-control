@@ -30,7 +30,7 @@ Only one application should control the telescope at a time. **Disconnect** mean
 apps, other desktop controllers and this application's bridge before manual
 motor control, diagnostics or settings work.
 
-**Telescope IP address** identifies the telescope, not this computer. The normal
+**Telescope Wi-Fi interface IP address** identifies the telescope, not this computer. The normal
 port is 2000. Choose the connection mode matching the telescope and computer:
 
 | Mode | Telescope switch / computer connection | Telescope address |
@@ -178,7 +178,7 @@ There are two different addresses:
 
 | GUI term | What it identifies |
 | --- | --- |
-| Telescope IP address, at the top | The SkyQLink module that this computer connects to |
+| Telescope Wi-Fi interface IP address, at the top | The SkyQLink module that this computer connects to |
 | This computer’s IP on the control-device network | The local adapter address on the network used by your astronomy app; not a MAC address or the telescope’s IP |
 
 For a common network, leave the bridge address blank to select it automatically,
