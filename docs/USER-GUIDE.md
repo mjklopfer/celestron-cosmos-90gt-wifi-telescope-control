@@ -24,6 +24,32 @@ and a desktop shortcut are covered in the [Pi desktop guide](RASPBERRY-PI-DESKTO
 Earlier platform checks covered Windows 11, macOS and Raspberry Pi OS; the latest
 GUI changes have not been rechecked on every platform. See [validation](VALIDATION.md).
 
+## macOS display and resizing
+
+The Mac layout activates automatically through Tk's Aqua window system. Use
+the same installation and launch commands as on Windows or Linux. On macOS:
+
+- The tab bar uses native system styling and is centered within the form.
+- **Discover SkyQLink / Celestron Modules** appears on a separate row below the
+  direct/infrastructure choices. The shorter **Infrastructure / shared router
+  Wi-Fi** label still means the telescope and computer share a router network.
+- The Diagnostics toolbar spans two rows. This keeps the form within a normal
+  laptop window and prevents the port, password controls and tab bar from being
+  displaced off the visible right edge by the hidden Diagnostics page.
+- Explanatory labels use the native text color for readability in the tested
+  dark appearance. The bridge's light status panel uses dark text explicitly.
+- When zoom controls are enabled, diagnostic table rows reserve enough height
+  for their text. Use **View → Fit width** if your window is narrower; scrollbars
+  remain available at large zoom or small window sizes.
+
+No OS-specific setup is needed, and these display changes do not change the
+connection, physical-switch instructions, motor commands or provisioning steps.
+Windows and Linux keep their existing tab colors and toolbar arrangement.
+Restart an already-open application after updating its source to load the new
+layout. The user confirmed improved Mac rendering after the November 16, 2026
+relaunch; this appearance review does not repeat telescope hardware tests.
+See [Mac appearance notes](MACOS-APPEARANCE.md) and [validation](VALIDATION.md).
+
 ## Connect to the telescope
 
 Only one application should control the telescope at a time. **Disconnect** means clicking the Disconnect button on the Motor control tab to release this application’s connection; it does not mean unplugging motor cables or turning off telescope power. For the bridge, switch Control Bridge OFF. Wait for an active operation to finish before starting another. Disconnect phone

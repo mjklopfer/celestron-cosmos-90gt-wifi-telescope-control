@@ -25,12 +25,12 @@ hardware validation remains separate from this formatting work. A missing
 `telescope` section in a local calibration profile also exposed an export crash;
 the profile label now falls back to unidentified rather than raising KeyError.
 
-Completed checks: 147 offline tests passed (3 skipped), plus the new Aqua layout
+Completed checks: 147 offline tests ran successfully (144 passed, 3 skipped), plus the new Aqua layout
 regression passed separately. Lint and zoom-enabled GUI startup passed. The
 layout regression checks the form fits a 980-pixel window and verifies that the
 custom tab background map is absent. The original rendering was inspected in a
 screenshot. Post-change automated screenshot review was blocked by native UI
-access timeouts; final appearance remains for user review in the relaunched app.
+access timeouts; the subsequent user review of the relaunched app is recorded below.
 
 User visual review after relaunch: confirmed the updated Mac rendering looks
 much better. This confirms appearance on the tested Mac, not new hardware

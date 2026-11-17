@@ -191,7 +191,7 @@ Windows and Linux retain their existing layout and theme choices. See
 | Platform | Completed testing | Remaining checks |
 | --- | --- | --- |
 | Windows 11 Pro, build 26100, Python 3.14 | Current GUI release: 142 automated tests passed; lint, package build and GUI startup passed. Tabs, status readouts and bridge guidance reviewed locally. Earlier View menu/80% checks also passed. | New UI changes do not revalidate every hardware feature; see the detailed validation record for earlier hardware checks and remaining limits. |
-| macOS, Python 3.14 | Existing project hardware testing covers telescope operation and the documented Ethernet + telescope Wi-Fi bridge arrangement. | The new View menu/zoom controls have not yet been separately verified on macOS. |
+| macOS, Python 3.14 | Telescope operation and Ethernet + telescope Wi-Fi bridging were previously tested. November 16 appearance update: GUI startup, zoom/layout tests and lint passed; the user confirmed improved rendering after relaunch. | This appearance update does not repeat hardware or endurance testing; automated post-change screenshot capture was unavailable. |
 | Raspbian 10 Buster, 32-bit, Raspberry Pi 3 B+, Python 3.12.16 | SSL/Tk-enabled Python build, editable install, default and 80% zoom smoke tests, all four zoom tests, and desktop-entry launch verified. View menu and running X window visually checked. [Environment and setup details](docs/RASPBERRY-PI-DESKTOP.md). | Real telescope connection, motor operation, provisioning, bridge operation and endurance; full regression suite on this Pi. |
 
 The current Windows and earlier zoom-update checks were performed on November 16, 2026. Platform testing
@@ -241,6 +241,26 @@ Use `python3` or the Windows `py` launcher if that is how your installation name
 Python. No local developer account, fixed MAC address, home SSID or saved router
 password is required. Infrastructure addresses are entered or discovered at run time.
 The interface inventory uses native names supplied by the host OS.
+
+### macOS layout and appearance
+
+Mac formatting is selected automatically when Tk reports the **Aqua** window
+system. No special install, command-line flag or extra dependency is required.
+The application uses native, centered Mac tabs instead of mixing custom tab
+colors with Aqua. Discovery sits below the network-mode choices, and the
+Diagnostics toolbar uses two rows so a hidden tab cannot force the whole form
+past the right edge of a laptop window. Explanatory text follows the native
+foreground; the light bridge-status panel has explicit dark text for contrast.
+With zoom enabled, diagnostic row height accommodates the font's line height.
+
+Windows and Linux retain their existing tab styling, connection labels and
+single-row toolbars. The changes improve display formatting; they do not alter
+Wi-Fi settings, telescope protocols or motor movement. A separate compatibility
+fix lets spreadsheet export label an older calibration profile without crashing
+when its optional telescope metadata is absent.
+
+The updated Mac appearance was reviewed and confirmed by the user on November
+16, 2026. See [the detailed change and validation notes](docs/MACOS-APPEARANCE.md).
 
 ### Smaller screens and optional zoom (including Raspberry Pi)
 

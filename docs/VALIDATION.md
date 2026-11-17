@@ -89,3 +89,19 @@ address; cosmossetup is an explicitly documented simulator-only setup password.
 ## macOS layout report after UI refresh
 
 The user reports that the program runs on macOS but formatting differs. The latest visual layout has not been verified on macOS. Custom tab styling copies a clam tab element into the native theme; larger fonts/padding and selected-page height are additional possible contributors. The cause is unconfirmed pending a screenshot and macOS/Tk version. Track this as an open visual-compatibility issue, not a confirmed functional failure or a verified fix.
+
+## macOS conditional appearance update — November 16, 2026
+
+Application change: `775308e`. Native Aqua tab styling/centering, compact Mac
+connection and Diagnostics toolbars, theme-aware explanatory text, readable
+bridge-status text and font-based zoomed diagnostic row height. Windows/Linux
+retain their existing layout and tab color choices. See
+[Mac appearance notes](MACOS-APPEARANCE.md) for implementation scope.
+
+On local macOS / Python 3.14, GUI startup and lint passed. The full offline
+suite ran 147 tests successfully (144 passed, 3 skipped); the new Aqua layout
+regression also passed separately. After integrating the concurrent upstream
+test fixes, seven focused zoom/layout/export tests passed. Automated screenshot
+access timed out, but the user visually reviewed the relaunched app and confirmed
+that it looked much better. Windows/Linux were not visually retested in this
+session, and no new telescope hardware/endurance validation is claimed.
