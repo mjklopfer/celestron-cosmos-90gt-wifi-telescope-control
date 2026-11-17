@@ -1123,7 +1123,7 @@ class SetupApp(ttk.Frame):
         self.bridge_dual_box.grid_configure(sticky='nw')
         self.bridge_interface_help = tk.StringVar()
         inventory = ttk.LabelFrame(tab, text='Local System Network Interfaces', padding=6)
-        ttk.Label(inventory, text='To allow telescope control through this bridge, enter THIS computer’s IP address on the same network as the system (computer, tablet or phone) running your control software (e.g., SkySafari, CPWI or KStars/INDI). Type the address above, or click the matching adapter row below to fill it in. For example, if your control application runs on a phone connected to your home Wi-Fi, use this computer’s address on that same home network, not its address on the SkyQLink network. Do not enter the telescope’s IP address.', wraplength=780).pack(anchor='w', pady=(0, 6))
+        ttk.Label(inventory, text='Use this system’s IP address on the network shared with the device running your control software (e.g., SkySafari, CPWI, KStars/INDI, etc.). Type this system’s IP in the box above, or click its matching network adapter row below to fill it in. If the control software runs on this same system, use localhost (127.0.0.1) when the bridge is configured to listen there, or use the specific IP address shown by the bridge. Do not enter the telescope’s IP address in this box.', wraplength=780).pack(anchor='w', pady=(0, 6))
         ttk.Label(inventory, textvariable=self.bridge_interface_help, wraplength=780).pack(anchor='w')
         inventory.grid(row=6, sticky='ew', pady=5)
         self.interface_table = ttk.Treeview(inventory, columns=('interface', 'name', 'ip', 'state', 'role'),
