@@ -259,3 +259,17 @@ captured launch errors to a local log; those are optional, not runtime requireme
 - [Python on Unix and altinstall](https://docs.python.org/3.12/using/unix.html)
 - [Raspberry Pi OS package and Python environment guidance](https://www.raspberrypi.com/documentation/computers/os.html)
 - [Raspbian legacy repository migration discussion](https://forums.raspberrypi.com/viewtopic.php?t=237469)
+
+## Portable desktop installer and zoom actions
+
+After installing the app in its virtual environment, run from the checkout:
+
+```sh
+.venv312/bin/python tools/install_linux_shortcut.py
+```
+
+Use `.venv/bin/python` instead if that is your environment name. This Linux installer takes no options and opens no telescope connection. It derives paths locally; rerun it if you move the checkout or environment. It installs a launcher for the source installation, not a standalone binary.
+
+The preferred shortcut name is **Celestron Cosmos 90GT WiFi Control**, with WiFi on the telescope icon. Default launch uses zoom controls at 80%. Right-click choices select 80% with zoom controls, 100% with zoom controls, or 100% without the zoom menu. Close the existing app first; each action starts a new process. Standard Desktop Actions and PCManFM custom actions are installed; `SelectionCount==1` is intentional. Menu support depends on the desktop. Existing launchers are backed up under the user's state directory. Launch logs go to `cosmos90gt/desktop.log` under that state directory.
+
+Copy `docs/TELESCOPE-CONTROL-START-HERE.md` into your desktop folder as `Telescope-Control-Start-Here.txt`. See the [runtime reference](RUNTIME-OPTIONS.md), [icon formats](../assets/icons/README.md), and [KStars versions/workarounds](engineering/2026-11-16-pi-kstars-validation.md). INDI/KStars are optional companions, not prerequisites for this app's own motor control.

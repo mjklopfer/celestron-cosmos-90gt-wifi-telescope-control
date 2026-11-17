@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!-- Example only: 192.168.1.20 is the BRIDGE COMPUTER, not the telescope.
+     Use 127.0.0.1 only when the bridge explicitly listens on loopback.
+     Load/save through INDI Options; do not overwrite a live config blindly. -->
+<INDIDriver>
+  <newSwitchVector device="Celestron AUX" name="CONNECTION_MODE">
+    <oneSwitch name="CONNECTION_SERIAL">Off</oneSwitch>
+    <oneSwitch name="CONNECTION_TCP">On</oneSwitch>
+  </newSwitchVector>
+  <newTextVector device="Celestron AUX" name="DEVICE_ADDRESS">
+    <oneText name="ADDRESS">192.168.1.20</oneText>
+    <oneText name="PORT">2000</oneText>
+  </newTextVector>
+  <newSwitchVector device="Celestron AUX" name="CONNECTION_TYPE">
+    <oneSwitch name="TCP">On</oneSwitch>
+    <oneSwitch name="UDP">Off</oneSwitch>
+  </newSwitchVector>
+  <newSwitchVector device="Celestron AUX" name="DEVICE_LAN_SEARCH">
+    <oneSwitch name="INDI_ENABLED">Off</oneSwitch>
+    <oneSwitch name="INDI_DISABLED">On</oneSwitch>
+  </newSwitchVector>
+  <newSwitchVector device="Celestron AUX" name="MOUNT_TYPE">
+    <oneSwitch name="EQUATORIAL">Off</oneSwitch>
+    <oneSwitch name="ALTAZ">On</oneSwitch>
+  </newSwitchVector>
+</INDIDriver>

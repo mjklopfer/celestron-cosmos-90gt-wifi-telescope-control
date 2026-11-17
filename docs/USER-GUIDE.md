@@ -549,3 +549,7 @@ The bridge IP is this computer’s address on the same network as the system (co
 Use this system’s IP on the network shared with the device running your control software. If that software runs on this same system, use localhost (`127.0.0.1`) when the bridge is explicitly bound there, or use the specific IP shown by the bridge. A LAN-only listener does not also accept localhost connections.
 
 For an ordinary shared infrastructure network, leave the **Two Interface Mode** checkbox **unchecked**. For a direct SkyQLink connection bridged to a separate control-software network, **check** that checkbox and supply the bridge computer’s IP on the control-software network.
+
+### Pi desktop and optional control clients
+
+See the [desktop installer and zoom actions](RASPBERRY-PI-DESKTOP.md#portable-desktop-installer-and-zoom-actions), [start/stop guide](TELESCOPE-CONTROL-START-HERE.md), and optional [KStars application note](KSTARS-BRIDGE-NOTE.md). Celestron AUX is a device tab in KStars' INDI Control Panel. Manual alignment uses eyepiece centering and Sync; no camera workflow is included.

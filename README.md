@@ -40,8 +40,7 @@ astronomy apps to the original adapter. SkySafari is a tested example client.
 **Start here:** [Install and run](#install-and-run) ·
 [Supported hardware](#supported-telescope-and-wi-fi-hardware) ·
 [Wi-Fi modes and physical switch](#telescope-wi-fi-modes-and-physical-switch) ·
-[Bridge setup](#bridge-two-addresses-with-different-purposes) ·
-[Phone hotspot limitations](#phone-hotspot-compatibility--unverified)
+[Bridge setup](#bridge-two-addresses-with-different-purposes)
 
 The original radio module is the **Roving Networks WiFly RN-171** (also
 written RN171), rather than an ESP32 or ESP8266. The inspected telescope reports
@@ -140,23 +139,7 @@ leave Bridge OFF when that connection works. See [provisioning-only use](#bridge
 It is desktop software for communicating with the existing **WiFly RN-171**
 adapter. The bridge does not flash the telescope or turn its radio into newer
 hardware. The included ESP32 telescope simulator is a separate development tool.
-
-## Phone hotspot compatibility — unverified
-
-Operation through a phone hotspot **may or may not work and has not yet been
-verified**. In testing with an iPhone Personal Hotspot, the original RN-171
-accepted, read back and saved the requested Wi-Fi settings, but a successful
-hotspot association and a reachable telescope connection were not established.
-Repeated telescope restarts did not establish connectivity, and no telescope
-response was found on TCP port 2000 from a laptop connected to that hotspot.
-
-This does not establish whether the cause was Wi-Fi association/authentication,
-DHCP, or hotspot restrictions on local device communication. Communication
-between hotspot clients, automatic discovery, and SkySafari running on the
-hotspot-hosting iPhone remain unverified. Successful provisioning alone does
-not prove the telescope joined the hotspot. The verified house-router and
-computer-bridge arrangements should not be taken as verification of a phone
-hotspot arrangement.
+Phone-hotspot operation remains unverified.[^phone-hotspot]
 
 ## Requirements
 
@@ -192,7 +175,7 @@ Windows and Linux retain their existing layout and theme choices. See
 | --- | --- | --- |
 | Windows 11 Pro, build 26100, Python 3.14 | Current GUI release: 142 automated tests passed; lint, package build and GUI startup passed. Tabs, status readouts and bridge guidance reviewed locally. Earlier View menu/80% checks also passed. | New UI changes do not revalidate every hardware feature; see the detailed validation record for earlier hardware checks and remaining limits. |
 | macOS, Python 3.14 | Telescope operation and Ethernet + telescope Wi-Fi bridging were previously tested. November 16 appearance update: GUI startup, zoom/layout tests and lint passed; the user confirmed improved rendering after relaunch. | This appearance update does not repeat hardware or endurance testing; automated post-change screenshot capture was unavailable. |
-| Raspbian 10 Buster, 32-bit, Raspberry Pi 3 B+, Python 3.12.16 | SSL/Tk-enabled Python build, editable install, default and 80% zoom smoke tests, all four zoom tests, and desktop-entry launch verified. View menu and running X window visually checked. [Environment and setup details](docs/RASPBERRY-PI-DESKTOP.md). | Real telescope connection, motor operation, provisioning, bridge operation and endurance; full regression suite on this Pi. |
+| Raspbian 10 Buster, 32-bit, Raspberry Pi 3 B+, Python 3.12.16 | SSL/Tk-enabled Python build, editable install, default and 80% zoom smoke tests, all four zoom tests, and desktop-entry launch verified. View menu and running X window visually checked. [Environment and setup details](docs/RASPBERRY-PI-DESKTOP.md). Both-axis manual movement, Stop and fresh feedback through KStars/INDI/Control Bridge verified, including fresh-session reconnection. Earlier Pi regression: 142 tests with 3 optional-MCP skips. | Real-star alignment, GoTo accuracy, sustained tracking and endurance remain unverified. |
 
 The current Windows and earlier zoom-update checks were performed on November 16, 2026. Platform testing
 does not imply every feature or hardware configuration has been validated.
@@ -677,3 +660,7 @@ For the original SkyQLink RN-171, use the physical slider **LEFT** for Direct/ad
 Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
 
 For direct/infrastructure addresses and the roles of TCP 2000, TCP 3000, UDP 55555 discovery and UDP 123 time synchronization, see the **Note — Wi-Fi addresses and ports** on Wi-Fi provisioning and the [user guide port reference](docs/USER-GUIDE.md#wi-fi-address-and-port-reference).
+
+[^phone-hotspot]: Phone hotspot compatibility is unverified. The RN-171 accepted and saved iPhone Personal Hotspot settings, but association and reachable telescope control were not established, including after restarts. The cause (association/authentication, DHCP, or client isolation) is unresolved. Communication between hotspot clients, discovery, and control from the hotspot-hosting phone remain unverified; successful provisioning does not establish connectivity.
+
+Application note: [KStars/INDI connection and manual eyepiece alignment](docs/KSTARS-BRIDGE-NOTE.md), with [measured results and versions](docs/engineering/2026-11-16-pi-kstars-validation.md). [Portable desktop start/stop guide](docs/TELESCOPE-CONTROL-START-HERE.md).

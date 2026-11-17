@@ -127,3 +127,5 @@ The deployed launcher defaults to `--zoom-controls --ui-scale 0.8`. Right-click 
 | Open standard view without zoom menu | `--ui-scale 1.0` | Original-size interface without View menu. |
 
 Close an existing app before using a launch action; actions start a new process rather than change the open window. They do not use `--connect`, move the telescope or start a bridge automatically. For host/port/report options use a terminal or a separately configured launcher; the fixed display menu is not an editor for every possible CLI value. Desktop Actions support varies; PCManFM custom actions supplement the standard desktop entry. See the [Pi desktop guide](RASPBERRY-PI-DESKTOP.md) for installation and verification scope.
+
+`python tools/install_linux_shortcut.py` is a Linux installation helper with no parsed switches. Run with the application's virtual-environment interpreter. It installs desktop actions and backs up existing launchers; it does not start the app or connect to a telescope. See the [desktop installation guide](RASPBERRY-PI-DESKTOP.md#portable-desktop-installer-and-zoom-actions).

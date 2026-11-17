@@ -7,7 +7,7 @@
 - Reviewed Windows tabs, status readouts, profile filename and connection options. GUI starts disconnected and does not issue hardware commands during smoke tests.
 - README/user guide now distinguish current Windows checks from earlier macOS/Pi validation. This batch does not claim a new live telescope, Excel-paste, macOS or Pi hardware test.
 - Future ESP32 transport, PC-to-WiFly clock writes, general HTTP companion API and full-pass native tracking remain deferred/experimental as recorded in the roadmap.
-- Raspberry Pi deployment and KStars/INDI end-to-end checks follow publication; see their separate record when completed.
+- Pi deployment and KStars/INDI manual movement checks are complete; see the Pi/KStars closeout record below for scope and remaining limits.
 
 
 ## 2026-11-16 GUI, calibration and optional MCP audit
@@ -105,3 +105,7 @@ test fixes, seven focused zoom/layout/export tests passed. Automated screenshot
 access timed out, but the user visually reviewed the relaunched app and confirmed
 that it looked much better. Windows/Linux were not visually retested in this
 session, and no new telescope hardware/endurance validation is claimed.
+
+## Pi/KStars closeout — 2026-11-16
+
+The earlier pending Pi integration status is superseded by the [versioned hardware validation record](engineering/2026-11-16-pi-kstars-validation.md): both-axis manual motion, Stop, fresh encoder feedback and fresh-session reconnection verified. Real-star alignment, GoTo accuracy and sustained tracking remain unverified.

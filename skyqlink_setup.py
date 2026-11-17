@@ -1085,6 +1085,11 @@ class SetupApp(ttk.Frame):
             widget.configure(state='disabled')
 
     def check_uptime_evidence(self, identity, clock):
+        # Only diagnostics/time-dialog samples reach this check: do not claim
+        # continuous power-cycle detection. Adapter restart/rollover evidence
+        # cannot prove a motor reset, and clearing our display offsets does not
+        # invalidate a separate client's INDI alignment model. See the Pi/KStars
+        # 2026-11-16 validation note before changing cross-client reset handling.
         result = self.uptime_evidence.observe(identity, clock)
         if result['warning']:
             self.clear_local_references()

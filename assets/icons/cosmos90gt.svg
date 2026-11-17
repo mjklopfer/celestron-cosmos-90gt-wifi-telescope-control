@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<rect width="128" height="128" rx="24" fill="#10253b"/>
+<path d="M20 21h8m-4-4v8M99 32h10m-5-5v10" stroke="#f9d86e" stroke-width="3"/>
+<g transform="rotate(-28 65 51)"><rect x="26" y="36" width="68" height="29" rx="5" fill="#e5edf6"/><rect x="90" y="31" width="13" height="39" rx="3" fill="#4ba9dc"/><rect x="16" y="43" width="14" height="15" fill="#4ba9dc"/><text x="58" y="56" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="bold" fill="#10253b">WiFi</text></g>
+<path d="M65 66v12m0 0-25 32m25-32 25 32M65 78v32" stroke="#e5edf6" stroke-width="7" stroke-linecap="round"/>
+</svg>

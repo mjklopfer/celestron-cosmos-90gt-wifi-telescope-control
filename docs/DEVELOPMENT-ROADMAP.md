@@ -132,3 +132,7 @@ and complete SkySafari transport capture remain deferred as documented above.
 Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
 
 Resolved by the macOS appearance update (`775308e`, documented in `8262108`): reported formatting changes after the UI refresh. Check Aqua/custom-tab mixing, font metrics, page height and zoom with the user’s macOS/Tk version; preserve native rendering where needed. The user confirmed the corrected Mac appearance; see MACOS-APPEARANCE.md.
+
+## Pi/KStars closeout — 2026-11-16
+
+Completed: both-axis manual movement, Stop, fresh encoder readback, and fresh Pi-session connection after telescope power cycling. See the [versioned validation record](engineering/2026-11-16-pi-kstars-validation.md) and [manual operating note](KSTARS-BRIDGE-NOTE.md). Remaining: real-star manual alignment/GoTo accuracy, sustained tracking, intermittent adapter reply loss, coordinated external-client reset handling, and separate CPWI verification. No camera-based alignment work is planned for this deployment.
