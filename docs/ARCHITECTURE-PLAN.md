@@ -148,3 +148,25 @@ Reference review:
 No Celestron certification or complete official AUX conformance specification
 has been established. Describe the result as tested interoperability with named
 mount/client versions, not universal or certified compliance.
+
+
+## Capability-driven discovery and Motor control selection
+
+Prefer an explicit **Auto-detect / Legacy SkyQLink / Direct Celestron Wi-Fi**
+selector to an ambiguous alternate-control checkbox. The requested manual choice
+is a transport preference, not permission to bypass identity checks. Discovery
+may report both types; positively identify the selected adapter and obtain a
+versioned capability report before enabling adapter-specific commands. Unknown
+hardware remains unclassified; do not infer type solely from IP, SSID or an
+AMW007-like advertisement. Never auto-switch a connected control session.
+
+Common verified AUX reads and motion-service contracts should work through either
+backend. Keep diagnostic catalogs separated into mount AUX capabilities and
+adapter-specific settings. WiFly command-mode provisioning, WiFly time-server
+writes and RN-171 recovery are legacy-only. Direct ESP32 diagnostics should report
+its own identity, uptime/reset reason, bus status, GPS validity and RTC source/age
+only when those endpoints are implemented. Disable irrelevant controls with a
+short explanation; do not send WiFly commands to the new adapter. Control Bridge
+is legacy-only and unavailable in direct mode. Each backend owns its own clock,
+reset evidence, default snapshot and recovery policy while sharing the GUI/MCP
+contracts for supported operations.
