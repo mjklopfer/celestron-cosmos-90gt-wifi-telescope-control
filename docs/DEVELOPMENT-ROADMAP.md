@@ -130,3 +130,5 @@ results are recorded in VALIDATION.md. Hardware ESP32, direct mode, PC-clock wri
 and complete SkySafari transport capture remain deferred as documented above.
 
 Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
+
+Open visual issue: inspect reported macOS formatting changes after the UI refresh. Check Aqua/custom-tab mixing, font metrics, page height and zoom with the user’s macOS/Tk version; preserve native rendering where needed. The program reportedly runs; a visual correction is not yet verified.

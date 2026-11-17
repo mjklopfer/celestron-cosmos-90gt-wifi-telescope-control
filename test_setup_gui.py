@@ -111,7 +111,7 @@ class GuiTests(unittest.TestCase):
                                                                   'module_type': 'Celestron AUX Wi-Fi bridge', 'verified': True}]})
 
         self.app.last_infrastructure_host = '192.168.1.42'
-        self.app.calibration = dict(self.app.calibration or {})
+        self.app.calibration = {'telescope': {'host': '192.168.1.42', 'port': 2000}, 'samples': []}
         self.app.calibration['keymap'] = {'elevation_up': 'i', 'elevation_down': 'm', 'azimuth_left': 'j', 'azimuth_right': 'l', 'stop': 'k', 'connect': 'o', 'disconnect': 'p'}
         self.app.refresh_profile_keymap()
 

@@ -64,7 +64,7 @@ class ZoomTests(unittest.TestCase):
         self.app.zoom.apply(1.5)
         self.assertEqual(self.app.mode_tab_font.cget('size'), round(tab_size * 1.5))
         self.assertEqual(self.app.section_heading_font.cget('size'), round(heading_size * 1.5))
-        self.assertEqual(tuple(map(int, self.root.tk.splitlist(style.lookup('Mode.TNotebook.Tab', 'padding')))), (24, 15))
+        self.assertEqual(tuple(int(str(value)) for value in self.root.tk.splitlist(style.lookup('Mode.TNotebook.Tab', 'padding'))), (24, 15))
         self.app.zoom.apply(1)
         self.assertEqual(self.app.mode_tab_font.cget('size'), tab_size)
         self.assertEqual(self.app.section_heading_font.cget('size'), heading_size)
