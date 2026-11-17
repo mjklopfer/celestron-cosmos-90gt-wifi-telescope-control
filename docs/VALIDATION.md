@@ -1,5 +1,15 @@
 # Validation and remaining checks
 
+## 2026-11-16 UI clarity and profile release
+
+- Windows full regression: **142 tests passed**. The first run found an obsolete label assertion; the assertion was corrected to check explicit address/blank-field guidance and the full suite passed.
+- Subsequent bridge wording/layout changes were checked with the focused bridge/release-guidance tests. Ruff, whitespace checks, GUI smoke tests and wheel/source builds passed.
+- Reviewed Windows tabs, status readouts, profile filename and connection options. GUI starts disconnected and does not issue hardware commands during smoke tests.
+- README/user guide now distinguish current Windows checks from earlier macOS/Pi validation. This batch does not claim a new live telescope, Excel-paste, macOS or Pi hardware test.
+- Future ESP32 transport, PC-to-WiFly clock writes, general HTTP companion API and full-pass native tracking remain deferred/experimental as recorded in the roadmap.
+- Raspberry Pi deployment and KStars/INDI end-to-end checks follow publication; see their separate record when completed.
+
+
 ## 2026-11-16 GUI, calibration and optional MCP audit
 
 - Windows local suite: **129 tests passed**, including separate axis readouts,

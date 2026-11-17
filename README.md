@@ -161,7 +161,7 @@ hotspot arrangement.
 ## Requirements
 
 - Python **3.10 or newer**, with **Tkinter/Tcl-Tk** and a graphical desktop.
-- `psutil` (installed automatically by pip). No manufacturer driver is required
+- `psutil>=5.9,<8` (installed automatically by pip). No manufacturer driver is required
   for ordinary TCP/IP telescope communication.
 - A powered compatible mount and an IPv4 connection to its adapter, normally
   TCP **2000**. The application does not configure the computer's network joins.
@@ -185,12 +185,17 @@ Check availability with `python -m tkinter`.
 
 | Platform | Completed testing | Remaining checks |
 | --- | --- | --- |
-| Windows 11 Pro, build 26100, Python 3.14 | Installation and GUI startup verified; 92 automated tests, lint and package build passed with the zoom update. The View menu and 80% interface were visually checked. | Real telescope connection, motor operation, provisioning, bridge firewall access and endurance. |
+| Windows 11 Pro, build 26100, Python 3.14 | Current GUI release: 142 automated tests passed; lint, package build and GUI startup passed. Tabs, status readouts and bridge guidance reviewed locally. Earlier View menu/80% checks also passed. | New UI changes do not revalidate every hardware feature; see the detailed validation record for earlier hardware checks and remaining limits. |
 | macOS, Python 3.14 | Existing project hardware testing covers telescope operation and the documented Ethernet + telescope Wi-Fi bridge arrangement. | The new View menu/zoom controls have not yet been separately verified on macOS. |
 | Raspbian 10 Buster, 32-bit, Raspberry Pi 3 B+, Python 3.12.16 | SSL/Tk-enabled Python build, editable install, default and 80% zoom smoke tests, all four zoom tests, and desktop-entry launch verified. View menu and running X window visually checked. [Environment and setup details](docs/RASPBERRY-PI-DESKTOP.md). | Real telescope connection, motor operation, provisioning, bridge operation and endurance; full regression suite on this Pi. |
 
-The zoom-update checks were performed on November 16, 2026. Platform testing
+The current Windows and earlier zoom-update checks were performed on November 16, 2026. Platform testing
 does not imply every feature or hardware configuration has been validated.
+
+Optional development tools are installed with `pip install -e ".[dev]"`; MCP uses
+`pip install -e ".[mcp]"`. Neither extra is required for the ordinary GUI.
+Python must include SSL for secure package downloads and Tk for the window;
+a Linux SSH session also needs access to an existing graphical display.
 
 ## Install and run
 
@@ -296,7 +301,7 @@ changing that switch, then power it ON.
   normal address is **1.2.3.4:2000**. This original module can use legacy networking
   that some current Wi-Fi hardware/drivers do not support.
 - **Infrastructure / house Wi-Fi:** join the network where the telescope has been
-  provisioned. Enter its router-assigned IP or use **Discover modules on LAN**.
+  provisioned. Enter its router-assigned IP or use **Discover SkyQLink / Celestron Modules**.
   `1.2.3.4` is not its house-network address. DHCP addresses can change.
 
 Selecting a software mode changes guidance and connection settings. It does not
@@ -307,14 +312,14 @@ move the telescope slider or connect the computer to a different Wi-Fi network.
 1. **Motor control:** connect, verify both motor position replies, choose rate
    1–9, and use hold arrows or bounded timed jogs. Stop ends commanded movement.
    Displays include firmware, raw encoder counts, angles and relative changes.
-   Encoder angles are mechanical positions, not an independently aligned celestial
-   solution. Use the scope/app's alignment procedure for sky pointing.
-2. **Diagnostics:** displays actual adapter query data, replies, timeouts and
-   controller details. A responding RN-171 can be listed even when motors do not
-   answer; adapter detection alone does not prove motor connectivity.
-3. **Bridge:** relays native AUX traffic to a compatible phone/desktop control app.
+   Encoder angles are raw motor positions converted to degrees. They do not show
+   the telescope’s aligned sky-pointing azimuth/elevation or an object’s coordinates. Use the scope/app's alignment procedure for sky pointing.
+2. **Control Bridge:** relays native AUX traffic to a compatible phone/desktop control app.
    Defaults OFF. While ON, the other control tabs are disabled and readbacks/logs
    remain visible. The controlling application can command real telescope motion.
+3. **Diagnostics:** displays actual adapter query data, replies, timeouts and
+   controller details. A responding RN-171 can be listed even when motors do not
+   answer; adapter detection alone does not prove motor connectivity.
 4. **Wi-Fi provisioning:** Connect & Read Settings displays replies in the
    **Transfer log below the tabs**, not a popup, and saves a report. Read settings or replace the router SSID, password and
    supported security settings. Supports an already provisioned adapter through
@@ -323,7 +328,7 @@ move the telescope slider or connect the computer to a different Wi-Fi network.
    to join the saved router. Discover the newly assigned IP afterward.
 
 The selected connection mode controls discovery: **Direct / ad hoc** checks only
-`1.2.3.4:2000` on the telescope Wi-Fi; **Infrastructure / house Wi-Fi** scans
+`1.2.3.4:2000` on the telescope Wi-Fi; **Infrastructure** scans
 attached supported router networks. Direct discovery waits up to three seconds
 for each connection attempt and retries once. If the telescope-facing Wi-Fi has
 no usable address yet, the app explains that instead of searching Ethernet and
@@ -338,34 +343,43 @@ known direct endpoint. It is not a general network inventory tool.
 
 ## Bridge: two addresses with different purposes
 
-**Telescope IP** is the upstream destination. **Computer LAN IP** is the local
-listening address the phone/control app connects to. Selecting a computer-interface
-row chooses that listening IP; it does not choose or join a Wi-Fi network.
+**Telescope IP address** identifies SkyQLink. **This computer’s IP on the shared infrastructure network** identifies the local adapter on the control device's network,
+not a MAC address. Select that adapter in **Local System Network Interfaces** to
+fill the field; selecting it does not join a Wi-Fi network.
 
-For one shared infrastructure LAN, use the computer's IP reachable from the phone.
-A blank Computer LAN IP lets the OS-selected route to the telescope supply a source
-address; select an explicit IP on multi-interface systems when that is ambiguous.
+In **Infrastructure** mode, the telescope, this computer and the control device
+use a common access-point network. An empty local IPv4 field uses the adapter
+chosen by the operating system's route to the telescope.
 
-For **Two interfaces**, an explicit shared-network computer IP is required:
+In **Direct / ad hoc** mode, the Control Bridge switch is disabled until you check
+**Two Interface Mode**. The notice beside the switch explains the requirement.
+Connect one compatible Wi-Fi adapter to SkyQLink and a second adapter to the
+control-app network. Select that second adapter's local IPv4 address (required),
+then switch Control Bridge ON. Enter the displayed computer address and TCP port
+in the astronomy app, using Celestron WiFi / Access Point mode.
 
-1. Connect computer Wi-Fi to the telescope's direct SkyQLink network, with the
-   mount's physical switch LEFT. Keep Ethernet (or another interface) on the router.
-2. Keep the phone on router Wi-Fi. Enter telescope destination **1.2.3.4:2000**.
-3. Check **Two interfaces**. Select the computer's **router/Ethernet IP** in the
-   interface table, or type it into Computer LAN IP. Do not choose its SkyQLink IP.
-4. Switch Bridge ON. In the control application choose Celestron Wi-Fi / Access
-   Point mode, using the displayed **computer** IP and TCP 2000 if fields exist.
-
-Example topology using illustrative addresses:
+The second adapter can be Ethernet to the router used by a phone/tablet over
+Wi-Fi, Ethernet to a configured wired control device, or a second Wi-Fi adapter
+joining the control device's router/hotspot. A supported second Wi-Fi adapter can
+instead host a hotspot configured in the operating system. Phones/tablets do not
+require two computer Wi-Fi adapters when the Ethernet-to-router path is available.
+The control network must permit communication between devices; guest/client
+isolation can block it.
 
 ```text
-phone (router Wi-Fi) -> computer Ethernet 192.168.50.20:2000
-                    -> computer SkyQLink Wi-Fi 1.2.3.10 -> telescope 1.2.3.4:2000
+Phone/tablet -- router Wi-Fi -- router -- computer Ethernet
+                                           |
+                                      Control Bridge
+                                           |
+                                computer SkyQLink Wi-Fi -- telescope
 ```
 
-This is an application proxy; OS Internet Sharing, NAT and router port forwarding
-are unnecessary. One hardware test verified Ethernet plus direct telescope Wi-Fi
-and a SkySafari phone session. Two separate Wi-Fi radios have not been tested.
+Internet access, OS network bridging and NAT are not required for this command
+proxy. Optional Internet sharing from a third interface, hotspot configuration,
+DHCP and routing are outside the program; it does not merge network segments.
+See the [user guide](docs/USER-GUIDE.md#directad-hoc-why-control-bridge-is-disabled)
+for steps and topology choices. Earlier hardware testing covered Ethernet plus
+SkyQLink Wi-Fi; two-Wi-Fi and hosted-hotspot setups remain unverified.
 
 Allow this Python application incoming **TCP 2000 and 3000** from the phone's local
 network and outgoing broadcast **UDP 55555**. Give the phone app Local Network
@@ -514,10 +528,14 @@ polling does not renew this idle period. Reconnect explicitly to continue. An
 in-flight read and Stop cleanup can extend actual closure beyond the nominal
 idle deadline. This is application sharing policy, not a verified WiFly lease.
 
-Set **Keyboard control** to ON (OFF at startup), then use plain keys while
+With a valid `keymap` in the JSON profile, set **Keyboard control** to ON
+(OFF at startup), then use the displayed keys while
 the Motor tab is selected and focus is outside an input. Ctrl/Alt are not required:
-**I** up, **J** left, **K** stop, **L** right, **M** down; **O** open/connect,
-**P** pause/disconnect. Releasing a held direction stops it; Escape stops both axes.
+Letters are displayed in uppercase to match keyboard labels. You do not need to hold Shift or turn on Caps Lock.
+
+The example mapping uses **I** up, **J** left, **K** stop, **L** right, **M** down; **O** connect,
+**P** disconnect. Release a held direction key to stop that movement. With the main program
+window active, press the **Esc key** to stop both motors.
 
 Both local references and explicit controller angle writes validate decimal degrees
 when Set is pressed. **Azimuth: 0 to 360, no negative values** (100.52 or 060.84).
@@ -598,3 +616,37 @@ checks warn on possible adapter resets and clear active local references; they
 cannot prove motor resets or distinguish undocumented uptime rollover. See the
 [user guide](docs/USER-GUIDE.md) for limits and the
 [future architecture plan](docs/ARCHITECTURE-PLAN.md) for ESP32 GPS/compass/RTC work.
+
+
+Motor control shows the loaded profile name and its configuration filename,
+`telescope-calibration.json`. **Profile file details…** shows the full
+resolved path, format and schema version, with **Copy profile file details**. The Motor
+control table copy also includes the profile and configuration path. The file
+contains structured JSON, not a proprietary format; it holds device identity and
+calibration evidence. Loading it does not push settings to the telescope. After
+updating the file, click **Reload calibration**. If no usable profile is loaded,
+the GUI identifies the expected filename rather than claiming calibration is active.
+
+
+The JSON profile also supplies the optional keyboard `keymap`. If it is missing
+or invalid, the shortcut list is blank and the Keyboard control rocker is disabled;
+Esc remains the fixed stop key in the active main window. No default letter mapping
+is silently installed. See the [user guide](docs/USER-GUIDE.md#editing-the-json-keyboard-map)
+and [example JSON fragment](examples/keymap.example.json). The calibration script
+preserves an existing keymap when replacing measurement data.
+
+**Measured slew rates…** opens the rate table instead of displaying it permanently
+on Motor control. It is disabled without usable measurements. The dialog provides
+comma-separated CSV copying and tab-separated copying for direct Excel paste.
+Connection feedback appears in a shaded **Connection status:** box. Copy buttons
+identify their source, and the tab container fits the selected page. See the
+[ESP32 resume document](docs/ESP32-RESUME.md) for the separate hardware plan and TODOs.
+
+Wi-Fi provisioning uses **Infrastructure / Router Wi-Fi Settings** for new values.
+**Connect & Read Settings** reads the stored SSID and network configuration without changing them; the **Settings read from telescope** panel shows the SSID in bold, separately from instructions and editable fields. Full replies appear in the Transfer log. Password fields are redacted before display and saving; provisioning logs do not provide password recovery. **Show password** reveals only entered text. Password recovery through other tools is unverified for RN-171 / 2.40-CEL.
+
+For the original SkyQLink RN-171, use the physical slider **LEFT** for Direct/ad hoc: connect this computer to SkyQLink-xx and read at `1.2.3.4:2000`. Use **RIGHT** for Infrastructure: connect this computer to the telescope’s current network and discover its assigned IP. Power OFF before moving the slider, then power ON. The app’s mode selector does not move the switch or join Wi-Fi. Readback describes stored settings, not a sensed physical switch position.
+
+Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
+
+For direct/infrastructure addresses and the roles of TCP 2000, TCP 3000, UDP 55555 discovery and UDP 123 time synchronization, see the **Note — Wi-Fi addresses and ports** on Wi-Fi provisioning and the [user guide port reference](docs/USER-GUIDE.md#wi-fi-address-and-port-reference).

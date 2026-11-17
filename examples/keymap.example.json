@@ -1,0 +1,11 @@
+{
+  "keymap": {
+    "elevation_up": "i",
+    "elevation_down": "m",
+    "azimuth_left": "j",
+    "azimuth_right": "l",
+    "stop": "k",
+    "connect": "o",
+    "disconnect": "p"
+  }
+}

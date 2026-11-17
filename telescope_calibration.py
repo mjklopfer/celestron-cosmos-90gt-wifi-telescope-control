@@ -121,3 +121,23 @@ def relative_target(current_encoder, degrees):
     if not math.isfinite(degrees) or not -180 < degrees < 180:
         raise ValueError('Relative target must be less than half a turn')
     return (current_encoder + round(degrees * COUNTS_PER_TURN / 360)) % COUNTS_PER_TURN
+
+
+KEYMAP_ACTIONS = ('elevation_up', 'elevation_down', 'azimuth_left', 'azimuth_right', 'stop', 'connect', 'disconnect')
+
+
+def profile_keymap(config):
+    """No fallback shortcuts: a complete, unambiguous profile map is required."""
+    mapping = config.get('keymap') if isinstance(config, dict) else None
+    if mapping is None or mapping == {}:
+        return {}
+    if not isinstance(mapping, dict) or set(mapping) != set(KEYMAP_ACTIONS):
+        raise ValueError('keymap must define elevation_up, elevation_down, azimuth_left, azimuth_right, stop, connect and disconnect')
+    normalized = {}
+    for action, key in mapping.items():
+        if not isinstance(key, str) or not re.fullmatch('[a-zA-Z]', key):
+            raise ValueError('Each keymap value must be one letter A-Z; Esc remains the fixed stop key')
+        normalized[action] = key.lower()
+    if len(set(normalized.values())) != len(normalized):
+        raise ValueError('Each keymap action must use a different letter')
+    return normalized

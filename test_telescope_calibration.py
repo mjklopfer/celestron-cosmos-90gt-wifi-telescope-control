@@ -5,6 +5,16 @@ from telescope_calibration import from_report, save_config, load_config, estimat
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_keymap_has_no_defaults_and_rejects_conflicts(self):
+        from telescope_calibration import profile_keymap, KEYMAP_ACTIONS
+        self.assertEqual(profile_keymap({}), {})
+        self.assertEqual(profile_keymap({'keymap': {}}), {})
+        mapping = dict(zip(KEYMAP_ACTIONS, 'abcdefg', strict=True))
+        self.assertEqual(profile_keymap({'keymap': mapping}), mapping)
+        for invalid in ({'stop': 'k'}, {**mapping, 'connect': 'a'}, {**mapping, 'stop': 'Escape'}, {**mapping, 'stop': 4}):
+            with self.assertRaises(ValueError):
+                profile_keymap({'keymap': invalid})
+
     def test_mac_identity_survives_address_change_and_rejects_other_adapter(self):
         config = from_report({}, '192.0.2.1')
         report = {'host': '192.0.2.1', 'port': 2000, 'rows': [

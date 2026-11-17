@@ -54,6 +54,21 @@ class ZoomTests(unittest.TestCase):
         rocker.click(SimpleNamespace(x=20))
         self.assertEqual(calls, [True, False])
 
+    def test_tab_and_section_heading_scale_and_reset(self):
+        from tkinter import ttk
+        style = ttk.Style(self.root)
+        tab_size = self.app.mode_tab_font.cget('size')
+        heading_size = self.app.section_heading_font.cget('size')
+        self.assertEqual(self.app.mode_tab_font.cget('weight'), 'bold')
+        self.assertEqual(self.app.section_heading_font.cget('weight'), 'bold')
+        self.app.zoom.apply(1.5)
+        self.assertEqual(self.app.mode_tab_font.cget('size'), round(tab_size * 1.5))
+        self.assertEqual(self.app.section_heading_font.cget('size'), round(heading_size * 1.5))
+        self.assertEqual(tuple(map(int, self.root.tk.splitlist(style.lookup('Mode.TNotebook.Tab', 'padding')))), (24, 15))
+        self.app.zoom.apply(1)
+        self.assertEqual(self.app.mode_tab_font.cget('size'), tab_size)
+        self.assertEqual(self.app.section_heading_font.cget('size'), heading_size)
+
     def test_invalid_scale_rejected(self):
         for value in ('nan', 'inf', '0', '2.1'):
             with self.subTest(value=value), self.assertRaises(ValueError):

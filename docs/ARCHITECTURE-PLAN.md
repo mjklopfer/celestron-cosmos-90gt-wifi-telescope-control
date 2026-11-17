@@ -170,3 +170,5 @@ short explanation; do not send WiFly commands to the new adapter. Control Bridge
 is legacy-only and unavailable in direct mode. Each backend owns its own clock,
 reset evidence, default snapshot and recovery policy while sharing the GUI/MCP
 contracts for supported operations.
+
+ESP32 work resume point: [decisions, wiring references and ordered TODO checklist](ESP32-RESUME.md).

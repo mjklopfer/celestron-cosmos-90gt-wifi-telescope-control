@@ -88,6 +88,7 @@ class UiZoom:
         for widget, column, width, minimum in self.columns:
             widget.column(column, width=round(width * self.scale), minwidth=round(minimum * self.scale))
         self.style.configure('Treeview', rowheight=round(self.rowheight * self.scale))
+        self.style.configure('Mode.TNotebook.Tab', padding=tuple(round(v * self.scale) for v in self.app.mode_tab_padding))
         self.app.bridge_switch.set_scale(self.scale)
         self.app.keyboard_toggle.set_scale(self.scale)
         self.root.update_idletasks()

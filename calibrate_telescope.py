@@ -154,6 +154,8 @@ def main():
                   else json.loads(args.import_report.read_text(encoding='utf-8')))
         updated = from_report(report, args.host, args.port)
         updated['telescope'] = dict(config['telescope'])
+        if 'keymap' in config:
+            updated['keymap'] = config['keymap']
         updated['baseline_history'] = config.get('baseline_history', [])
         if 'latest_baseline' in config:
             updated['latest_baseline'] = config['latest_baseline']

@@ -7,6 +7,55 @@ from skyqlink_setup import SetupApp
 
 
 class GuiTests(unittest.TestCase):
+    def test_missing_rate_data_disables_dialog_and_csv_has_separate_columns(self):
+        from unittest.mock import patch
+        import csv
+        import io
+        with patch('skyqlink_setup.load_config', return_value={'schema_version': 1, 'telescope': {}, 'samples': []}):
+            self.app.reload_calibration()
+        self.assertFalse(self.app.has_slew_rates)
+        self.assertEqual(str(self.app.slew_rates_button.cget('state')), 'disabled')
+        self.app.open_slew_rates()
+        self.assertIsNone(self.app.slew_rates_window)
+        self.app.slew_rate_cells[(0x10, 1)].set('0.1250 / 0.2500')
+        rows = self.app.slew_rate_rows()
+        self.assertEqual(rows[1], [1, '0.1250', '0.2500', '', ''])
+        parsed = list(csv.reader(io.StringIO(self.app.spreadsheet_output(rows, delimiter=','))))
+        self.assertEqual(len(parsed), 10)
+        self.assertTrue(all(len(row) == 5 for row in parsed))
+
+    def test_profile_keymap_controls_switch_help_and_dispatch(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        self.app.calibration['keymap']['connect'] = 'c'
+        self.app.refresh_profile_keymap()
+        self.assertIn('C: connect', self.app.keyboard_help.get())
+        self.app.keyboard_toggle.invoke()
+        self.app.connect_motors = Mock()
+        event = SimpleNamespace(keysym='o', state=0, widget=self.app.motor_tab)
+        self.app.motor_key_press(event)
+        self.app.connect_motors.assert_not_called()
+        event.keysym = 'c'
+        self.app.motor_key_press(event)
+        self.app.connect_motors.assert_called_once()
+        del self.app.calibration['keymap']
+        self.app.refresh_profile_keymap()
+        self.assertFalse(self.app.keyboard_enabled.get())
+        self.assertEqual(self.app.keyboard_help.get(), '')
+        self.assertEqual(self.app.keyboard_toggle.cget('state'), 'disabled')
+        self.app.keyboard_toggle.invoke()
+        self.assertFalse(self.app.keyboard_enabled.get())
+
+    def test_spreadsheet_copy_preserves_cells_and_multiline_values(self):
+        import csv
+        import io
+        rows = [['Field', 'Value'], ['quoted, text', 'line 1\nline 2\t"quoted"']]
+        text = self.app.spreadsheet_output(rows)
+        self.assertEqual(list(csv.reader(io.StringIO(text), delimiter='\t')), rows)
+        motor = list(csv.reader(io.StringIO(self.app.motor_output()), delimiter='\t'))
+        self.assertEqual(motor[0], ['Measurement', 'Azimuth', 'Elevation'])
+        self.assertTrue(all(len(row) == 3 for row in motor))
+
     def test_time_dialog_readback_and_read_only_request(self):
         from unittest.mock import patch
         self.app.open_time_settings()
@@ -62,6 +111,9 @@ class GuiTests(unittest.TestCase):
                                                                   'module_type': 'Celestron AUX Wi-Fi bridge', 'verified': True}]})
 
         self.app.last_infrastructure_host = '192.168.1.42'
+        self.app.calibration = dict(self.app.calibration or {})
+        self.app.calibration['keymap'] = {'elevation_up': 'i', 'elevation_down': 'm', 'azimuth_left': 'j', 'azimuth_right': 'l', 'stop': 'k', 'connect': 'o', 'disconnect': 'p'}
+        self.app.refresh_profile_keymap()
 
     def tearDown(self):
         self.app.busy = False
@@ -263,12 +315,16 @@ class GuiTests(unittest.TestCase):
         self.app.press_direction = Mock()
         self.app.release_direction = Mock()
         for key, axis, direction in [('i', 0x11, 1), ('j', 0x10, -1), ('l', 0x10, 1), ('m', 0x11, -1)]:
+            releases_before = self.app.release_direction.call_count
             self.app.motor_tab.event_generate(f'<KeyPress-{key}>')
             self.app.press_direction.assert_called_with(axis, direction)
             self.app.motor_tab.event_generate(f'<KeyRelease-{key}>')
             self.drain_ui()
             self.assertIsNone(self.app.keyboard_direction)
-        self.assertEqual(self.app.release_direction.call_count, 4)
+            # Mouse releases/focus events in an interactive desktop may also
+            # request a safe Stop. Each key release must request one itself.
+            self.assertGreater(self.app.release_direction.call_count, releases_before)
+        self.assertEqual(self.app.press_direction.call_count, 4)
         self.app.stop_motors = Mock()
         self.app.disconnect_motors = Mock()
         self.app.motor_tab.event_generate('<KeyPress-k>')
@@ -407,7 +463,7 @@ class GuiTests(unittest.TestCase):
         self.app.preset(True)
         self.app.show_provisioned_network({'before': {'get wlan': 'SSID=ExistingNetwork\r\nJoin=1\r\nAuth=WPA2',
                                                     'get ip': 'DHCP=ON'}})
-        self.assertIn('ExistingNetwork', self.app.provision_notice.get())
+        self.assertEqual('ExistingNetwork', self.app.provision_ssid_readback.get())
         self.assertIn('no ad hoc switch or factory reset', self.app.provision_notice.get())
         self.assertEqual(str(self.app.upload_button['state']), 'normal')
 
@@ -536,7 +592,7 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertFalse(app.bridge_enabled.get())
         self.assertIsNone(app.bridge)
         self.assertIn('Infrastructure', app.bridge_status.get())
-        for text in ('TCP 2000', '3000', '55555', 'Local Network', 'does not verify firewall'):
+        for text in ('TCP 2000', '3000', '55555', 'Local Network', 'does not prove that your firewall'):
             self.assertIn(text, app.bridge_firewall_label.cget('text'))
 
     def test_computer_ips_interfaces_and_bound_outbound_ports_are_visible(self):
@@ -565,17 +621,37 @@ class ReleaseGuidanceTests(unittest.TestCase):
     setUp = GuiTests.setUp
     tearDown = GuiTests.tearDown
 
-    def test_two_interfaces_require_explicit_shared_network_ip(self):
+    def test_direct_mode_explains_disabled_switch_and_two_interface_unlock(self):
         app = self.app
-        app.bridge_dual.set(True)
-        app.update_controls()
-        self.assertIn('required', app.bridge_ip_help.get())
-        self.assertIn('shared', app.bridge_interface_help.get())
+        app.preset(False)
+        self.assertEqual(str(app.bridge_switch.cget('state')), 'disabled')
+        self.assertIn('Direct/ad hoc requires Two Interface Mode', app.bridge_requirement.get())
         app.bridge_enabled.set(True)
         app.toggle_bridge()
         self.assertIsNone(app.bridge)
         self.assertFalse(app.bridge_enabled.get())
-        self.assertIn('Select a row', app.bridge_status.get())
+        self.assertIn('second adapter', app.bridge_status.get())
+        app.bridge_dual.set(True)
+        app.update_controls()
+        self.assertEqual(str(app.bridge_switch.cget('state')), 'normal')
+        self.assertIn('astronomy app', app.bridge_requirement.get())
+        app.bridge_dual.set(False)
+        app.preset(True)
+        self.assertEqual(str(app.bridge_switch.cget('state')), 'normal')
+        self.assertNotIn('disabled', app.bridge_requirement.get())
+
+    def test_two_interfaces_require_explicit_shared_network_ip(self):
+        app = self.app
+        app.bridge_dual.set(True)
+        app.update_controls()
+        self.assertIn('control-device', app.bridge_ip_help.get())
+        self.assertIn('do not leave this field blank', app.bridge_interface_help.get())
+        self.assertIn('network used by your phone, tablet or other control computer', app.bridge_interface_help.get())
+        app.bridge_enabled.set(True)
+        app.toggle_bridge()
+        self.assertIsNone(app.bridge)
+        self.assertFalse(app.bridge_enabled.get())
+        self.assertIn('Select that adapter in Local System Network Interfaces', app.bridge_status.get())
 
     def test_selecting_discovered_direct_module_keeps_direct_mode(self):
         app = self.app

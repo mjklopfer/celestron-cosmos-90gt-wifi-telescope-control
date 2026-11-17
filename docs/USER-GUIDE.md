@@ -40,7 +40,7 @@ port is 2000. Choose the connection mode matching the telescope and computer:
 
 The mode selector changes application settings. It does not move the physical
 switch or connect the computer to a Wi-Fi network. Power off before changing the
-telescope switch. Use **Discover SkyQLink Modules** to find responding modules on
+telescope switch. Use **Discover SkyQLink / Celestron Modules** to find responding modules on
 the selected connection, then select a result. An infrastructure address may
 change after a restart. Discovery checks protocol replies; it does not move the
 telescope or change its settings.
@@ -52,11 +52,12 @@ telescope or change its settings.
    alone does not enable movement.
 3. Select a speed (1–9). Use **Hold to move** or **Timed jog**. In hold mode,
    release the arrow to stop. A timed jog runs for its selected duration.
-4. Use **STOP** or Escape to stop. **Disconnect** stops and releases the connection.
+4. Click **STOP**, or press the **Esc key** while the main program window is active, to stop both motors. **Disconnect** stops and releases the connection.
 
 Azimuth means horizontal rotation; elevation means up/down. Encoder counts are
-the motor's position counter; its angle is not automatically an aligned sky
-coordinate. Position age indicates how recently feedback arrived. Jog readouts
+the motor's raw position counter. Encoder angles convert that counter to degrees;
+they do not show the telescope's aligned sky-pointing azimuth/elevation or the
+coordinates of a celestial object. Position age indicates how recently feedback arrived. Jog readouts
 show before/after counts, measured angular change and the stop check.
 
 **Idle release (next connection)** offers Off, 10, 20 or 30 seconds. The default
@@ -68,18 +69,26 @@ closes the connection. Do not treat delayed position data as current.
 
 ### Keyboard control
 
-Set the **Keyboard control** switch to ON beneath Idle release. It starts OFF on launch.
+Keyboard shortcuts are loaded from the `keymap` object in the active JSON profile.
+With a valid keymap loaded, set **Keyboard control** to ON beneath Idle release.
+It starts OFF on launch. A missing, empty or invalid keymap clears the shortcut
+list and disables the switch; the nearby status message explains why.
 Enabling it places keyboard focus in the motor panel. The application must be
 the active window with the Motor control tab selected.
+
+Letters are displayed in uppercase to match keyboard labels. You do not need to hold Shift or turn on Caps Lock.
+
+The example keymap uses the following letters; the on-screen list reflects your
+actual profile rather than fixed program shortcuts.
 
 | Key | Action |
 | --- | --- |
 | I / M | Elevation up / down |
 | J / L | Azimuth left / right |
 | K | Stop |
-| O | Open/connect motor control |
-| P | Pause/disconnect motor control |
-| Escape | Stop, regardless of the keyboard switch |
+| O | Connect to the motors |
+| P | Stop and disconnect from the motors |
+| Esc key | Stop both motors while the main program window is active, even when Keyboard control is OFF |
 
 Letters typed into an entry field, dropdown or log do not operate the motors.
 After editing, click the motor panel to restore focus. Release a held direction
@@ -170,7 +179,7 @@ There are two different addresses:
 | GUI term | What it identifies |
 | --- | --- |
 | Telescope IP address, at the top | The SkyQLink module that this computer connects to |
-| Control app connection address, on this tab | This computer's address that your astronomy app connects to |
+| This computer’s IP on the control-device network | The local adapter address on the network used by your astronomy app; not a MAC address or the telescope’s IP |
 
 For a common network, leave the bridge address blank to select it automatically,
 or choose this computer's relevant adapter in **Local System Network Interfaces**.
@@ -182,11 +191,53 @@ The bridge also provides discovery on UDP 55555 and limited management on TCP
 3000. Allow local-network firewall access; opening a local port does not prove
 that another device can reach it.
 
-**Two Interface Mode** is for a computer with one adapter connected directly to
-SkyQLink and another connected to the control application's network, such as
-Ethernet to the router. Connect those networks in the operating system first.
-Select the computer address on the control application's network, not its
-SkyQLink address. The program does not configure adapters or share the Internet.
+### Direct/ad hoc: why Control Bridge is disabled
+
+When **Direct / ad hoc** is selected, Control Bridge cannot start until **Two
+Interface Mode** is checked. A notice beside the disabled switch explains this
+and tells you what to do. Checking the box does not create network connections:
+configure both adapters in the operating system first, then select the correct
+IPv4 address in the program.
+
+1. Connect one compatible Wi-Fi adapter on this computer to the telescope's
+   SkyQLink network. Use the telescope address `1.2.3.4`, TCP port `2000`.
+2. Connect a second adapter to the network used by your astronomy app. Choose
+   one arrangement from the table below.
+3. Check **Two Interface Mode**. In **Local System Network Interfaces**, select
+   this computer's adapter on the astronomy app's network. Its IPv4 address fills
+   **This computer’s IP on the control-device network**. An address is required;
+   do not select the adapter connected to SkyQLink.
+4. Switch **Control Bridge ON**. In the astronomy app select Celestron WiFi /
+   Access Point mode. If asked, enter this computer's displayed IPv4 address and
+   TCP port. The app connects to this computer, which forwards commands to SkyQLink.
+
+| Second adapter on this computer | How the control device connects |
+| --- | --- |
+| Ethernet to a router/access point | Phone/tablet uses that router's Wi-Fi; another computer can use Ethernet or Wi-Fi |
+| Ethernet directly to a control device | Both ends need compatible IP/subnet settings configured outside this program |
+| Second Wi-Fi adapter joining a router/hotspot | Phone/tablet joins the same network; local device-to-device communication must be permitted |
+| Second Wi-Fi adapter providing a hotspot | Control device joins that hotspot; adapter/OS must support hosting it and be configured outside this program |
+
+A phone or tablet does **not** require two Wi-Fi adapters in this computer when
+Ethernet connects the computer to the phone's access-point network. Two Wi-Fi
+adapters are an alternative when no suitable Ethernet path is available. The
+SkyQLink-facing adapter must support its legacy ad hoc network; do not assume any
+modern Wi-Fi adapter supports it.
+
+Router/hotspot guest or client isolation must not block the astronomy app from
+reaching this computer. Configure local firewall access for TCP 2000/3000 and
+UDP discovery as described above. Networks should use non-overlapping subnets.
+
+Internet access is not required for telescope control. This application proxies
+commands; it does not join/merge network segments, enable OS network bridging,
+create hotspots, configure DHCP, or provide routing/NAT. If you also want Internet
+sharing from a third interface, configure that separately in your operating system
+or router. Such setup is outside this application and is not required for the
+basic telescope bridge. A third interface is an optional design, not a requirement.
+
+Ethernet plus SkyQLink Wi-Fi has earlier hardware evidence; two-Wi-Fi, hosted-hotspot
+and direct-Ethernet arrangements are described options, not newly tested setups.
+
 
 ON reserves the telescope connection and locks the other tabs. OFF attempts Stop
 on both motors and closes the bridge; consult acknowledgements in the log.
@@ -236,8 +287,9 @@ Review logs before sharing: redaction is not a reason to publish private network
 
 Below the log, **Allow one Wi-Fi module restart if Connect Motors fails** permits
 a single recovery attempt after initial motor verification fails. This is enabled
-by default. Use it when the telescope is powered on and other controllers are
-disconnected, but initial motor replies are missing. It identifies the legacy
+by default. Use it if you click **Connect Motors** but the program receives no valid response
+from one or both motors. Leave telescope power on and disconnect other controlling
+apps before retrying. It identifies the legacy
 RN-171/2.40-CEL module, reboots it, checks both motor positions and retries the
 connection if those checks succeed. It retains saved Wi-Fi settings; unsaved RAM
 settings can be lost. It is not a factory reset or motion command. DHCP may assign
@@ -316,10 +368,11 @@ and experimental native control from future Orbitron/TLE/launch producers.
 Native streaming is unverified on this device and disabled by default. Do not
 interpret this interface as a completed ISS or rocket tracker.
 
-Every log/output panel offers **Copy to Clipboard**, copying its complete displayed
-output without clearing it. Diagnostics has separate buttons for the full result
-set and the selected row’s complete reply. The full-response panel explicitly
-refers to the table above. Copying does not include hidden password-entry fields.
+Each copy button names its source: **Copy status message**, **Copy motor table**,
+**Copy diagnostics table**, **Copy selected reply**, **Copy network adapter table**,
+and **Copy transfer log**, for example. Table copies contain headings and quoted
+tab-separated cells for direct Excel paste. Free-form messages/logs remain plain
+text. Copying neither clears the display nor includes hidden password fields.
 
 **Clock semantics:** Test from this computer queries the selected server; it does
 not set either clock. Sync WiFly from time server now asks WiFly to synchronize with its configured
@@ -342,7 +395,7 @@ settings and clock**. Disconnect Motor control and turn Control Bridge off first
 leave telescope power on. This reads settings without writing or requesting sync.
 The scrollable snapshot shows the board's server, mode, zone, reported time,
 uptime, restart/wake counts and RTC/RAW counters, followed by PC local/UTC time,
-WiFly UTC and the same timestamp in the PC's local timezone. Copy to Clipboard
+WiFly UTC and the same timestamp in the PC's local timezone. **Copy clock/settings table**
 includes this readback. Refresh explicitly; this is not a continuously ticking clock.
 
 The difference is WiFly minus PC time, calculated from RTC Unix seconds in UTC.
@@ -375,3 +428,90 @@ not retained as a complete byte capture; absence from these logs is not proof
 that nothing was sent. Distinguish requests, matching replies and persistent
 readback. Keep other controllers disconnected and do not align or slew during
 this observation. Full sanitized transport capture remains an investigation task.
+
+
+Motor control shows the loaded profile name and its configuration filename,
+`telescope-calibration.json`. **Profile file details…** shows the full
+resolved path, format and schema version, with **Copy profile file details**. The Motor
+control table copy also includes the profile and configuration path. The file
+contains structured JSON, not a proprietary format; it holds device identity and
+calibration evidence. Loading it does not push settings to the telescope. After
+updating the file, click **Reload calibration**. If no usable profile is loaded,
+the GUI identifies the expected filename rather than claiming calibration is active.
+
+
+### Editing the JSON keyboard map
+
+Merge this object into the existing profile without replacing its other fields:
+
+```json
+"keymap": {
+  "elevation_up": "i",
+  "elevation_down": "m",
+  "azimuth_left": "j",
+  "azimuth_right": "l",
+  "stop": "k",
+  "connect": "o",
+  "disconnect": "p"
+}
+```
+
+All seven actions must be present. Each uses a distinct single letter A–Z; case is
+normalized. Missing actions, duplicate letters or unsupported keys disable the
+optional keyboard controls. No hardcoded letter-key fallback is applied. The
+[example JSON fragment](../examples/keymap.example.json) is not a complete telescope
+profile. **Reload calibration** reloads both calibration and keymap, stops active
+keyboard control and returns the rocker to OFF. Calibration updates preserve an
+existing keymap. The **Esc key** remains a fixed Stop control while the main window
+is active, independent of the profile. Removing the keymap does not remove Esc.
+
+### Measured slew rates and clearer status displays
+
+The main Motor control page no longer embeds the nine-row rate table. Click
+**Measured slew rates…** to inspect it. The button is disabled without usable
+profile measurements; partial datasets show blank cells for missing measurements.
+The dialog identifies the source profile and shows speed plus four separate
+columns: azimuth positive/negative and elevation positive/negative, in degrees
+per second. These are measured pulse averages, not guaranteed tracking speeds.
+**Copy CSV to Clipboard** uses commas and CSV quoting. **Copy table for Excel**
+uses tabs for direct spreadsheet paste. Neither operation commands motion.
+Reloading calibration closes an old rate dialog so it cannot appear current.
+
+The shaded **Connection status:** box beside Connect Motors/Disconnect contains
+feedback, not a button. **Current operation status** above the transfer log is a
+separate labeled message area; **Copy status message** copies that message only.
+Tab height follows the selected page to avoid the blank block caused by reserving
+space for a larger inactive page. Tabs and section headings use larger bold type.
+For mouse movement, select **Hold to move**, put the pointer over an on-screen
+direction button, and hold the left mouse button. Release the mouse button to stop.
+
+### Selecting the bridge network address
+
+On a shared infrastructure network, the telescope, bridge computer and control device use the same local network. The address field may be left blank: the program uses this computer’s adapter used to reach the telescope. Select an adapter in the table or enter its IPv4 address to choose explicitly.
+
+In Two Interface Mode, the address field must not be blank. Select or enter this computer’s IPv4 address on the network used by the phone, tablet or other control computer. The bridge needs this address to accept connections from that network and forward commands to the telescope. Do not select the adapter connected directly to SkyQLink. Configure the adapter’s network connection in the operating system first; selecting it in the app does not connect it to a network.
+
+Wi-Fi provisioning uses **Infrastructure / Router Wi-Fi Settings** for new values.
+**Connect & Read Settings** reads the stored SSID and network configuration without changing them; the **Settings read from telescope** panel shows the SSID in bold, separately from instructions and editable fields. Full replies appear in the Transfer log. Password fields are redacted before display and saving; provisioning logs do not provide password recovery. **Show password** reveals only entered text. Password recovery through other tools is unverified for RN-171 / 2.40-CEL.
+
+For the original SkyQLink RN-171, use the physical slider **LEFT** for Direct/ad hoc: connect this computer to SkyQLink-xx and read at `1.2.3.4:2000`. Use **RIGHT** for Infrastructure: connect this computer to the telescope’s current network and discover its assigned IP. Power OFF before moving the slider, then power ON. The app’s mode selector does not move the switch or join Wi-Fi. Readback describes stored settings, not a sensed physical switch position.
+
+Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
+
+### Wi-Fi address and port reference
+
+Version 1 — SkyQLink RN-171: Direct / ad hoc normally uses 1.2.3.4, TCP port 2000 for telescope commands. WiFly settings are read through command mode on that same TCP connection. Do not assume newer-adapter management or discovery ports are available on Version 1.
+
+Version 2 and later — Celestron Wi-Fi / SkyPortal: the established direct-connect convention is also 1.2.3.4, TCP port 2000 for telescope commands. TCP 3000 is used for configuration/management; UDP 55555 (five 5s, not 5555 or 5000) is used for discovery advertisements. Availability depends on the adapter and firmware; these are reference defaults, not a guarantee for every future model.
+
+Infrastructure: use the adapter’s actual address assigned by your router, for example 192.168.1.x or 10.0.0.x; the subnet and address depend on your network and may change. Do not use 1.2.3.4 unless that is the address actually configured.
+
+Control Bridge: control software connects to THIS COMPUTER’s selected local-network IP, normally TCP 2000. The bridge also provides TCP 3000 management and UDP 55555 discovery; it forwards telescope commands to SkyQLink on TCP 2000. UDP 123 is for optional WiFly time-server requests, not telescope control or discovery.
+
+Protocol references: [ESP SkyPortal implementation](https://github.com/alex-vg/esp-skyportal-module), [HomeBrew Wi-Fi implementation](https://github.com/g7ltt/Celestron-GPS-WiFi-BT-Interface/blob/main/esp32_wifi-V3.8.ino). These community implementations document the established newer-adapter conventions; they do not certify every Celestron hardware revision. Bridge defaults are implemented in `bridge_mode.py`.
+
+For KStars/INDI address selection and connection ownership, see the optional [KStars application note](KSTARS-BRIDGE-NOTE.md).
+
+In Control Bridge, click an adapter row in **Local System Network Interfaces** to fill the IP box automatically, or type this computer’s IP on the control device’s network. Do not enter the telescope IP in that box. **Bridge status** is a shaded readout. The second-interface options are grouped separately: they apply to Direct/ad hoc or deliberately separate networks, not an ordinary shared infrastructure connection. The **Applies to all options** note explains that telescope control needs no Internet; hotspot/Internet sharing setup belongs to the operating system.
+
+The bridge IP is this computer’s address on the same network as the system (computer, tablet or phone) running your control software (e.g., SkySafari, CPWI or KStars/INDI). These are examples; check the validation record for each tested configuration. Use this computer’s address on the network where that software is running. For example, SkySafari on home Wi-Fi connects to this computer’s home-network address, not its SkyQLink-network address. Type that address in the bridge IP box, or click the matching adapter row to fill it automatically.

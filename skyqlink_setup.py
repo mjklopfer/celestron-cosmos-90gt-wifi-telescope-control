@@ -10,8 +10,10 @@ import queue
 import threading
 import time
 import json
+import csv
+import io
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, font
 from tkinter.scrolledtext import ScrolledText
 from setup_backend import operate, validate_endpoint, validate_port
 from wifly_configure import make_plan, SECURITY
@@ -24,12 +26,12 @@ from recover_link import recover
 from bridge_mode import Bridge
 from network_info import network_interfaces, open_directory
 from ui_zoom import UiZoom, scale_argument
-from telescope_calibration import load_config, measured_rate, estimate_seconds, DEFAULT_CONFIG, profile_label, identify_profile, save_config
+from telescope_calibration import load_config, measured_rate, estimate_seconds, DEFAULT_CONFIG, profile_label, identify_profile, save_config, profile_keymap
 
 APP_TITLE = 'Celestron Cosmos 90GT Telescope Wi-Fi Control'
 WIFI_SWITCH_HELP = (
     'Physical Wi-Fi mode switch — on the telescope mount, beside its power socket\n'
-    'LEFT — Direct / ad hoc: the telescope provides its own SkyQLink-xx Wi-Fi network '
+    'LEFT — Direct / ad hoc: a Celestron Version 1 Wi-Fi telescope provides its own SkyQLink-xx Wi-Fi network. '
     'Connect your computer to that network and use 1.2.3.4:2000.\n'
     'RIGHT — Infrastructure: with router settings saved, the telescope joins that Wi-Fi network. '
     'Connect your computer to the same router LAN and use the telescope’s assigned IP, port 2000.\n'
@@ -38,6 +40,7 @@ WIFI_SWITCH_HELP = (
     'Discover the telescope’s new IP after it joins the router.\n'
     'The Direct / Infrastructure selector in this app only selects connection settings; '
     'it does not move the physical switch or change your computer’s Wi-Fi. '
+    'Version 2 and later Celestron Wi-Fi adapters use Celestron-xxxx network names. The LEFT/RIGHT switch and provisioning instructions here apply to the Version 1 SkyQLink RN-171, not those newer adapters. '
     'Wi-Fi provisioning does not command motor movement.'
 )
 
@@ -142,7 +145,7 @@ class SetupApp(ttk.Frame):
         self.bridge_factory = bridge_factory
         self.bridge = None
         self.bridge_enabled = tk.BooleanVar(value=False)
-        self.bridge_status = tk.StringVar(value='Control Bridge OFF — no control software connected')
+        self.bridge_status = tk.StringVar(value='Control Bridge is OFF. Follow the setup steps below before switching it ON.')
         self.bridge_bind = tk.StringVar()
         self.bridge_dual = tk.BooleanVar(value=False)
         self.bridge_last_error = None
@@ -151,7 +154,7 @@ class SetupApp(ttk.Frame):
         self.network_provider = network_interfaces
         self.bridge_listener = None
         self.bridge_upstream_local = None
-        self.bridge_endpoint = tk.StringVar(value='Control app connection: unavailable while Control Bridge is OFF')
+        self.bridge_endpoint = tk.StringVar(value='Control Bridge is OFF. Select this computer’s network adapter in the table, then switch Control Bridge ON. The IPv4 address and TCP port to enter in your astronomy app will appear here.')
         self.connection_mode = tk.StringVar(value='direct')
         self.last_infrastructure_host = None
         self.mode_help = tk.StringVar(value='Direct / ad hoc: connect this computer to SkyQLink-xx, then use 1.2.3.4:2000.\nThe mode selector chooses connection settings; it does not change the telescope switch or your computer’s Wi-Fi.')
@@ -167,6 +170,8 @@ class SetupApp(ttk.Frame):
         self.auto_recover = tk.BooleanVar(value=True)
         self.keyboard_direction = None
         self.keyboard_release_id = None
+        self.keymap = {}
+        self.keyboard_help = tk.StringVar(value='')
         self.keyboard_enabled = tk.BooleanVar(value=False)
         self.keyboard_status = tk.StringVar(value='Keyboard control OFF')
         self.held = False
@@ -190,16 +195,20 @@ class SetupApp(ttk.Frame):
         self.port = tk.StringVar(value='2000')
         self.ssid = tk.StringVar()
         self.password = tk.StringVar()
+        self.provision_ssid_readback = tk.StringVar(value='Not read yet — click Connect & Read Settings.')
+        self.provision_mode_readback = tk.StringVar(value='Configuration: not read yet')
         self.security = tk.StringVar(value='WPA2-Personal (AES)')
         self.provision_notice = tk.StringVar(value='You can configure this adapter through either direct/ad hoc Wi-Fi or its current infrastructure IP. '
             'Uploading replaces the stored SSID, password and security settings so it can join a different network. '
             'A factory reset is not required. Restart afterward and discover its new IP.')
-        self.status = tk.StringVar(value='Ready — connect to the telescope, then read or upload settings.')
+        self.status = tk.StringVar(value='Ready. Choose a tab below: Motor control, Control Bridge, Diagnostics or Wi-Fi provisioning.')
         self.show_password = tk.BooleanVar(value=False)
         root.title(APP_TITLE)
         window_height = min(950, root.winfo_screenheight() - 90)
         root.geometry(f'{min(980, root.winfo_screenwidth() - 40)}x{window_height}')
         root.minsize(480, 320)
+        self.section_heading_font = font.Font(root=root, family=font.nametofont('TkDefaultFont', root=root).actual('family'), size=12, weight='bold')
+        ttk.Style(root).configure('TLabelframe.Label', font=self.section_heading_font)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
         ttk.Label(self, text=APP_TITLE, font=('TkDefaultFont', 20, 'bold')).grid(sticky='w')
@@ -224,7 +233,7 @@ class SetupApp(ttk.Frame):
         self.home_button = ttk.Radiobutton(presets, text='Infrastructure: Telescope and computer on a common access point', variable=self.connection_mode,
                                            value='infrastructure', command=lambda: self.preset(True))
         self.home_button.pack(side='left', padx=8)
-        self.scan_button = ttk.Button(presets, text='Discover SkyQLink Modules', command=self.scan_lan)
+        self.scan_button = ttk.Button(presets, text='Discover SkyQLink / Celestron Modules', command=self.scan_lan)
         self.scan_button.pack(side='left', padx=8)
         self.scan_started = None
         self.scan_tick_id = None
@@ -234,7 +243,23 @@ class SetupApp(ttk.Frame):
         self.module_box.grid(row=3, column=0, columnspan=4, sticky='ew', pady=(8, 0))
         self.module_box.bind('<<ComboboxSelected>>', lambda event: self.select_module())
 
-        self.tabs = ttk.Notebook(self)
+        self.mode_tab_font = font.Font(root=root, family=font.nametofont('TkDefaultFont', root=root).actual('family'), size=12, weight='bold')
+        self.mode_tab_padding = (16, 10)
+        style = ttk.Style(root)
+        # Use a colorable tab element without changing the app's native theme.
+        if 'clam' in style.theme_names():
+            if 'ModeNotebook.tab' not in style.element_names():
+                style.element_create('ModeNotebook.tab', 'from', 'clam', 'Notebook.tab')
+            layout = style.layout('TNotebook.Tab')
+            layout = [('ModeNotebook.tab' if name == 'Notebook.tab' else name, options)
+                      for name, options in layout]
+            style.layout('Mode.TNotebook.Tab', layout)
+        style.configure('Mode.TNotebook.Tab', font=self.mode_tab_font,
+                        padding=self.mode_tab_padding, background='#e5e7eb', foreground='#263445')
+        style.map('Mode.TNotebook.Tab',
+                  background=[('disabled', '#eeeeee'), ('selected', '#c9e0ff'), ('active', '#deebfc')],
+                  foreground=[('disabled', '#777777'), ('selected', '#102f55')])
+        self.tabs = ttk.Notebook(self, style='Mode.TNotebook')
         self.tabs.grid(row=3, sticky='nsew', pady=(12, 0))
         self.motor_tab = ttk.Frame(self.tabs, padding=8)
         self.provision_tab = ttk.Frame(self.tabs, padding=8)
@@ -250,7 +275,7 @@ class SetupApp(ttk.Frame):
         self.provision_tab.columnconfigure(0, weight=1)
         self.build_motor_tab()
 
-        wifi = ttk.LabelFrame(self.provision_tab, text='Router Wi-Fi settings', padding=12)
+        wifi = ttk.LabelFrame(self.provision_tab, text='Infrastructure / Router Wi-Fi Settings', padding=12)
         wifi.grid(row=0, sticky='ew')
         wifi.columnconfigure(1, weight=1)
         self.inputs = [self.host_entry, self.port_entry, self.direct_button, self.home_button, self.scan_button]
@@ -261,7 +286,7 @@ class SetupApp(ttk.Frame):
             self.inputs.append(entry)
             if row == 1:
                 self.password_entry = entry
-        self.show = ttk.Checkbutton(wifi, text='Show', variable=self.show_password,
+        self.show = ttk.Checkbutton(wifi, text='Show password', variable=self.show_password,
                                     command=self.refresh_password)
         self.show.grid(row=1, column=2, padx=(10, 0))
         ttk.Label(wifi, text='Security').grid(row=2, column=0, sticky='w', pady=5)
@@ -273,30 +298,40 @@ class SetupApp(ttk.Frame):
         ttk.Label(wifi, textvariable=self.provision_notice, wraplength=780).grid(row=4, column=0, columnspan=3,
                                                                               sticky='w', pady=(12, 0))
 
+        readback = ttk.LabelFrame(self.provision_tab, text='Settings read from telescope', padding=10)
+        readback.grid(row=3, sticky='ew', pady=(10, 0))
+        ttk.Label(readback, textvariable=self.provision_mode_readback).pack(anchor='w')
+        ttk.Label(readback, text='Stored network name (SSID):').pack(anchor='w', pady=(6, 0))
+        ttk.Label(readback, textvariable=self.provision_ssid_readback,
+                  font=self.section_heading_font, wraplength=780).pack(anchor='w')
+
         buttons = ttk.Frame(self.provision_tab)
         buttons.grid(row=1, sticky='ew', pady=(16, 0))
         self.read_button = ttk.Button(buttons, text='Connect & Read Settings', command=lambda: self.start(False))
         self.read_button.pack(side='left')
         self.upload_button = ttk.Button(buttons, text='Upload & Save Wi-Fi Settings…', command=lambda: self.start(True))
         self.upload_button.pack(side='left', padx=10)
-        ttk.Label(self.provision_tab, text='Read settings and command replies appear in the Transfer log below the tabs; no popup opens. Logs are also saved.',
+        ttk.Label(self.provision_tab, text='This provisioning page supports Celestron Version 1 Wi-Fi: SkyQLink RN-171 / 2.40-CEL. Version 2 and later use Celestron-xxxx network names; provisioning support for those adapters is future work. Connect & Read Settings reads the stored SSID and network settings through either connection mode; it does not change them. The readback appears below, with full command replies in the Transfer log. It does not fill in or reveal the saved password. Credential fields are redacted before display and log saving; this app does not keep a recoverable password in its provisioning logs. Show password reveals only what you type. Recovery through another tool has not been verified for this firmware.',
                   wraplength=780).grid(row=2, sticky='w', pady=(8, 0))
-        provisioning_help = ttk.LabelFrame(self.provision_tab, text='How to provision or change networks', padding=10)
+        provisioning_help = ttk.LabelFrame(self.provision_tab, text='Celestron Version 1 Wi-Fi — SkyQLink RN-171 / 2.40-CEL: connection and switch instructions', padding=10)
         provisioning_help.grid(row=4, sticky='ew', pady=10)
-        self.provision_direct_help = ttk.Label(provisioning_help, wraplength=790, text='INITIAL / RESET UNIT — Direct / ad hoc mode\n1. With telescope power off, set the physical Wi-Fi slider LEFT; power on. Join SkyQLink-xx from this computer.\n2. Select Direct / ad hoc above; use 1.2.3.4, port 2000. Disconnect other controllers and click Connect & Read Settings.\n3. Enter the target 2.4 GHz network name, security and password; click Upload & Save and check the verified save result.\n4. Power off, move the slider RIGHT, then power on. Join the same access point/LAN from this computer, select Infrastructure, and Discover SkyQLink Modules. Read settings again at the discovered address.\nA factory reset may erase saved credentials. This application does not perform a factory reset.')
+        self.provision_direct_help = ttk.Label(provisioning_help, wraplength=790, text='LEFT SWITCH POSITION — Direct / ad hoc (initial setup, reset unit or recovery)\n1. With telescope power off, set the physical Wi-Fi slider LEFT; power on. Join SkyQLink-xx from this computer.\n2. Select Direct / ad hoc above; use 1.2.3.4, port 2000. Disconnect other controllers and click Connect & Read Settings.\n3. Enter the target 2.4 GHz network name, security and password; click Upload & Save and check the verified save result.\n4. Power off, move the slider RIGHT, then power on. Join the same access point/LAN from this computer, select Infrastructure, and Discover SkyQLink / Celestron Modules. Read settings again at the discovered address.\nA factory reset may erase saved credentials. This application does not perform a factory reset.')
         self.provision_direct_help.pack(anchor='w', pady=(0, 10))
-        self.provision_infrastructure_help = ttk.Label(provisioning_help, wraplength=790, text='CHANGE AN EXISTING NETWORK — Infrastructure mode\n1. Leave the physical slider RIGHT and connect this computer to the telescope’s current access point/LAN. Select Infrastructure and discover its current address.\n2. Click Disconnect on Motor control if connected; switch Control Bridge OFF if running. Disconnect the telescope in other controlling apps. Read settings, enter the NEW network credentials, then Upload & Save.\n3. After the save is verified, power-cycle with the slider still RIGHT. The old address/connection may disappear.\n4. Connect this computer to the new access point/LAN, discover the new telescope address, and read back settings.\nNo ad hoc switch or factory reset is needed when the current network connection works. If access is lost, use the Direct / ad hoc procedure to recover access.')
+        self.provision_infrastructure_help = ttk.Label(provisioning_help, wraplength=790, text='RIGHT SWITCH POSITION — Infrastructure (read settings or change networks)\n1. The physical slider must be RIGHT. If changing its position, turn telescope power OFF first, move the slider, then power ON. Connect this computer to the telescope’s current access point/LAN. Select Infrastructure and discover its current address.\n2. Click Disconnect on Motor control if connected; switch Control Bridge OFF if running. Disconnect the telescope in other controlling apps. Read settings, enter the NEW network credentials, then Upload & Save.\n3. After the save is verified, power-cycle with the slider still RIGHT. The old address/connection may disappear.\n4. Connect this computer to the new access point/LAN, discover the new telescope address, and read back settings.\nNo ad hoc switch or factory reset is needed when the current network connection works. If access is lost, use the Direct / ad hoc procedure to recover access.')
         self.provision_infrastructure_help.pack(anchor='w')
+        network_note = ttk.LabelFrame(self.provision_tab, text='Note — Wi-Fi addresses and ports', padding=10)
+        network_note.grid(row=5, sticky='ew', pady=(0, 10))
+        ttk.Label(network_note, text='Version 1 — SkyQLink RN-171: Direct / ad hoc normally uses 1.2.3.4, TCP port 2000 for telescope commands. WiFly settings are read through command mode on that same TCP connection. Do not assume newer-adapter management or discovery ports are available on Version 1.\n\nVersion 2 and later — Celestron Wi-Fi / SkyPortal: the established direct-connect convention is also 1.2.3.4, TCP port 2000 for telescope commands. TCP 3000 is used for configuration/management; UDP 55555 (five 5s, not 5555 or 5000) is used for discovery advertisements. Availability depends on the adapter and firmware; these are reference defaults, not a guarantee for every future model.\n\nInfrastructure: use the adapter’s actual address assigned by your router, for example 192.168.1.x or 10.0.0.x; the subnet and address depend on your network and may change. Do not use 1.2.3.4 unless that is the address actually configured.\n\nControl Bridge: control software connects to THIS COMPUTER’s selected local-network IP, normally TCP 2000. The bridge also provides TCP 3000 management and UDP 55555 discovery; it forwards telescope commands to SkyQLink on TCP 2000. UDP 123 is for optional WiFly time-server requests, not telescope control or discovery.', wraplength=790, justify='left').pack(anchor='w')
         def highlight_provisioning(*args):
             direct = self.connection_mode.get() == 'direct'
             self.provision_direct_help.configure(foreground='#111111' if direct else '#777777')
             self.provision_infrastructure_help.configure(foreground='#777777' if direct else '#111111')
         self.connection_mode.trace_add('write', highlight_provisioning)
         highlight_provisioning()
-        status_area = ttk.Frame(self)
+        status_area = ttk.LabelFrame(self, text='Current operation status', padding=8)
         status_area.grid(row=5, sticky='ew', pady=(0, 10))
         ttk.Label(status_area, textvariable=self.status, wraplength=760).pack(side='left', fill='x', expand=True)
-        self.copy_button(status_area, self.status.get).pack(side='right', padx=4)
+        self.copy_button(status_area, self.status.get, 'Copy status message').pack(side='right', padx=4)
         self.progress = ttk.Progressbar(status_area, mode='indeterminate', length=100)
 
         transfer = ttk.LabelFrame(self, text='Transfer log — credentials redacted', padding=8)
@@ -307,7 +342,7 @@ class SetupApp(ttk.Frame):
                                    font=('TkFixedFont', 11), background='#17212b', foreground='#e7edf3',
                                    insertbackground='white', relief='flat')
         self.console.grid(sticky='nsew')
-        self.copy_button(transfer, lambda: self.console.get('1.0', 'end-1c')).grid(row=1, sticky='w', pady=4)
+        self.copy_button(transfer, lambda: self.console.get('1.0', 'end-1c'), 'Copy transfer log').grid(row=1, sticky='w', pady=4)
         footer = ttk.Frame(self)
         footer.grid(row=7, sticky='ew', pady=(10, 0))
         self.logs_button = ttk.Button(footer, text='Open Saved Logs', state='disabled', command=self.open_logs)
@@ -319,7 +354,7 @@ class SetupApp(ttk.Frame):
         self.auto_recover_button = ttk.Checkbutton(recovery_option,
             text='Allow one Wi-Fi module restart if Connect Motors fails', variable=self.auto_recover)
         self.auto_recover_button.pack(anchor='w')
-        ttk.Label(recovery_option, text='Use when the telescope is powered on and other control apps are disconnected, but Connect Motors cannot obtain motor replies. When checked, a failed connection may restart the identified SkyQLink RN-171 module once, check both encoders, and retry connecting. Saved Wi-Fi settings are retained; unsaved settings may be lost. This interrupts the module connection, is not a factory reset, and does not command movement. If its IP address changes, use Discover SkyQLink Modules. Uncheck to prevent this automatic restart.', wraplength=820).pack(anchor='w')
+        ttk.Label(recovery_option, text='Use this option if you click Connect Motors but the program receives no valid response from one or both motors. First, leave the telescope powered on and disconnect it in other control apps. When this option is checked, a failed connection check can restart the identified SkyQLink Wi-Fi module once, then read both motor positions and try connecting again. The restart keeps saved Wi-Fi settings but can discard unsaved changes. It does not reset the telescope to factory settings or send a movement command. If the telescope’s IP address changes, click Discover SkyQLink / Celestron Modules. Uncheck this option to prevent automatic restarts.', wraplength=820).pack(anchor='w')
         self.switch_help_label = ttk.Label(self.provision_tab, text=WIFI_SWITCH_HELP,
                                           wraplength=820)
         self.switch_help_label.grid(row=2, sticky='w', pady=(12, 0))
@@ -330,6 +365,7 @@ class SetupApp(ttk.Frame):
         root.bind('<KeyRelease>', self.motor_key_release, add='+')
         root.bind('<ButtonRelease-1>', self.focus_motor_shortcuts, add='+')
         self.tabs.bind('<<NotebookTabChanged>>', lambda event: self.stop_motors() if self.keyboard_direction else None, add='+')
+        self.tabs.bind('<<NotebookTabChanged>>', lambda event: self.resize_content(), add='+')
         root.bind('<ButtonRelease-1>', lambda event: self.release_direction(), add='+')
         root.bind('<FocusOut>', lambda event: root.after(50, self.stop_if_unfocused))
         root.bind('<MouseWheel>', self.scroll_window, add='+')
@@ -343,6 +379,11 @@ class SetupApp(ttk.Frame):
 
     def resize_content(self):
         """Expand to the viewport, but scroll instead of clipping wide controls."""
+        if hasattr(self, 'tabs') and self.tabs.select():
+            page = self.nametowidget(self.tabs.select())
+            height = page.winfo_reqheight()
+            if height > 1 and int(self.tabs.cget('height') or 0) != height:
+                self.tabs.configure(height=height)
         self.scroll_canvas.itemconfigure(self.content_window,
                                          width=max(self.scroll_canvas.winfo_width(), self.winfo_reqwidth()))
         self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox('all'))
@@ -370,7 +411,10 @@ class SetupApp(ttk.Frame):
         self.motor_connect_button.pack(side='left')
         self.motor_disconnect_button = ttk.Button(controls, text='Disconnect', command=self.disconnect_motors, state='disabled')
         self.motor_disconnect_button.pack(side='left', padx=8)
-        ttk.Label(controls, textvariable=self.motor_status).pack(side='left', padx=8)
+        self.motor_status_box = tk.Frame(controls, background='#e2ebf5', highlightbackground='#97abc2', highlightthickness=1, padx=10, pady=6)
+        self.motor_status_box.pack(side='left', padx=12, fill='x', expand=True)
+        tk.Label(self.motor_status_box, text='Connection status:', background='#e2ebf5', foreground='#172b44', font=('TkDefaultFont', 10, 'bold')).pack(side='left', padx=(0, 8))
+        tk.Label(self.motor_status_box, textvariable=self.motor_status, background='#e2ebf5', foreground='#172b44', wraplength=490, anchor='w', justify='left').pack(side='left', fill='x', expand=True)
 
         pad = ttk.LabelFrame(tab, text='Four-direction motor control', padding=8)
         pad.grid(row=1, column=0, sticky='nsew', padx=(0, 12), pady=(12, 0))
@@ -393,21 +437,19 @@ class SetupApp(ttk.Frame):
         self.speed_box.grid(row=3, column=1, sticky='w', pady=(10, 4))
         rate_frame = ttk.Frame(pad)
         rate_frame.grid(row=4, column=0, columnspan=3, sticky='ew', pady=6)
-        self.slew_rate_cells = {}
-        for column, title in enumerate(('Speed', 'AZ + / − °/s', 'EL + / − °/s')):
-            ttk.Label(rate_frame, text=title, font=('TkDefaultFont', 9, 'bold')).grid(row=0, column=column, padx=4)
-        for rate in range(1, 10):
-            ttk.Label(rate_frame, text=str(rate), font=('TkDefaultFont', 9)).grid(row=rate, column=0)
-            for column, axis in enumerate(AXES, 1):
-                value = self.slew_rate_cells[axis, rate] = tk.StringVar(value='— / —')
-                ttk.Label(rate_frame, textvariable=value, font=('TkFixedFont', 9)).grid(row=rate, column=column, padx=4)
+        self.slew_rate_cells = {(axis, rate): tk.StringVar(value='— / —') for axis in AXES for rate in range(1, 10)}
+        self.has_slew_rates = False
+        self.slew_rates_window = None
         self.calibration_note = tk.StringVar()
-        ttk.Label(rate_frame, textvariable=self.calibration_note, wraplength=310, font=('TkDefaultFont', 8)).grid(row=10, columnspan=3, sticky='w')
-        ttk.Button(rate_frame, text='Reload calibration', command=self.reload_calibration).grid(row=11, column=0, columnspan=2, sticky='w')
-        ttk.Button(rate_frame, text='Estimate degree jog…', command=self.open_degree_estimate).grid(row=11, column=2)
+        ttk.Label(rate_frame, textvariable=self.calibration_note, wraplength=310, font=('TkDefaultFont', 9)).grid(row=0, columnspan=2, sticky='w')
+        self.slew_rates_button = ttk.Button(rate_frame, text='Measured slew rates…', command=self.open_slew_rates, state='disabled')
+        self.slew_rates_button.grid(row=1, column=0, sticky='w', pady=4)
+        ttk.Button(rate_frame, text='Estimate degree jog…', command=self.open_degree_estimate).grid(row=1, column=1)
+        ttk.Button(rate_frame, text='Reload calibration', command=self.reload_calibration).grid(row=2, column=0, sticky='w')
+        ttk.Button(rate_frame, text='Profile file details…', command=self.open_profile_details).grid(row=2, column=1, sticky='w', pady=4)
         self.reload_calibration()
 
-        ttk.Label(pad, text='Seconds / click').grid(row=5, column=0, sticky='w')
+        ttk.Label(pad, text='Timed jog duration (seconds)').grid(row=5, column=0, sticky='w')
         self.duration_box = ttk.Combobox(pad, textvariable=self.duration, values=('0.25', '0.5', '1.0', '2.0'), state='readonly', width=5)
         self.duration_box.grid(row=5, column=1, sticky='w')
         ttk.Radiobutton(pad, text='Hold to move', variable=self.drive_mode, value='hold', command=self.stop_motors).grid(row=6, column=0, columnspan=2, sticky='w', pady=(8, 0))
@@ -420,16 +462,16 @@ class SetupApp(ttk.Frame):
         readout.grid(row=1, column=1, sticky='nsew', pady=(12, 0))
         for column, label in enumerate(('Value', 'Azimuth', 'Elevation')):
             ttk.Label(readout, text=label, font=('TkDefaultFont', 12, 'bold')).grid(row=0, column=column, sticky='w', padx=(0, 14), pady=(0, 8))
-        for row, (field, label) in enumerate((('encoder', 'Encoder counts'), ('angle', 'Raw angle'),
-                                             ('relative', 'Since connect'), ('referenced', 'Referenced angle'), ('firmware', 'Firmware'),
-                                             ('age', 'Last update'), ('before', 'Before jog'),
-                                             ('after', 'After jog'), ('delta_counts', 'Jog Δ counts'),
-                                             ('delta_degrees', 'Jog Δ angle'), ('stationary', 'Stop check')), 1):
+        for row, (field, label) in enumerate((('encoder', 'Encoder counts'), ('angle', 'Raw encoder angle'),
+                                             ('relative', 'Change since connection'), ('referenced', 'Angle with local offset'), ('firmware', 'Firmware'),
+                                             ('age', 'Time since last reading'), ('before', 'Before jog'),
+                                             ('after', 'After jog'), ('delta_counts', 'Jog change (counts)'),
+                                             ('delta_degrees', 'Jog change (degrees)'), ('stationary', 'Stop check')), 1):
             ttk.Label(readout, text=label, font=('TkDefaultFont', 11)).grid(row=row, column=0, sticky='w', pady=2, padx=(0, 12))
             for column, axis in enumerate(AXES, 1):
                 ttk.Label(readout, textvariable=self.values[axis][field], font=('TkFixedFont', 11)).grid(row=row, column=column, sticky='w', padx=(0, 12))
-        self.copy_button(readout, self.motor_output).grid(row=12, columnspan=3, sticky='w', pady=5)
-        ttk.Label(tab, text='Hold an arrow to drive; release to stop. Escape stops both axes. Encoder angles are not aligned sky coordinates.',
+        self.copy_button(readout, self.motor_output, 'Copy motor table').grid(row=12, columnspan=3, sticky='w', pady=5)
+        ttk.Label(tab, text='Select Hold to move. Move the pointer over an on-screen direction button, then press and hold the left mouse button to move the telescope. Release the mouse button to stop. With the main program window active, press the Esc key to stop both motors. Encoder angles are raw motor positions converted to degrees. They do not show the telescope’s aligned sky-pointing azimuth/elevation or the coordinates of a celestial object.',
                   wraplength=780).grid(row=2, column=0, columnspan=2, sticky='w', pady=(10, 0))
         ttk.Label(tab, textvariable=self.motion_status, wraplength=780,
                   font=('TkDefaultFont', 12, 'bold')).grid(row=3, column=0, columnspan=2, sticky='w', pady=8)
@@ -444,7 +486,8 @@ class SetupApp(ttk.Frame):
                                            command=self.toggle_keyboard_control, compact=True)
         self.keyboard_toggle.grid(row=8, column=1, columnspan=2, sticky='w', pady=(8, 0))
         ttk.Label(pad, textvariable=self.keyboard_status, wraplength=320).grid(row=9, column=0, columnspan=3, sticky='w')
-        ttk.Label(pad, text='I ↑ · J ← · K Stop · L → · M ↓\nO Open/connect · P Pause/disconnect. Works on this tab, outside text fields. Release a held key to stop; Escape always stops. After editing, click the motor panel to restore keyboard focus.', wraplength=320).grid(row=10, column=0, columnspan=3, sticky='w', pady=4)
+        ttk.Label(pad, textvariable=self.keyboard_help, wraplength=320).grid(row=10, column=0, columnspan=3, sticky='w', pady=4)
+        self.refresh_profile_keymap()
 
         self.motor_settings_window = None
         self.controller_fields = {axis: {key: tk.StringVar(value='0' if key.startswith('delta') else '')
@@ -460,6 +503,7 @@ class SetupApp(ttk.Frame):
 
     def reload_calibration(self):
         self.calibration = None
+        self.has_slew_rates = False
         try:
             self.calibration = load_config()
             for (axis, rate), value in self.slew_rate_cells.items():
@@ -467,16 +511,99 @@ class SetupApp(ttk.Frame):
                 for direction in (1, -1):
                     try:
                         parts.append(f'{measured_rate(self.calibration, axis, rate, direction):.4f}')
+                        self.has_slew_rates = True
                     except (ValueError, KeyError, TypeError):
                         parts.append('—')
                 value.set(' / '.join(parts))
-            self.calibration_note.set('Measured pulse averages, not steady-state rates. Profile: '
-                                      + profile_label(self.calibration))
+            self.calibration_note.set('Profile: '
+                                      + profile_label(self.calibration) + '\nConfiguration file: ' + DEFAULT_CONFIG.name)
         except (OSError, ValueError, KeyError, TypeError):
             self.calibration = None
-            self.calibration_note.set('No usable calibration. Run calibrate_telescope.py separately.')
+            self.calibration_note.set('No usable calibration loaded from ' + DEFAULT_CONFIG.name + '. Open Profile file details for its location. Run calibrate_telescope.py separately to create a measured profile.')
             for value in self.slew_rate_cells.values():
                 value.set('— / —')
+
+        self.slew_rates_button.configure(state='normal' if self.has_slew_rates else 'disabled')
+        if self.slew_rates_window is not None and self.slew_rates_window.winfo_exists():
+            self.slew_rates_window.destroy()
+            self.slew_rates_window = None
+        self.refresh_profile_keymap()
+
+    def slew_rate_rows(self):
+        rows = [['Speed', 'Azimuth positive (deg/s)', 'Azimuth negative (deg/s)', 'Elevation positive (deg/s)', 'Elevation negative (deg/s)']]
+        for rate in range(1, 10):
+            row = [rate]
+            for axis in AXES:
+                row.extend(value if value != '—' else '' for value in self.slew_rate_cells[(axis, rate)].get().split(' / '))
+            rows.append(row)
+        return rows
+
+    def open_slew_rates(self):
+        if not self.has_slew_rates:
+            return
+        if self.slew_rates_window is not None and self.slew_rates_window.winfo_exists():
+            self.slew_rates_window.lift()
+            return
+        window = self.slew_rates_window = tk.Toplevel(self)
+        window.title('Measured slew rates')
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill='both', expand=True)
+        ttk.Label(frame, text=self.calibration_note.get(), wraplength=760).pack(anchor='w', pady=(0, 8))
+        rows = self.slew_rate_rows()
+        table = ttk.Treeview(frame, columns=tuple(range(5)), show='headings', height=9)
+        for i, heading in enumerate(rows[0]):
+            table.heading(i, text=heading)
+            table.column(i, width=65 if i == 0 else 180, anchor='center')
+        for row in rows[1:]:
+            table.insert('', 'end', values=row)
+        table.pack(fill='both', expand=True)
+        ttk.Label(frame, text='Measured average movement during calibration pulses, in degrees per second. Positive and negative identify the motor command direction. Values include acceleration, gear play and network delay; they are not guaranteed steady tracking speeds. Blank cells mean no usable measurement is available.', wraplength=760).pack(anchor='w', pady=8)
+        buttons = ttk.Frame(frame)
+        buttons.pack(anchor='w')
+        self.copy_button(buttons, lambda: self.spreadsheet_output(rows, delimiter=','), 'Copy CSV to Clipboard').pack(side='left', padx=(0, 8))
+        self.copy_button(buttons, lambda: self.spreadsheet_output(rows), 'Copy table for Excel').pack(side='left')
+
+    def refresh_profile_keymap(self):
+        if not hasattr(self, 'keyboard_toggle'):
+            return
+        if self.keyboard_enabled.get() or self.keyboard_direction:
+            self.stop_motors()
+        self.keyboard_enabled.set(False)
+        self.keymap = {}
+        try:
+            self.keymap = profile_keymap(self.calibration)
+            reason = 'Keyboard control unavailable: this JSON profile has no keymap.'
+        except ValueError as error:
+            reason = 'Keyboard control unavailable: ' + str(error)
+        self.keyboard_toggle.configure(state='normal' if self.keymap else 'disabled')
+        if not self.keymap:
+            self.keyboard_help.set('')
+            self.keyboard_status.set(reason)
+            return
+        labels = {'elevation_up': 'elevation up', 'elevation_down': 'elevation down',
+                  'azimuth_left': 'azimuth left', 'azimuth_right': 'azimuth right',
+                  'stop': 'stop both motors', 'connect': 'connect', 'disconnect': 'disconnect'}
+        self.keyboard_help.set('\n'.join(f'{self.keymap[action].upper()}: {label}' for action, label in labels.items())
+            + '\nLetters are shown in uppercase to match the labels on your keyboard. You do not need to hold Shift or turn on Caps Lock.\nTurn Keyboard control ON to use these keys on this tab, outside text fields. Release a held direction key to stop. After editing, click a blank area of the motor panel before using letter keys.')
+        self.keyboard_status.set('Keyboard control OFF — keymap loaded from JSON profile')
+
+    def open_profile_details(self):
+        window = tk.Toplevel(self)
+        window.title('Profile configuration file')
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill='both', expand=True)
+        profile = profile_label(self.calibration) if self.calibration else 'No usable profile loaded'
+        schema = self.calibration.get('schema_version', 'Not reported') if self.calibration else 'Unavailable'
+        details = (f'Profile: {profile}\nConfiguration file: {DEFAULT_CONFIG.name}\n'
+                   f'Full path: {DEFAULT_CONFIG.resolve()}\nFormat: JSON\nSchema version: {schema}\n\n'
+                   'This is the file used by the Motor control calibration table and timed-jog estimates. '
+                   'The file identifies the adapter and stores measurements; loading it does not write settings to the telescope. '
+                   'After updating this file, click Reload calibration on Motor control.')
+        output = ScrolledText(frame, height=10, width=85, wrap='word')
+        output.pack(fill='both', expand=True)
+        output.insert('1.0', details)
+        output.configure(state='disabled')
+        self.copy_button(frame, lambda: details, 'Copy profile file details').pack(anchor='w', pady=6)
 
     def open_degree_estimate(self):
         window = tk.Toplevel(self)
@@ -527,17 +654,17 @@ class SetupApp(ttk.Frame):
         ttk.Label(refs, text='Connect Motors to poll positions. Point at a known object and enter its current azimuth/elevation. Offset = known minus current encoder angle, wrapped to ±180°. This sets LOCAL coordinates only; it does not program shared celestial alignment or tracking into the mount. Clears on disconnect.', wraplength=780).grid(row=3, column=0, columnspan=5, sticky='w', pady=5)
         ttk.Label(refs, text='Examples: azimuth 100.52 or 060.84; elevation -60.31. Up to 5 decimals; leading zeros OK. Coordinate ranges are NOT safe mechanical travel limits.', wraplength=780).grid(row=4, column=0, columnspan=5, sticky='w')
         for row, axis in enumerate(AXES, 5):
-            ttk.Button(refs, text=f'Poll {AXES[axis]} now', command=lambda a=axis: self.poll_local_reference(a)).grid(row=row, column=0, sticky='w', pady=5)
+            ttk.Button(refs, text=f'Read {AXES[axis]} position now', command=lambda a=axis: self.poll_local_reference(a)).grid(row=row, column=0, sticky='w', pady=5)
             ttk.Label(refs, textvariable=self.local_history[axis], wraplength=470).grid(row=row, column=1, columnspan=3, sticky='w')
             ttk.Button(refs, text='Reapply previous offset…', command=lambda a=axis: self.reapply_local_reference(a)).grid(row=row, column=4)
         ttk.Button(refs, text='Clear local references (zero offsets)', command=self.clear_local_references).grid(row=7, columnspan=3, sticky='w', pady=5)
-        self.copy_button(refs, lambda: '\n\n'.join(f'{AXES[a]}\nCurrent: {self.reference_current[a].get()}\nKnown position: {self.reference_inputs[a].get()}\nProposed offset: {self.reference_delta[a].get()}\n{self.local_history[a].get()}' for a in AXES)).grid(row=7, column=3, columnspan=2, sticky='w')
+        self.copy_button(refs, self.reference_output, 'Copy reference table').grid(row=7, column=3, columnspan=2, sticky='w')
         ttk.Label(refs, text='Local mode changes only this app’s displayed coordinates. Disconnect or lost feedback clears active offsets; previous applied values remain inactive history until this app closes. No hardware settings are reset. Reapply only if the mount has not been powered off, moved manually or realigned. Otherwise establish a new known-position reference.', wraplength=780).grid(row=8, columnspan=5, sticky='w')
 
 
 
-    def copy_button(self, parent, provider):
-        return ttk.Button(parent, text='Copy to Clipboard', command=lambda: self.copy_output(provider))
+    def copy_button(self, parent, provider, label='Copy text to Clipboard'):
+        return ttk.Button(parent, text=label, command=lambda: self.copy_output(provider))
 
     def copy_output(self, provider):
         # Preserve the original output/status; copying must not erase the error
@@ -546,25 +673,66 @@ class SetupApp(ttk.Frame):
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
 
+    @staticmethod
+    def spreadsheet_output(rows, delimiter='\t'):
+        """Excel clipboard convention: tab-separated cells with CSV quoting."""
+        output = io.StringIO(newline='')
+        csv.writer(output, delimiter=delimiter, lineterminator='\r\n').writerows(rows)
+        return output.getvalue()
+
     def table_output(self, table):
         columns = table['columns']
-        rows = ['\t'.join(str(table.heading(c, 'text')) for c in columns)]
-        rows.extend('\t'.join(map(str, table.item(item, 'values'))) for item in table.get_children())
-        return '\n'.join(rows)
+        rows = [[table.heading(c, 'text') for c in columns]]
+        rows.extend(table.item(item, 'values') for item in table.get_children())
+        return self.spreadsheet_output(rows)
 
     def diagnostics_output(self):
-        sections = [self.diagnostic_status.get()]
+        rows = [['Device', 'Query / endpoint', 'Result', 'Full response / interpretation']]
         for item in self.diagnostic_rows.get_children():
             values = self.diagnostic_rows.item(item, 'values')
-            sections.append(' | '.join(map(str, values[:3])) + '\n' + self.diagnostic_replies.get(item, ''))
-        return '\n\n'.join(sections)
+            rows.append([*values[:3], self.diagnostic_replies.get(item, values[3] if len(values) > 3 else '')])
+        return self.spreadsheet_output(rows)
 
     def motor_output(self):
-        sections = [self.motor_status.get(), self.motion_status.get()]
-        for axis, name in AXES.items():
-            sections.append(name + '\n' + '\n'.join(f'{key}: {value.get()}' for key, value in self.values[axis].items()))
-        sections.append('Measured pulse averages (degrees/second):\n' + '\n'.join(f'{AXES[axis]} speed {rate}: {value.get()}' for (axis, rate), value in self.slew_rate_cells.items()))
-        return '\n\n'.join(sections)
+        rows = [['Measurement', *AXES.values()]]
+        labels = {'encoder': 'Encoder counts', 'angle': 'Raw encoder angle (degrees)',
+                  'relative': 'Change since connection (degrees)', 'referenced': 'Angle with local offset (degrees)',
+                  'firmware': 'Motor firmware', 'age': 'Time since last reading',
+                  'before': 'Encoder counts before jog', 'after': 'Encoder counts after jog',
+                  'delta_counts': 'Jog change (counts)', 'delta_degrees': 'Jog change (degrees)',
+                  'stationary': 'Stop check'}
+        for field, label in labels.items():
+            rows.append([label, *(self.values[axis][field].get() for axis in AXES)])
+        rows.extend([['Profile', profile_label(self.calibration) if self.calibration else 'No usable profile loaded', ''],
+                     ['Configuration file (JSON)', str(DEFAULT_CONFIG.resolve()), ''],
+                     ['Connection status', self.motor_status.get(), ''],
+                     ['Movement status', self.motion_status.get(), '']])
+        for rate in range(1, 10):
+            rows.append([f'Speed {rate} measured degrees/second (positive / negative)',
+                         *(self.slew_rate_cells[(axis, rate)].get() for axis in AXES)])
+        return self.spreadsheet_output(rows)
+
+    def reference_output(self):
+        rows = [['Axis', 'Current encoder angle', 'Entered known position', 'Proposed local offset', 'Applied reference history']]
+        rows.extend([AXES[a], self.reference_current[a].get(), self.reference_inputs[a].get(),
+                     self.reference_delta[a].get(), self.local_history[a].get()] for a in AXES)
+        return self.spreadsheet_output(rows)
+
+    def controller_output(self, axis):
+        rows = [['Field', AXES[axis]], ['Axis', AXES[axis]]]
+        for line in self.controller_readout[axis].get().splitlines():
+            pair = line.split(': ', 1)
+            rows.append(pair if len(pair) == 2 else ['Read status', line])
+        rows.append(['Last applied change', self.controller_history[axis].get()])
+        return self.spreadsheet_output(rows)
+
+    def time_output(self):
+        rows = [['Field', 'Value']]
+        for line in self.time_readback.get().splitlines():
+            pair = line.split(': ', 1)
+            rows.append(pair if len(pair) == 2 else ['Read status', line])
+        rows.append(['Operation status', self.time_status.get()])
+        return self.spreadsheet_output(rows)
 
     def open_motor_settings(self):
         if self.motor_settings_window and self.motor_settings_window.winfo_exists():
@@ -621,12 +789,12 @@ class SetupApp(ttk.Frame):
             ttk.Button(panel, text='Preview / apply backlash delta…', command=lambda a=axis: self.run_motor_settings('delta', a)).grid(row=11, columnspan=2, sticky='w', pady=4)
             ttk.Label(panel, text='Last applied change (retained until app closes)', font=('TkDefaultFont', 10, 'bold')).grid(row=12, columnspan=2, sticky='w', pady=5)
             ttk.Label(panel, textvariable=self.controller_history[axis], wraplength=390, justify='left').grid(row=13, columnspan=2, sticky='w')
-            self.copy_button(panel, lambda a=axis: AXES[a] + '\n' + self.controller_readout[a].get() + '\nLast applied change: ' + self.controller_history[a].get()).grid(row=14, columnspan=2, sticky='w', pady=4)
+            self.copy_button(panel, lambda a=axis: self.controller_output(a), 'Copy axis settings').grid(row=14, columnspan=2, sticky='w', pady=4)
         ttk.Label(frame, text='Angles: Azimuth 0–360°; Elevation -90 to +90°. Up to 5 decimals; examples 100.52, 060.84, -60.31 (elevation only). These are coordinate ranges, not mechanical travel limits.\nBacklash: 0–99 whole-number controller units, NOT degrees. Positive/negative names identify travel direction; both absolute settings are nonnegative. Deltas may be -99 to +99, but the result must stay 0–99. Spaces, leading zeros and integral decimals (2.0 → 2) normalize; fractions and invalid signs are rejected. Delta writes recheck the source values before writing.', wraplength=860).grid(row=2, columnspan=2, sticky='w', pady=8)
         status_box = ttk.LabelFrame(frame, text='Settings operation status', padding=6)
         status_box.grid(row=3, columnspan=2, sticky='ew', pady=(6, 0))
         ttk.Label(status_box, textvariable=self.motor_setting_status, wraplength=840).pack(anchor='w')
-        self.copy_button(status_box, self.motor_setting_status.get).pack(anchor='w', pady=3)
+        self.copy_button(status_box, self.motor_setting_status.get, 'Copy settings status').pack(anchor='w', pady=3)
 
     def run_motor_settings(self, operation=None, axis=0x10):
         if self.busy or self.motor is not None or self.bridge is not None:
@@ -691,7 +859,7 @@ class SetupApp(ttk.Frame):
 
     def poll_local_reference(self, axis):
         if not self.motor_ready or self.motor is None:
-            self.motion_status.set('Connect Motors first. Local polling uses the existing motor connection.')
+            self.motion_status.set('Click Connect Motors on the Motor control tab, then click the axis Read button to request a fresh position.')
             return
         self.reference_poll_pending.add(axis)
         self.reference_current[axis].set('Waiting for next poll…')
@@ -830,8 +998,8 @@ class SetupApp(ttk.Frame):
         ttk.Label(detail_panel, text='Select a row in the table above to view its complete reply here.').pack(anchor='w')
         self.diagnostic_details = ScrolledText(detail_panel, height=5, wrap='word', state='disabled', font=('TkFixedFont', 10))
         self.diagnostic_details.pack(fill='x')
-        self.copy_button(detail_panel, lambda: self.diagnostic_details.get('1.0', 'end-1c')).pack(anchor='w', pady=4)
-        self.copy_button(diagnostic_controls, self.diagnostics_output).pack(side='left', padx=6)
+        self.copy_button(detail_panel, lambda: self.diagnostic_details.get('1.0', 'end-1c'), 'Copy selected reply').pack(anchor='w', pady=4)
+        self.copy_button(diagnostic_controls, self.diagnostics_output, 'Copy diagnostics table').pack(side='left', padx=6)
         self.diagnostic_replies = {}
         self.diagnostic_rows.bind('<<TreeviewSelect>>', self.show_diagnostic_reply)
         ttk.Label(tab, text='Select a row for raw hex and decoded values. Optional AUX devices may not reply. No motion or configuration writes.\n'
@@ -870,12 +1038,12 @@ class SetupApp(ttk.Frame):
         ttk.Spinbox(frame, from_=2, to=1440, textvariable=self.time_enable, width=10).grid(row=3, column=1, sticky='w')
         ttk.Label(frame, text='WiFly timezone number (readback)').grid(row=4, column=0, sticky='w')
         ttk.Entry(frame, textvariable=self.time_zone, state='readonly', width=15).grid(row=4, column=1, sticky='w')
-        ttk.Label(frame, text='7 = UTC−07:00 in WiFly documentation. Setter unverified. Read current board settings below to refresh.', wraplength=500).grid(row=5, columnspan=2, sticky='w', pady=6)
+        ttk.Label(frame, text='7 = UTC−07:00 in WiFly documentation. Changing this timezone is not supported yet. Click Read current board settings and clock to refresh it.', wraplength=500).grid(row=5, columnspan=2, sticky='w', pady=6)
         ttk.Checkbutton(frame, text='Save ALL current WiFly settings to flash', variable=self.time_persist).grid(row=6, columnspan=2, sticky='w')
         ttk.Button(frame, text='Push server and sync mode…', command=self.start_time_settings).grid(row=7, column=0, pady=8)
         ttk.Button(frame, text='Sync WiFly from time server now…', command=lambda: self.start_time_settings(True)).grid(row=7, column=1)
         ttk.Label(frame, textvariable=self.time_status, wraplength=500).grid(row=8, columnspan=2, sticky='w')
-        self.copy_button(frame, lambda: self.time_readback.get() + '\n' + self.time_status.get()).grid(row=10, columnspan=2, sticky='w')
+        self.copy_button(frame, self.time_output, 'Copy clock/settings table').grid(row=10, columnspan=2, sticky='w')
         ttk.Label(frame, text='The telescope needs its own route to UDP 123. A successful PC test does not prove telescope access. Names are resolved and pushed as IPv4 addresses.', wraplength=500).grid(row=9, columnspan=2, sticky='w', pady=8)
 
         ttk.Button(frame, text='Read current board settings and clock', command=lambda: self.start_time_settings(read_only=True)).grid(row=11, columnspan=2, sticky='w', pady=6)
@@ -919,23 +1087,45 @@ class SetupApp(ttk.Frame):
         tab.columnconfigure(0, weight=1)
         ttk.Label(tab, text='This feature allows your local computer to create a proxy link between the SkyQLink telescope and control software that uses modern Celestron Wi-Fi connections. It relays telescope commands and replies for one controlling application at a time. Alignment and tracking calculations remain the responsibility of the control software.', wraplength=820).grid(row=0, sticky='w', pady=(0, 8))
         self.bridge_switch = BridgeRocker(tab, variable=self.bridge_enabled, command=self.toggle_bridge)
-        self.bridge_switch.grid(row=1, sticky='w')
-        ttk.Label(tab, textvariable=self.bridge_status, wraplength=820).grid(row=2, sticky='w', pady=6)
+        self.bridge_switch.grid(row=1, sticky='nw')
+        self.bridge_requirement = tk.StringVar()
+        ttk.Label(tab, textvariable=self.bridge_requirement, wraplength=590, foreground='#8a4400', font=('TkDefaultFont', 11, 'bold')).grid(row=1, sticky='w', padx=(195, 0), pady=4)
+        bridge_status_box = tk.Frame(tab, background='#e2ebf5', highlightbackground='#9aabbf', highlightthickness=1, padx=10, pady=8)
+        bridge_status_box.grid(row=2, sticky='ew', pady=8)
+        tk.Label(bridge_status_box, text='Bridge status:', background='#e2ebf5', font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
+        tk.Label(bridge_status_box, textvariable=self.bridge_status, background='#e2ebf5', font=('TkDefaultFont', 10, 'bold'), wraplength=800, justify='left').pack(anchor='w')
         settings = ttk.Frame(tab)
         settings.grid(row=3, sticky='ew')
         self.bridge_ip_help = tk.StringVar()
         ttk.Label(settings, textvariable=self.bridge_ip_help).pack(side='left')
         self.bridge_bind_entry = ttk.Entry(settings, textvariable=self.bridge_bind, width=20)
         self.bridge_bind_entry.pack(side='left', padx=8)
+
         self.bridge_dual_box = ttk.Checkbutton(tab, text='Two Interface Mode',
                                               variable=self.bridge_dual, command=self.update_controls)
         self.bridge_dual_box.grid(row=4, sticky='w', pady=4)
-        ttk.Label(tab, text='Use two network adapters when this computer connects directly to the telescope’s SkyQLink Wi-Fi and reaches the control application through a separate network.', wraplength=780).grid(row=4, column=0, sticky='w', pady=(30, 0))
+        self.bridge_direct_help = ttk.Label(tab,
+            text='Direct/ad hoc setup: enable Two Interface Mode. Connect one compatible Wi-Fi adapter to SkyQLink, then choose a second network connection for your control device:', wraplength=780)
+        self.bridge_direct_help.grid(row=4, column=0, sticky='w', pady=(30, 0))
+        self.bridge_options = ttk.LabelFrame(tab, text='Second-interface connection options — Direct/ad hoc or separate networks', padding=8)
+        self.bridge_options.grid(row=5, column=0, sticky='ew', padx=(18, 0), pady=(6, 10))
+        self.bridge_option_labels = []
+        for option in (
+            '• Option 1 — Ethernet: connect to a router/access point; the control device can use that router’s Ethernet or Wi-Fi. A directly wired control device needs compatible IP settings.',
+            '• Option 2 — Second Wi-Fi adapter: join the router/hotspot used by the phone or tablet. The network must allow communication between devices; disable client/guest isolation.',
+            '• Option 3 — Computer-hosted hotspot: use a second Wi-Fi adapter to provide a hotspot, if supported. Configure the hotspot and firewall in your operating system.'):
+            label = ttk.Label(self.bridge_options, text=option, wraplength=750)
+            label.pack(anchor='w', pady=(0, 6))
+            self.bridge_option_labels.append(label)
+        self.bridge_options_note = ttk.Label(self.bridge_options,
+            text='Applies to all options: telescope control does not require Internet access. These options connect the control device to the bridge computer. For Option 3, create the hotspot in your operating system first. Sharing Internet from a third adapter is a separate operating-system setup; this app does not configure hotspots, Internet sharing or network routing.', wraplength=730)
+        self.bridge_options_note.pack(anchor='w', pady=(4, 0))
         self.bridge_dual_box.grid_configure(sticky='nw')
         self.bridge_interface_help = tk.StringVar()
         inventory = ttk.LabelFrame(tab, text='Local System Network Interfaces', padding=6)
+        ttk.Label(inventory, text='To allow telescope control through this bridge, enter THIS computer’s IP address on the same network as the system (computer, tablet or phone) running your control software (e.g., SkySafari, CPWI or KStars/INDI). Type the address above, or click the matching adapter row below to fill it in. For example, if your control application runs on a phone connected to your home Wi-Fi, use this computer’s address on that same home network, not its address on the SkyQLink network. Do not enter the telescope’s IP address.', wraplength=780).pack(anchor='w', pady=(0, 6))
         ttk.Label(inventory, textvariable=self.bridge_interface_help, wraplength=780).pack(anchor='w')
-        inventory.grid(row=5, sticky='ew', pady=5)
+        inventory.grid(row=6, sticky='ew', pady=5)
         self.interface_table = ttk.Treeview(inventory, columns=('interface', 'name', 'ip', 'state', 'role'),
                                             show='headings', height=4, selectmode='browse')
         for field, label, width in (('interface', 'Interface', 70), ('name', 'Adapter / connection', 180),
@@ -946,34 +1136,33 @@ class SetupApp(ttk.Frame):
         self.interface_table.bind('<<TreeviewSelect>>', self.select_bridge_interface)
         self.interface_refresh_button = ttk.Button(inventory, text='Refresh Adapter IPs', command=self.refresh_network_interfaces)
         self.interface_refresh_button.pack(anchor='w', pady=4)
-        self.copy_button(inventory, lambda: self.table_output(self.interface_table)).pack(anchor='w')
+        self.copy_button(inventory, lambda: self.table_output(self.interface_table), 'Copy network adapter table').pack(anchor='w')
         ttk.Label(inventory, textvariable=self.bridge_endpoint, wraplength=800).pack(anchor='w')
-        ttk.Label(tab, text='Default: use the same home/router LAN for the computer, telescope and control software. '
-                  'In a compatible control app choose Celestron WiFi and Access Point mode. SkySafari is a tested example. The bridge advertises on UDP 55555 '
-                  'and listens on this computer’s TCP 2000 (management: TCP 3000). '
-                  'The Telescope IP address at the top identifies the telescope. Your control application connects to this computer’s bridge address below.\n'
-                  'ON locks the other tabs. OFF attempts to stop both motors and closes the bridge; check the log for acknowledgement. '
-                  'Clients can command real movement while connected. '
-                  'SkySafari has been tested in documented configurations. Other applications and long-duration reliability remain unverified. The bridge emulates selected discovery and management features, not every feature of a modern adapter. Router client isolation or blocked broadcasts can prevent discovery.',
-                  wraplength=820).grid(row=6, sticky='w', pady=8)
+        ttk.Label(tab, text='Connect an astronomy app through this computer:\n'
+                  '1. Connect this computer, the telescope and the device running your astronomy app to the same access-point network. For separate networks, use Two Interface Mode as explained above.\n'
+                  '2. Enter or discover the telescope’s IP address at the top of this window. In Local System Network Interfaces, select this computer’s adapter on the astronomy app’s network.\n'
+                  '3. Switch Control Bridge ON. Wait for the connection details to appear above.\n'
+                  '4. In your astronomy app, select Celestron WiFi and Access Point mode. If it asks for an address and port, enter this computer’s displayed IPv4 address and TCP port, not the telescope’s address.\n'
+                  'While Control Bridge is ON, the other control tabs are disabled. Switching it OFF sends Stop to both motors and closes the connection; check the Transfer log for replies. The connected astronomy app can move the telescope.\n'
+                  'SkySafari has been tested in documented configurations. Other apps and long-duration operation remain unverified; only selected modern-adapter features are supported.',
+                  wraplength=820).grid(row=7, sticky='w', pady=8)
         self.bridge_firewall_label = ttk.Label(tab, foreground='#b36b00', wraplength=820,
                   text='FIREWALL / LOCAL NETWORK: allow this Python application incoming TCP 2000 and 3000 '
                   'from your local network, and outgoing UDP broadcasts to port 55555. '
                   'Allow incoming connections in the computer’s firewall when prompted; enable Local Network access for your control app on iOS (for example SkySafari). '
-                  'Do not forward these ports from the Internet. A listening socket does not verify firewall access.\n'
-                  'Two-interface option: manually connect one Wi-Fi adapter to SkyQLink and another Wi-Fi/Ethernet adapter '
-                  'to the router LAN. Enter the computer’s router-LAN IP above. The app does not configure or share networks.')
-        self.bridge_firewall_label.grid(row=7, sticky='w', pady=6)
+                  'Do not forward these ports from the Internet. A running bridge does not prove that your firewall allows the control app to connect.\n'
+                  'For Two Interface Mode, allow these connections on the adapter facing the astronomy app. The app forwards telescope commands between its connections; it does not enable operating-system network bridging or Internet sharing.')
+        self.bridge_firewall_label.grid(row=8, sticky='w', pady=6)
         readout = ttk.LabelFrame(tab, text='Motor positions reported through the control application', padding=6)
-        readout.grid(row=8, sticky='ew')
+        readout.grid(row=9, sticky='ew')
         for row, axis in enumerate(AXES):
             ttk.Label(readout, text=AXES[axis]).grid(row=row, column=0, padx=8)
             for column, field in enumerate(('encoder', 'angle', 'firmware', 'age'), start=1):
                 ttk.Label(readout, textvariable=self.values[axis][field], width=17).grid(row=row, column=column)
-        self.copy_button(readout, self.motor_output).grid(row=2, columnspan=5, sticky='w', pady=3)
+        self.copy_button(readout, self.motor_output, 'Copy motor table').grid(row=2, columnspan=5, sticky='w', pady=3)
         self.bridge_console = ScrolledText(tab, height=8, wrap='word', state='disabled', font=('TkFixedFont', 10))
-        self.bridge_console.grid(row=9, sticky='ew', pady=8)
-        self.copy_button(tab, lambda: self.bridge_status.get() + '\n' + self.bridge_endpoint.get() + '\n' + self.bridge_console.get('1.0', 'end-1c')).grid(row=10, sticky='w')
+        self.bridge_console.grid(row=10, sticky='ew', pady=8)
+        self.copy_button(tab, lambda: self.bridge_status.get() + '\n' + self.bridge_endpoint.get() + '\n' + self.bridge_console.get('1.0', 'end-1c'), 'Copy bridge status and log').grid(row=11, sticky='w')
 
     def refresh_network_interfaces(self):
         """Request a fresh interface inventory on a worker thread."""
@@ -1006,7 +1195,7 @@ class SetupApp(ttk.Frame):
         if selected:
             ip = self.interface_table.item(selected[0], 'values')[2]
             if ip == '—':
-                self.bridge_status.set('This interface has no IPv4 address. Connect it to the router LAN first.')
+                self.bridge_status.set('The selected adapter has no IPv4 address. Connect it to the astronomy app’s network in your operating system, then click Refresh Adapter IPs and select it again.')
             elif ip.startswith('127.'):
                 self.bridge_status.set('Loopback is local to this computer. Choose the interface on the network used by telescope-control software.')
             else:
@@ -1017,18 +1206,22 @@ class SetupApp(ttk.Frame):
         if not self.bridge_enabled.get():
             if self.bridge:
                 self.bridge.stop()
-                self.bridge_status.set('Turning bridge OFF — sending Stop and draining replies…')
+                self.bridge_status.set('Turning Control Bridge OFF — sending Stop to both motors and waiting briefly for replies…')
             return
         if self.bridge is not None:
             self.bridge_enabled.set(False)
             return
-        if self.busy or self.motor is not None or (self.connection_mode.get() != 'infrastructure' and not self.bridge_dual.get()):
+        if self.busy or self.motor is not None:
             self.bridge_enabled.set(False)
-            self.bridge_status.set('For a shared access-point connection, select Infrastructure above. If Motor control is connected, click Disconnect on that tab before switching Control Bridge ON.')
+            self.bridge_status.set('Wait for the current operation to finish. If Motor control is connected, click Disconnect on that tab before switching Control Bridge ON.')
+            return
+        if self.connection_mode.get() != 'infrastructure' and not self.bridge_dual.get():
+            self.bridge_enabled.set(False)
+            self.bridge_status.set('Direct/ad hoc requires Two Interface Mode. Enable it, connect a second adapter to the astronomy app’s network, and select that adapter’s IPv4 address below. Alternatively, select Infrastructure when the telescope and control device share an access point.')
             return
         if self.bridge_dual.get() and not self.bridge_bind.get().strip():
             self.bridge_enabled.set(False)
-            self.bridge_status.set('Two interfaces requires this computer’s IP on the network shared with the control app. Select a row or enter that IP, for example Ethernet on the house LAN.')
+            self.bridge_status.set('Two Interface Mode requires this computer’s IPv4 address on the astronomy app’s network. Select that adapter in Local System Network Interfaces, or enter its IPv4 address above.')
             return
         try:
             self.bridge_last_error = None
@@ -1062,8 +1255,8 @@ class SetupApp(ttk.Frame):
         if kind == 'bridge_ready' and event.get('bind_host'):
             self.bridge_listener = (event['bind_host'], event['listen_port'], event['management_port'])
             self.bridge_upstream_local = event.get('upstream_local')
-            self.bridge_endpoint.set(f'Control app connection address: {event["bind_host"]}:{event["listen_port"]} — '
-                                     f'management TCP {event["management_port"]}; discovery UDP 55555. Firewall access unverified.')
+            self.bridge_endpoint.set(f'Control Bridge is ON. In your astronomy app, enter this computer’s IPv4 address {event["bind_host"]} and TCP port {event["listen_port"]}.\n'
+                                     f'Network details: adapter management uses TCP {event["management_port"]}; discovery uses UDP 55555. If the app cannot connect, check the firewall instructions below.')
             if self.bridge_upstream_local:
                 self.bridge_endpoint.set(self.bridge_endpoint.get() +
                     f'\nComputer-to-telescope connection: {self.bridge_upstream_local[0]}:{self.bridge_upstream_local[1]}'
@@ -1074,9 +1267,9 @@ class SetupApp(ttk.Frame):
             self.bridge_listener = None
             self.bridge_upstream_local = None
             self.bridge_enabled.set(False)
-            self.bridge_endpoint.set('Control app connection: closed — Control Bridge is OFF')
+            self.bridge_endpoint.set('Control Bridge is OFF. To reconnect your astronomy app, switch Control Bridge ON and use the IPv4 address and TCP port shown here.')
             self.show_network_interfaces()
-            message = 'Bridge OFF — ' + (self.bridge_last_error or 'telescope connection closed; see Stop/readback log.')
+            message = 'Bridge OFF — ' + (self.bridge_last_error or 'the telescope connection is closed. Check the Transfer log for motor Stop replies before reconnecting.')
             if event.get('stop_replies') and not all(event['stop_replies'].values()):
                 message += ' One or more Stop acknowledgements were not received; physical rest is unverified.'
         if message:
@@ -1126,7 +1319,7 @@ class SetupApp(ttk.Frame):
         if self.diagnostic_running:
             self.diagnostic_cancel.set()
             self.diagnostic_abort_button.configure(state='disabled')
-            self.diagnostic_status.set('Aborting after the current bounded query; closing connection and preserving results…')
+            self.diagnostic_status.set('Stopping diagnostics after the current query finishes or times out. Results already received will be kept…')
 
     def start_diagnostics(self):
         """Queue read-only adapter and motor checks under exclusive ownership."""
@@ -1179,7 +1372,7 @@ class SetupApp(ttk.Frame):
         self.host.set(address)
         self.port.set('2000')
         self.status.set('Enter or discover the telescope’s router-assigned IP; DHCP addresses may change.' if home else
-                        'Direct / ad hoc: connect this computer to SkyQLink-xx. Use Discover SkyQLink Modules to check the connection.')
+                        'Direct / ad hoc: connect this computer to SkyQLink-xx. Use Discover SkyQLink / Celestron Modules to check the connection.')
 
     def update_mode_help(self):
         """Explain the selected connection mode and refresh control availability."""
@@ -1196,7 +1389,7 @@ class SetupApp(ttk.Frame):
             self.status.set('Discovery is unavailable during another operation. Wait for it to finish; click Disconnect on Motor control if connected, or switch Control Bridge OFF if running.')
             return
         if self.connection_mode.get() == 'infrastructure' and self.host.get().strip() == '1.2.3.4':
-            self.status.set('1.2.3.4 is the direct-connect address. Select Direct / ad hoc mode, or enter the telescope’s house-network IP.')
+            self.status.set('1.2.3.4 is the direct-connect address. Select Direct / ad hoc mode, or enter the telescope’s address on the shared access-point network.')
             return
         self.set_busy(True)
         try:
@@ -1246,17 +1439,37 @@ class SetupApp(ttk.Frame):
 
     def update_controls(self):
         """Refresh widget locks and conditional shared-network interface guidance."""
-        self.bridge_ip_help.set('Control app connection address — required' if self.bridge_dual.get() else 'Control app connection address (blank = automatic)')
+        separate_network = self.bridge_dual.get() or self.connection_mode.get() == 'direct'
+        self.bridge_ip_help.set('This computer’s IP on the control-device network' if separate_network else 'This computer’s IP on the shared infrastructure network')
         self.bridge_interface_help.set(
-            'Select this computer’s IP on the network shared with telescope-control software. For example, select Ethernet when the control software uses that LAN. Do not select telescope-facing Wi-Fi.'
-            if self.bridge_dual.get() else
-            'Select this computer’s local IP reachable from the control app. The control application will connect to this address on your computer. Selecting it does not change Wi-Fi networks or the telescope address.')
+            'Two Interface Mode: do not leave this field blank. Use this computer’s IP on the network used by your phone, tablet or other control computer, not its direct SkyQLink connection. The bridge needs this address to accept control connections. Connect the adapter to that network in your operating system before selecting its row here.'
+            if separate_network else
+            'Shared infrastructure network: the telescope, this computer and your control device are connected to the same local network. You may leave this field blank: the program automatically uses this computer’s network adapter used to reach the telescope. To choose explicitly, select that adapter in the table below or enter its IPv4 address. Enter this computer’s address, not the telescope’s address or a MAC address.')
+        direct_mode = self.connection_mode.get() == 'direct'
+        self.bridge_direct_help.configure(
+            text=('Direct/ad hoc: enable Two Interface Mode. One Wi-Fi adapter connects to SkyQLink; choose a second connection below for a control device on another network.' if direct_mode else
+                  'Shared Infrastructure: one adapter normally connects this computer, telescope and control device through the same network. Leave Two Interface Mode off. Use the options below only when deliberately bridging separate networks.'),
+            foreground='#111111')
+        self.bridge_options_note.configure(foreground='#111111' if separate_network else '#777777')
+        for label in self.bridge_option_labels:
+            label.configure(foreground='#111111' if direct_mode or self.bridge_dual.get() else '#777777')
         locked = self.busy or self.motor is not None or self.bridge is not None
         for tab in (self.motor_tab, self.diagnostic_tab, self.provision_tab):
             self.tabs.tab(tab, state='disabled' if self.bridge is not None else 'normal')
         if self.bridge is not None:
             self.tabs.select(self.bridge_tab)
         bridge_allowed = self.connection_mode.get() == 'infrastructure' or self.bridge_dual.get()
+        if self.bridge is not None:
+            notice = 'Control Bridge is running. Switch it OFF to stop and release the connection.'
+        elif self.busy or self.motor is not None:
+            notice = 'Control Bridge cannot start during another operation. Wait for it to finish, or click Disconnect on Motor control.'
+        elif not bridge_allowed:
+            notice = 'Control Bridge is disabled: Direct/ad hoc requires Two Interface Mode. Enable it below and select the second adapter’s IPv4 address.'
+        elif self.bridge_dual.get():
+            notice = 'Two Interface Mode: select this computer’s IPv4 address on the astronomy app’s network, then switch Control Bridge ON.'
+        else:
+            notice = 'Connect the telescope, this computer and the astronomy app to the same access-point network, then switch Control Bridge ON.'
+        self.bridge_requirement.set(notice)
         self.bridge_switch.configure(state='normal' if self.bridge is not None or (not locked and bridge_allowed) else 'disabled')
         self.bridge_bind_entry.configure(state='disabled' if locked else 'normal')
         self.bridge_dual_box.configure(state='disabled' if locked else 'normal')
@@ -1318,6 +1531,9 @@ class SetupApp(ttk.Frame):
 
     def toggle_keyboard_control(self):
         """Explicit opt-in takes focus; switching off releases any held motion."""
+        if not self.keymap:
+            self.keyboard_enabled.set(False)
+            return
         if self.keyboard_enabled.get():
             self.keyboard_status.set('Keyboard control ON — click this panel after editing')
             self.motor_tab.focus_set()
@@ -1345,22 +1561,23 @@ class SetupApp(ttk.Frame):
         # 0x000C therefore disabled every shortcut with Num Lock enabled.
         # Windows Alt is 0x20000; X11 uses Mod1 for Alt. Keep Ctrl blocked.
         alt_mask = 0x20000 if self.root.tk.call('tk', 'windowingsystem') == 'win32' else 0x0008
-        if (not self.keyboard_enabled.get() or event.widget.winfo_toplevel() != self.root or self.tabs.select() != str(self.motor_tab) or self.busy or self.bridge is not None
+        if (not self.keymap or not self.keyboard_enabled.get() or event.widget.winfo_toplevel() != self.root or self.tabs.select() != str(self.motor_tab) or self.busy or self.bridge is not None
                 or event.widget.winfo_class() in ('Entry', 'TEntry', 'Text', 'TCombobox', 'Spinbox', 'TSpinbox')
                 or event.state & (0x0004 | alt_mask)):
             return
-        if key == 'o':
+        action = next((action for action, value in self.keymap.items() if value == key), None)
+        if action == 'connect':
             self.connect_motors()
             return 'break'
-        if key == 'p':
+        if action == 'disconnect':
             self.stop_motors()
             self.disconnect_motors()
             return 'break'
-        if key == 'k':
+        if action == 'stop':
             self.stop_motors()
             return 'break'
-        mapping = {'i': (0x11, 1), 'm': (0x11, -1), 'j': (0x10, -1), 'l': (0x10, 1)}
-        if key not in mapping:
+        mapping = {'elevation_up': (0x11, 1), 'elevation_down': (0x11, -1), 'azimuth_left': (0x10, -1), 'azimuth_right': (0x10, 1)}
+        if action not in mapping:
             return
         if self.keyboard_direction == key:
             if self.keyboard_release_id:
@@ -1371,9 +1588,9 @@ class SetupApp(ttk.Frame):
             return 'break'
         self.keyboard_direction = key
         if self.drive_mode.get() == 'hold':
-            self.press_direction(*mapping[key])
+            self.press_direction(*mapping[action])
         else:
-            self.timed_direction(*mapping[key])
+            self.timed_direction(*mapping[action])
         return 'break'
 
     def motor_key_release(self, event):
@@ -1447,9 +1664,12 @@ class SetupApp(ttk.Frame):
         wlan = before.get('wlan', before.get('get wlan', ''))
         ip = before.get('ip', before.get('get ip', ''))
         fields = dict(line.split('=', 1) for line in wlan.splitlines() if '=' in line)
+        self.provision_ssid_readback.set(fields.get('SSID', '').strip() or 'SSID not returned by telescope')
+        join = fields.get('Join', '').strip()
+        mode = 'Infrastructure (automatic network joining)' if join == '1' else 'Join setting: ' + (join or 'not returned')
+        self.provision_mode_readback.set('Configuration readback: ' + mode + ' — this is not a physical switch sensor.')
         if fields.get('Join', '').strip() == '1' and 'DHCP=ON' in ip:
-            ssid = fields.get('SSID', '(network name unavailable)').strip()
-            self.provision_notice.set(f'Current configuration: infrastructure network “{ssid}”. '
+            self.provision_notice.set(
                 'Upload & Save replaces this network name, password and security with the values entered here. '
                 'You can change networks over this existing infrastructure connection; no ad hoc switch or factory reset is required. '
                 'Restart afterward, join the new network and discover the new telescope IP.')
@@ -1656,7 +1876,7 @@ class SetupApp(ttk.Frame):
                     if self.scan_tick_id is not None:
                         self.root.after_cancel(self.scan_tick_id)
                         self.scan_tick_id = None
-                    self.scan_button.configure(text='Discover SkyQLink Modules')
+                    self.scan_button.configure(text='Discover SkyQLink / Celestron Modules')
                     self.set_busy(False)
                     report = event['report']
                     matches = report.get('matches', [])
