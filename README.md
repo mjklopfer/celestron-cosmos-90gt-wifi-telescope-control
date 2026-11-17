@@ -183,6 +183,11 @@ Check availability with `python -m tkinter`.
 
 ### Platform testing status
 
+**macOS appearance:** native Aqua tabs, theme-aware text and compact connection/diagnostic
+toolbars improve layout on Mac laptop screens. These adjustments are conditional;
+Windows and Linux retain their existing layout and theme choices. See
+[macOS appearance notes](docs/MACOS-APPEARANCE.md) for scope and validation.
+
 | Platform | Completed testing | Remaining checks |
 | --- | --- | --- |
 | Windows 11 Pro, build 26100, Python 3.14 | Current GUI release: 142 automated tests passed; lint, package build and GUI startup passed. Tabs, status readouts and bridge guidance reviewed locally. Earlier View menu/80% checks also passed. | New UI changes do not revalidate every hardware feature; see the detailed validation record for earlier hardware checks and remaining limits. |

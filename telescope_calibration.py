@@ -90,7 +90,7 @@ def identify_profile(config, report):
 
 
 def profile_label(config):
-    device = config['telescope']
+    device = config.get('telescope', {})
     mac = device.get('adapter_mac')
     return f'SkyQLink RN-171 · MAC {mac}' if mac else 'Unidentified telescope — run diagnostics to read adapter MAC'
 

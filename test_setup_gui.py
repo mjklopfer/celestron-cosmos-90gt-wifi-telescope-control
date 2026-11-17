@@ -211,7 +211,7 @@ class GuiTests(unittest.TestCase):
             resume.set()
         self.finish_worker()
         self.assertIn('timed out', self.app.scan_indicator.cget('text'))
-        self.assertEqual(self.app.scan_indicator.cget('foreground'), '#b22b2b')
+        self.assertEqual(str(self.app.scan_indicator.cget('foreground')), '#b22b2b')
         self.assertIsNone(self.app.scan_tick_id)
         self.assertEqual(str(self.app.scan_button.cget('state')), 'normal')
 

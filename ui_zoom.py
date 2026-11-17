@@ -22,6 +22,8 @@ class UiZoom:
         self.layouts = []
         self.columns = []
         self.style = ttk.Style(self.root)
+        # Aqua's default rows can be shorter than the diagnostic font. Retain
+        # enough room for text at every zoom level without changing the theme.
         self.rowheight = int(self.style.lookup('Treeview', 'rowheight') or 20)
         self.named = [font.nametofont(name, root=self.root) for name in font.names(self.root)]
         named_names = {str(item) for item in self.named}
@@ -52,6 +54,10 @@ class UiZoom:
                     self.columns.append((widget, column, widget.column(column, 'width'),
                                          widget.column(column, 'minwidth')))
         self.fonts.extend((item, item.cget('size')) for item in self.named)
+        tree_font = font.Font(root=self.root, font=self.style.lookup('Treeview', 'font') or 'TkDefaultFont')
+        if app.macos_ui:
+            self.rowheight = max(self.rowheight, tree_font.metrics('linespace') + 8)
+        self.style.configure('Treeview', rowheight=self.rowheight)
         if controls:
             menu = tk.Menu(self.root)
             view = tk.Menu(menu, tearoff=False)

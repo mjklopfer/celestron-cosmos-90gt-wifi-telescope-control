@@ -69,6 +69,16 @@ class ZoomTests(unittest.TestCase):
         self.assertEqual(self.app.mode_tab_font.cget('size'), tab_size)
         self.assertEqual(self.app.section_heading_font.cget('size'), heading_size)
 
+    def test_native_mac_layout_keeps_controls_in_view(self):
+        if not self.app.macos_ui:
+            self.skipTest('Aqua-specific layout check')
+        self.assertEqual(self.app.direct_button.winfo_manager(), 'grid')
+        self.assertEqual(self.app.scan_button.grid_info()['row'], 1)
+        self.assertLessEqual(self.app.winfo_reqwidth(), 980)
+        self.assertFalse(self.app.zoom.style.map('Mode.TNotebook.Tab', 'background'))
+        self.assertGreaterEqual(self.app.zoom.rowheight,
+                                font.nametofont('TkDefaultFont', root=self.root).metrics('linespace') + 8)
+
     def test_invalid_scale_rejected(self):
         for value in ('nan', 'inf', '0', '2.1'):
             with self.subTest(value=value), self.assertRaises(ValueError):

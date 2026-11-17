@@ -118,6 +118,12 @@ class SetupApp(ttk.Frame):
                  diagnostic=diagnose, recovery=recover, bridge_factory=Bridge,
                  ui_scale=1.0, zoom_controls=False):
         """Build the desktop controls and event queue around injectable backend services."""
+        # Query Tk's actual window system, not the machine name or Python path.
+        # Aqua needs native tabs and shorter control rows; preserve the verified
+        # Windows/Linux theme and widget arrangement on all other window systems.
+        self.macos_ui = root.tk.call('tk', 'windowingsystem') == 'aqua'
+        self.normal_text = (ttk.Style(root).lookup('TLabel', 'foreground') or 'systemLabelColor') if self.macos_ui else '#111111'
+        self.muted_text = self.normal_text if self.macos_ui else '#777777'
         shell = ttk.Frame(root)
         shell.pack(fill='both', expand=True)
         canvas = tk.Canvas(shell, highlightthickness=0, borderwidth=0)
@@ -212,7 +218,7 @@ class SetupApp(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
         ttk.Label(self, text=APP_TITLE, font=('TkDefaultFont', 20, 'bold')).grid(sticky='w')
-        ttk.Label(self, text='Celestron Wi-Fi Control Version 1 - SkyQLink RN-171', foreground='#666666').grid(row=1, sticky='w', pady=(2, 8))
+        ttk.Label(self, text='Celestron Wi-Fi Control Version 1 - SkyQLink RN-171', foreground=self.normal_text if self.macos_ui else '#666666').grid(row=1, sticky='w', pady=(2, 8))
 
         connection = ttk.LabelFrame(self, text='Telescope connection', padding=8)
         connection.grid(row=2, sticky='ew')
@@ -229,15 +235,15 @@ class SetupApp(ttk.Frame):
         presets.grid(row=2, column=0, columnspan=4, sticky='w', pady=(8, 0))
         self.direct_button = ttk.Radiobutton(presets, text='Direct / ad hoc', variable=self.connection_mode,
                                              value='direct', command=lambda: self.preset(False))
-        self.direct_button.pack(side='left')
-        self.home_button = ttk.Radiobutton(presets, text='Infrastructure: Telescope and computer on a common access point', variable=self.connection_mode,
+        self.direct_button.grid(row=0, column=0, sticky='w') if self.macos_ui else self.direct_button.pack(side='left')
+        self.home_button = ttk.Radiobutton(presets, text='Infrastructure / shared router Wi-Fi' if self.macos_ui else 'Infrastructure: Telescope and computer on a common access point', variable=self.connection_mode,
                                            value='infrastructure', command=lambda: self.preset(True))
-        self.home_button.pack(side='left', padx=8)
+        self.home_button.grid(row=0, column=1, sticky='w', padx=(12, 0)) if self.macos_ui else self.home_button.pack(side='left', padx=8)
         self.scan_button = ttk.Button(presets, text='Discover SkyQLink / Celestron Modules', command=self.scan_lan)
-        self.scan_button.pack(side='left', padx=8)
+        self.scan_button.grid(row=1, column=0, columnspan=2, sticky='w', pady=(8, 0)) if self.macos_ui else self.scan_button.pack(side='left', padx=8)
         self.scan_started = None
         self.scan_tick_id = None
-        self.scan_indicator = tk.Label(connection, text='● Discovery idle', foreground='#666666', anchor='w')
+        self.scan_indicator = ttk.Label(connection, text='● Discovery idle', anchor='w') if self.macos_ui else tk.Label(connection, text='● Discovery idle', foreground='#666666', anchor='w')
         self.scan_indicator.grid(row=4, column=0, columnspan=4, sticky='w', pady=(4, 0))
         self.module_box = ttk.Combobox(connection, textvariable=self.selected_module, state='disabled')
         self.module_box.grid(row=3, column=0, columnspan=4, sticky='ew', pady=(8, 0))
@@ -247,18 +253,25 @@ class SetupApp(ttk.Frame):
         self.mode_tab_padding = (16, 10)
         style = ttk.Style(root)
         # Use a colorable tab element without changing the app's native theme.
-        if 'clam' in style.theme_names():
+        if not self.macos_ui and 'clam' in style.theme_names():
             if 'ModeNotebook.tab' not in style.element_names():
                 style.element_create('ModeNotebook.tab', 'from', 'clam', 'Notebook.tab')
             layout = style.layout('TNotebook.Tab')
             layout = [('ModeNotebook.tab' if name == 'Notebook.tab' else name, options)
                       for name, options in layout]
             style.layout('Mode.TNotebook.Tab', layout)
-        style.configure('Mode.TNotebook.Tab', font=self.mode_tab_font,
-                        padding=self.mode_tab_padding, background='#e5e7eb', foreground='#263445')
-        style.map('Mode.TNotebook.Tab',
-                  background=[('disabled', '#eeeeee'), ('selected', '#c9e0ff'), ('active', '#deebfc')],
-                  foreground=[('disabled', '#777777'), ('selected', '#102f55')])
+        # Do not mix clam-colored tabs into Aqua: in dark appearance that
+        # combines mismatched colors and geometry. Native tabs inherit macOS
+        # appearance and selection contrast. Other hosts keep the existing map.
+        if self.macos_ui:
+            style.configure('Mode.TNotebook', tabposition='n')
+            style.configure('Mode.TNotebook.Tab', font=self.mode_tab_font, padding=self.mode_tab_padding)
+        else:
+            style.configure('Mode.TNotebook.Tab', font=self.mode_tab_font,
+                            padding=self.mode_tab_padding, background='#e5e7eb', foreground='#263445')
+            style.map('Mode.TNotebook.Tab',
+                      background=[('disabled', '#eeeeee'), ('selected', '#c9e0ff'), ('active', '#deebfc')],
+                      foreground=[('disabled', '#777777'), ('selected', '#102f55')])
         self.tabs = ttk.Notebook(self, style='Mode.TNotebook')
         self.tabs.grid(row=3, sticky='nsew', pady=(12, 0))
         self.motor_tab = ttk.Frame(self.tabs, padding=8)
@@ -324,8 +337,8 @@ class SetupApp(ttk.Frame):
         ttk.Label(network_note, text='Version 1 — SkyQLink RN-171: Direct / ad hoc normally uses 1.2.3.4, TCP port 2000 for telescope commands. WiFly settings are read through command mode on that same TCP connection. Do not assume newer-adapter management or discovery ports are available on Version 1.\n\nVersion 2 and later — Celestron Wi-Fi / SkyPortal: the established direct-connect convention is also 1.2.3.4, TCP port 2000 for telescope commands. TCP 3000 is used for configuration/management; UDP 55555 (five 5s, not 5555 or 5000) is used for discovery advertisements. Availability depends on the adapter and firmware; these are reference defaults, not a guarantee for every future model.\n\nInfrastructure: use the adapter’s actual address assigned by your router, for example 192.168.1.x or 10.0.0.x; the subnet and address depend on your network and may change. Do not use 1.2.3.4 unless that is the address actually configured.\n\nControl Bridge: control software connects to THIS COMPUTER’s selected local-network IP, normally TCP 2000. The bridge also provides TCP 3000 management and UDP 55555 discovery; it forwards telescope commands to SkyQLink on TCP 2000. UDP 123 is for optional WiFly time-server requests, not telescope control or discovery.', wraplength=790, justify='left').pack(anchor='w')
         def highlight_provisioning(*args):
             direct = self.connection_mode.get() == 'direct'
-            self.provision_direct_help.configure(foreground='#111111' if direct else '#777777')
-            self.provision_infrastructure_help.configure(foreground='#777777' if direct else '#111111')
+            self.provision_direct_help.configure(foreground=self.normal_text if direct else self.muted_text)
+            self.provision_infrastructure_help.configure(foreground=self.muted_text if direct else self.normal_text)
         self.connection_mode.trace_add('write', highlight_provisioning)
         highlight_provisioning()
         status_area = ttk.LabelFrame(self, text='Current operation status', padding=8)
@@ -1000,6 +1013,16 @@ class SetupApp(ttk.Frame):
         self.diagnostic_details.pack(fill='x')
         self.copy_button(detail_panel, lambda: self.diagnostic_details.get('1.0', 'end-1c'), 'Copy selected reply').pack(anchor='w', pady=4)
         self.copy_button(diagnostic_controls, self.diagnostics_output, 'Copy diagnostics table').pack(side='left', padx=6)
+        if self.macos_ui:
+            # The five-button toolbar made even hidden Diagnostics force the
+            # entire notebook wider than a Mac laptop window. Two rows keep
+            # the tab strip centered within the visible form, not offscreen.
+            controls = diagnostic_controls.winfo_children()
+            for control in controls:
+                control.pack_forget()
+            for index, control in enumerate(controls):
+                control.grid(row=index // 3, column=index % 3, sticky='w', padx=(0, 8), pady=4)
+
         self.diagnostic_replies = {}
         self.diagnostic_rows.bind('<<TreeviewSelect>>', self.show_diagnostic_reply)
         ttk.Label(tab, text='Select a row for raw hex and decoded values. Optional AUX devices may not reply. No motion or configuration writes.\n'
@@ -1092,8 +1115,8 @@ class SetupApp(ttk.Frame):
         ttk.Label(tab, textvariable=self.bridge_requirement, wraplength=590, foreground='#8a4400', font=('TkDefaultFont', 11, 'bold')).grid(row=1, sticky='w', padx=(195, 0), pady=4)
         bridge_status_box = tk.Frame(tab, background='#e2ebf5', highlightbackground='#9aabbf', highlightthickness=1, padx=10, pady=8)
         bridge_status_box.grid(row=2, sticky='ew', pady=8)
-        tk.Label(bridge_status_box, text='Bridge status:', background='#e2ebf5', font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
-        tk.Label(bridge_status_box, textvariable=self.bridge_status, background='#e2ebf5', font=('TkDefaultFont', 10, 'bold'), wraplength=800, justify='left').pack(anchor='w')
+        tk.Label(bridge_status_box, text='Bridge status:', background='#e2ebf5', foreground='#172b44' if self.macos_ui else None, font=('TkDefaultFont', 10, 'bold')).pack(anchor='w')
+        tk.Label(bridge_status_box, textvariable=self.bridge_status, background='#e2ebf5', foreground='#172b44' if self.macos_ui else None, font=('TkDefaultFont', 10, 'bold'), wraplength=800, justify='left').pack(anchor='w')
         settings = ttk.Frame(tab)
         settings.grid(row=3, sticky='ew')
         self.bridge_ip_help = tk.StringVar()
@@ -1449,10 +1472,10 @@ class SetupApp(ttk.Frame):
         self.bridge_direct_help.configure(
             text=('Direct/ad hoc: check the Two Interface Mode checkbox. One Wi-Fi adapter connects to SkyQLink; choose a second connection below for a control device on another network.' if direct_mode else
                   'Shared Infrastructure: one adapter normally connects this computer, telescope and control device through the same network. Leave the Two Interface Mode checkbox unchecked. Use the options below only when deliberately bridging separate networks.'),
-            foreground='#111111')
-        self.bridge_options_note.configure(foreground='#111111' if separate_network else '#777777')
+            foreground=self.normal_text)
+        self.bridge_options_note.configure(foreground=self.normal_text if separate_network else self.muted_text)
         for label in self.bridge_option_labels:
-            label.configure(foreground='#111111' if direct_mode or self.bridge_dual.get() else '#777777')
+            label.configure(foreground=self.normal_text if direct_mode or self.bridge_dual.get() else self.muted_text)
         locked = self.busy or self.motor is not None or self.bridge is not None
         for tab in (self.motor_tab, self.diagnostic_tab, self.provision_tab):
             self.tabs.tab(tab, state='disabled' if self.bridge is not None else 'normal')
