@@ -1447,8 +1447,8 @@ class SetupApp(ttk.Frame):
             'Shared infrastructure network: the telescope, this computer and your control device are connected to the same local network. You may leave this field blank: the program automatically uses this computer’s network adapter used to reach the telescope. To choose explicitly, select that adapter in the table below or enter its IPv4 address. Enter this computer’s address, not the telescope’s address or a MAC address.')
         direct_mode = self.connection_mode.get() == 'direct'
         self.bridge_direct_help.configure(
-            text=('Direct/ad hoc: enable Two Interface Mode. One Wi-Fi adapter connects to SkyQLink; choose a second connection below for a control device on another network.' if direct_mode else
-                  'Shared Infrastructure: one adapter normally connects this computer, telescope and control device through the same network. Leave Two Interface Mode off. Use the options below only when deliberately bridging separate networks.'),
+            text=('Direct/ad hoc: check the Two Interface Mode checkbox. One Wi-Fi adapter connects to SkyQLink; choose a second connection below for a control device on another network.' if direct_mode else
+                  'Shared Infrastructure: one adapter normally connects this computer, telescope and control device through the same network. Leave the Two Interface Mode checkbox unchecked. Use the options below only when deliberately bridging separate networks.'),
             foreground='#111111')
         self.bridge_options_note.configure(foreground='#111111' if separate_network else '#777777')
         for label in self.bridge_option_labels:
