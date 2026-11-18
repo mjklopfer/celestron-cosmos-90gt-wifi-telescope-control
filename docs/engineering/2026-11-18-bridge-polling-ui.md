@@ -27,3 +27,26 @@ Validation: 14 focused GUI tests, lint, whitespace and package builds passed.
 Earlier bridge recovery validation included 47 bridge/GUI tests. No new physical
 movement was commanded for these UI changes. Hardware transport delays, live
 SkySafari recovery and long-duration tracking stability remain unverified.
+
+
+## Follow-up: user-adjustable local feedback polling and timed jogs
+
+Added Control Bridge's Local-jog feedback polling interval, default 0.4s, range
+0.2–5s, with an explicit Apply button and tuning guidance. It must be shorter than
+the local-jog feedback timeout; neither value silently changes the other. The
+shared scheduler and automatic recovery now account for slower intervals. Freshness
+for recovery is the interval plus 0.6s, capped by the timeout; the stable window is
+at least one second or one polling interval, with newer samples on both axes.
+Recovery status now says to press a direction to move instead of the unclear
+previous-movement-cancelled phrase.
+
+User selected timed jogs up to 5s. Added 0.1, 3, 4 and 5s choices, changed direct,
+bridge and MCP bounded-jog validation/documentation, and retained the 2s bridge
+hold cap and conservative calibration-estimator limit. No physical five-second
+movement was commanded for development tests.
+
+Direct-session logs showed keep-alive at 1s successfully returning both axes until
+a configured 10s idle release intentionally disconnected. The display now labels
+retained readings NOT LIVE — disconnected instead of implying a live feedback
+fault. Diagnostics cord-wrap is read-only; backlash editing remains under Motor
+control's Controller Angle / Backlash Settings, requiring exclusive ownership.

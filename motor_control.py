@@ -110,8 +110,8 @@ class MotorController:
             raise ValueError('Select an axis, direction, and speed 1–9')
         # Cached idle samples may be stale when keep-alive is OFF/slow. The
         # worker obtains both encoders immediately before any motion command.
-        if not .1 <= seconds <= 2:
-            raise ValueError('Jog duration must be 0.1–2 seconds')
+        if not .1 <= seconds <= 5:
+            raise ValueError('Jog duration must be 0.1–5 seconds')
         if self.command_pending.is_set() or self.jog_in_progress.is_set() or self.stopping.is_set():
             raise RuntimeError('Wait for the current jog or stop to finish')
         self.last_control_activity = time.monotonic()

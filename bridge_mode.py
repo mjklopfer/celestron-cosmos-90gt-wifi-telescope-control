@@ -71,6 +71,7 @@ class Bridge:
         self.local_feedback = {}
         self.local_fault = False
         self.local_feedback_timeout = 2.0
+        self.local_feedback_interval = .4
         self.local_reenable_at = None
         self.local_recovery_since = None
         self.local_recovery_counts = {}
@@ -176,8 +177,23 @@ class Bridge:
         if not math.isfinite(seconds) or not 1 <= seconds <= 10:
             raise ValueError('Bridge jog feedback timeout must be 1–10 seconds.')
         with self.local_lock:
+            if seconds <= self.local_feedback_interval:
+                raise ValueError('Feedback timeout must be longer than the local-jog polling interval.')
             self.local_feedback_timeout = seconds
         self.emit('bridge_local_policy', message=f'Bridge jog feedback timeout applied: {seconds:g} seconds.')
+
+    def configure_local_polling(self, seconds):
+        """Set the shared scheduler's bridge-local jog feedback interval."""
+        seconds = float(seconds)
+        if not math.isfinite(seconds) or not .2 <= seconds <= 5:
+            raise ValueError('Local-jog polling interval must be 0.2–5 seconds.')
+        with self.local_lock:
+            if seconds >= self.local_feedback_timeout:
+                raise ValueError('Local-jog polling interval must be shorter than the feedback timeout. Increase the timeout in Motor control first.')
+            self.local_feedback_interval = seconds
+            self.local_recovery_since = None
+        self.emit('bridge_local_polling', interval=seconds,
+                  message=f'Local-jog feedback polling interval applied: {seconds:g} seconds.')
 
     def restart_local_jog(self):
         """User-requested OFF for one second, then ON; never restart movement."""
@@ -199,8 +215,8 @@ class Bridge:
             raise ValueError('Select a valid motor axis and direction.')
         if isinstance(rate, bool) or not isinstance(rate, int) or not 1 <= rate <= 9:
             raise ValueError('Speed must be a whole number from 1 to 9.')
-        if not math.isfinite(seconds) or not .1 <= seconds <= 2:
-            raise ValueError('Bridge jog duration must be 0.1–2 seconds.')
+        if not math.isfinite(seconds) or not .1 <= seconds <= 5:
+            raise ValueError('Bridge jog duration must be 0.1–5 seconds.')
         with self.local_lock:
             if (not self.ready.is_set() or not self.local_requested or not self.local_enabled
                     or self.local_fault or self.local_stop_requested):
@@ -230,6 +246,7 @@ class Bridge:
             self.local_pending = None
             generation = self.local_generation
             feedback_timeout = self.local_feedback_timeout
+            feedback_interval = self.local_feedback_interval
         transition = desired != self.local_enabled
         if transition or stop or (self.local_deadline is not None and now >= self.local_deadline):
             self.send_stops()
@@ -260,20 +277,20 @@ class Bridge:
             # Recovered feedback unlocks future button presses, never an old jog.
             # Require new samples on BOTH axes across a stable one-second window.
             pending = None
-            recovering = self.ready.is_set() and not self.stopping.is_set() and all(now - self.local_feedback.get(a, -math.inf) < 1 for a in AXES)
+            recovering = self.ready.is_set() and not self.stopping.is_set() and all(now - self.local_feedback.get(a, -math.inf) < min(feedback_timeout, feedback_interval + .6) for a in AXES)
             if not recovering:
                 self.local_recovery_since = None
             elif self.local_recovery_since is None:
                 self.local_recovery_since = now
                 self.local_recovery_counts = dict(self.local_feedback)
             stable = (recovering and self.local_recovery_since is not None
-                      and now - self.local_recovery_since >= 1
+                      and now - self.local_recovery_since >= max(1.0, feedback_interval)
                       and all(self.local_feedback[a] > self.local_recovery_counts.get(a, -math.inf) for a in AXES))
             if stable:
                 self.local_fault = False
                 self.local_deadline = None
                 self.local_recovery_since = None
-                self.emit('bridge_local_recovered', moving=False, message='Motor feedback restored. Local jog buttons available; press a direction to move. Previous movement was cancelled.')
+                self.emit('bridge_local_recovered', moving=False, message='Motor feedback restored. Jog buttons are available again. Press a direction to move.')
         if pending and self.local_enabled and not self.local_fault and not stop and not transition:
             axis, direction, rate, seconds, queued, queued_generation = pending
             if fresh and now - queued < .5 and generation == queued_generation:
@@ -311,7 +328,7 @@ class Bridge:
         Reuse external replies and pending external reads before injecting anything.
         The no-client path uses these same settings: there is no hidden 1 Hz poll
         loop or three-missed-polls disconnect. Local jog readiness/safety requires
-        fresh feedback at 0.4 s, but uses this scheduler rather than a second timer.
+        fresh feedback at a configurable interval (default 0.4 s), using this scheduler rather than a second timer.
         AUX has no transaction IDs. Concurrent queries from the same source cannot
         be paired unambiguously, so a reply satisfies the pending read for its axis.
         Missing optional reads are logged as gaps; local_tick separately stops an
@@ -326,10 +343,11 @@ class Bridge:
         with self.local_lock:
             heartbeat, quiet_interval = self.heartbeat_enabled, self.heartbeat_interval
             monitor, sample_interval = self.monitor_enabled, self.monitor_interval
+            local_interval = self.local_feedback_interval
         quiet_due = heartbeat and now - max(self.last_client_activity, self.last_mount_activity,
                                              self.last_background_query) >= quiet_interval
         interval = min(sample_interval if monitor else math.inf,
-                       .4 if self.local_enabled else math.inf)
+                       local_interval if self.local_enabled else math.inf)
         axes = [axis for axis in AXES if axis not in self.background_pending and
                 (quiet_due or now - self.local_feedback.get(axis, -math.inf) >= interval
                  and math.isfinite(interval))]

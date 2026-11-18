@@ -379,3 +379,15 @@ class MotorMathTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TimedJogRangeTests(unittest.TestCase):
+    def test_five_second_command_is_bounded(self):
+        controller = MotorController('192.0.2.231', 2000, lambda event: None)
+        controller.connected.set()
+        controller.jog(16, 1, 2, 5)
+        self.assertEqual(controller.commands.get_nowait(), (16, 1, 2, 5))
+        controller.command_pending.clear()
+        for seconds in (5.01, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                controller.jog(16, 1, 2, seconds)

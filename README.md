@@ -731,7 +731,7 @@ for fields, compatibility limits and future ESP32 integration considerations.
 The Motor control tab's yellow bridge-jog panel has a **Local jog feedback timeout**
 (default 2 seconds, range 1–10; click **Apply timeout**) and a red **Restart local
 jogging** button while jogging is enabled. Missing feedback stops the local jog;
-fresh readings from both axes sustained for one second automatically unlock the
+fresh readings from both axes sustained across a recovery window (at least one second) automatically unlock the
 buttons without resuming movement. Restart switches local jogging OFF for one
 second, then ON and waits for fresh feedback. It does not restart Control Bridge.
 These settings do not affect direct Motor control or bridge polling intervals.
@@ -744,3 +744,22 @@ heartbeat/polling values beside its direct-connection settings while bridge jogg
 is ON. Encoder display freshness uses `max(10 seconds, active polling interval +
 3 seconds)`; this does not relax the separate local-jog safety timeout. See the
 [user guide](docs/USER-GUIDE.md#seeing-which-bridge-polling-settings-are-active).
+
+
+The bridge's **Local-jog feedback polling interval** is adjustable from 0.2–5s
+(default **0.4s**) with **Apply local-jog interval**. Keep it shorter than the
+local-jog feedback timeout. Longer intervals reduce this source of query traffic;
+external apps and other enabled polling can still request readings faster.
+See [polling guidance](docs/USER-GUIDE.md#adjusting-local-jog-feedback-traffic).
+
+Timed-jog choices now extend to **5 seconds** in direct and bridge-local control.
+Bridge hold-to-move remains capped at 2 seconds per press; Stop and missing-feedback
+safeguards remain active. The calibration-based degree estimator keeps its existing
+0.1–2 second limit.
+
+
+With Control Bridge OFF, direct Motor control uses **Poll motor positions (keep
+connection alive)** to read encoders at the selected interval. Its status distinguishes
+saved settings from an active session. Idle release still closes the connection;
+retained values then show **NOT LIVE — disconnected**. Choose Never before connecting
+only when persistent direct ownership is desired.

@@ -49,7 +49,7 @@ AI to move a telescope. Wi-Fi credentials are read from a dedicated environment
 variable rather than supplied in tool arguments. Read the tool schema for its
 required variable prefix. Do not put secrets in chat, command history or logs.
 
-Motor jogs require direction +/-1, speed 1–9 and a bounded duration 0.1–2 seconds.
+Motor jogs require direction +/-1, speed 1–9 and a bounded duration 0.1–5 seconds.
 Status reports telemetry and events; read age and connection state rather than
 assuming a command acknowledgement means successful movement. Stop applies to
 the service's own controller, not an independently running GUI or phone app.

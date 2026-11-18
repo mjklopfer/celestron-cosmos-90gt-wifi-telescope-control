@@ -648,6 +648,37 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertEqual(app.encoder_stale_after(), 10)
         app.bridge = None
 
+    def test_disconnected_polling_state_does_not_claim_checkbox_is_active(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.motor_heartbeat.set(True)
+        app.motor_heartbeat_interval.set('3')
+        app.update_controls()
+        self.assertIn('Polling stopped', app.direct_polling_status.get())
+        self.assertIn('Connect Motors', app.direct_polling_status.get())
+        app.motor = Mock()
+        app.direct_polling_applied = (True, 1.0, 10)
+        app.update_controls()
+        self.assertIn('every 1s', app.direct_polling_status.get())
+        self.assertIn('10s', app.direct_polling_status.get())
+        app.motor = None
+
+    def test_local_polling_control_applies_to_summary_and_rejects_conflict(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.bridge = Mock(local_fault=False)
+        app.bridge_is_ready = app.bridge_jog_active = True
+        self.assertEqual(app.bridge_local_polling_applied, .4)
+        app.bridge_local_polling.set('1')
+        app.apply_bridge_local_polling()
+        app.bridge.configure_local_polling.assert_called_once_with(1.0)
+        self.assertIn('Local-jog feedback: 1s target', app.motor_bridge_polling_text.get())
+        app.bridge_local_polling.set('2')
+        app.apply_bridge_local_polling()
+        self.assertEqual(app.bridge_local_polling_applied, 1)
+        self.assertIn('not applied', app.bridge_background_status.get())
+        app.bridge = None
+
     def test_bridge_restart_button_and_timeout_controls(self):
         from unittest.mock import Mock, patch
         app = self.app

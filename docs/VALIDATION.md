@@ -365,3 +365,26 @@ settings, conditional summary visibility, unapplied edits, and stale thresholds
 (10-second floor, 15-second heartbeat -> 18 seconds, 20-second polling -> 23).
 Ruff, whitespace checks and source/wheel builds passed. Live hardware stability
 and cross-platform visual appearance remain separate from these automated results.
+
+
+## Configurable jog polling, five-second timed jogs and direct polling status
+
+Local feedback interval control defaults to 0.4s and validates 0.2–5s strictly below
+the feedback timeout. Scheduler tests verify that a 2s interval does not generate
+queries after only 1s and that slower two-axis feedback can recover a local lock.
+The source summary reflects applied intervals. Direct/bridge timed jogs accept up
+to 5s; invalid duration/axis/rate and interruption tests remain in place. Bridge
+hold remains 2s and the calibrated degree estimator remains limited to 2s.
+
+The broader motor/bridge/MCP/GUI run executed 77 tests; 75 passed initially, with
+two test-maintenance failures (a missing required test callback and an obsolete
+assertion that a 3s jog must be rejected). Both tests were corrected. The focused
+rerun of duration limits, recovery and invalid-command forwarding passed 9 tests.
+The final bridge/release GUI set passed 16 tests. Ruff, whitespace and final
+wheel/source build passed. No live five-second jog was commanded.
+
+Observed direct session used a 1s heartbeat and 10s idle release. Both axes replied
+until the intentional release, explaining subsequently aged retained readings.
+UI now explicitly reports polling stopped when disconnected and reports applied
+polling/idle settings during a direct session. Retained readings say NOT LIVE —
+disconnected; a checked preference is not presented as an active connection.

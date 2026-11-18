@@ -194,7 +194,7 @@ converts the requested relative angle into a timed jog using the matching sample
 It sets direction-related duration guidance and the timed-jog duration; it does
 not move the telescope. Press the appropriate direction to execute the jog.
 
-The estimate accepts only durations in the supported 0.1–2 second range. Ramps,
+The calibration-based estimate retains its conservative 0.1–2 second range; manually selected timed jogs allow up to 5 seconds. Ramps,
 backlash and network delays affect accuracy. It is not an exact relative-angle
 GOTO or a continuous tracking-rate calibration. Inspect actual encoder movement
 afterward. A missing or different-endpoint profile cannot supply a reliable estimate.
@@ -262,7 +262,7 @@ slewing, turn **Enable local jogging through bridge** ON and confirm the warning
 This attempts Stop, then waits for fresh position replies from both axes.
 Use the arrow buttons or the configured keyboard controls; keyboard control must
 also be ON. Hold-to-move stops on release and is capped at **2 seconds per press**;
-timed jogs accept **0.1–2 seconds**. O/P do not open or close a second motor connection
+timed jogs accept **0.1–5 seconds** (choices: 0.1, 0.25, 0.5, 1, 2, 3, 4, 5). O/P do not open or close a second motor connection
 while the bridge is active. Controller angle/backlash settings remain unavailable.
 
 **External commands have priority.** A conflicting external command first cancels
@@ -287,9 +287,11 @@ is OFF, clicking Apply timeout displays an OK acknowledgment explaining that the
 value takes effect the next time local jogging through bridge is enabled; applying
 a timeout does not enable jogging or start movement.
 
-When both axes provide readings less than one second old consistently across a
-one-second window, local jog buttons unlock automatically. Both axes must provide
-new samples during that window. **Previous motion is cancelled, never resumed.**
+When both axes provide fresh readings consistently across a recovery window,
+local jog buttons unlock automatically. The window is at least one second, or
+the local-jog polling interval if longer. Both axes must provide new samples during
+that window. Fresh means younger than the polling interval plus 0.6 seconds,
+capped by the local-jog feedback timeout. **Previous motion is cancelled, never resumed.**
 Press a direction again to move. Receipt freshness cannot establish the age of a
 position measurement inside the adapter if it buffers replies.
 
@@ -879,7 +881,7 @@ for fields, compatibility limits and future ESP32 integration considerations.
 
 Control Bridge shows **Current polling source** beside its heartbeat/position
 controls. One scheduler reuses incoming readings and suppresses duplicate queries.
-Local jogging requires a 0.4-second feedback target even when both optional boxes
+Local jogging requires feedback at the configured local-jog interval (default 0.4 seconds) even when both optional boxes
 are unchecked. Heartbeat waits while other traffic supplies activity, then supplies
 quiet-period requests as configured. Turning local jogging OFF preserves the
 selected heartbeat and position-polling settings; with both unchecked there are
@@ -900,3 +902,42 @@ Examples: 1-second polling means 10 seconds; 15-second polling means 18 seconds.
 This is a display freshness threshold, not the local-jog motion safety timeout.
 External app traffic can keep a connection active without requesting positions;
 an old encoder value can therefore correctly become STALE on a live connection.
+
+
+### Adjusting local-jog feedback traffic
+
+In **Control Bridge → Connection keep-alive and motor-position polling**, set
+**Local-jog feedback polling interval** and click **Apply local-jog interval**.
+Default **0.4 seconds**; allowed **0.2–5 seconds**. This applies immediately to the
+shared scheduler while bridge-local jogging is ON, or is saved for its next enable.
+It does not start movement. The setting lasts for this GUI session and is repeated
+in the Motor control polling summary.
+
+Start at 0.4s. To reduce position-query traffic, try a longer interval such as 0.8s
+or 1s. Faster polling increases traffic and can worsen adapter delays. The interval
+must be shorter than the **Local jog feedback timeout** in Motor control. To use
+an interval of 2s or more with the default 2s timeout, increase that timeout first;
+increasing the timeout delays the protective Stop after missing feedback. The app
+rejects conflicting settings rather than silently changing the other value.
+
+Optional position polling, heartbeat requests and external control applications
+can still supply faster traffic. Shared reads are reused; this setting does not
+throttle the external application. Lower traffic is a tuning option, not proof
+that the adapter's latency or disconnect problem has been fixed. Automatic lock
+recovery accounts for slower polling and never resumes an interrupted jog.
+
+After a direct idle release or other disconnection, retained encoder readings show
+**NOT LIVE — disconnected**. Keep-alive does not defeat idle release; select Never
+before connecting if you intentionally need persistent direct ownership. STALE
+on a connected session describes missing recent readings, not necessarily a lost
+network connection.
+
+
+In direct Motor control (Control Bridge OFF), **Poll motor positions (keep
+connection alive)** is the encoder-polling control; no second polling loop is
+needed. Its interval and idle-release setting are applied on Connect Motors.
+The shaded status reports the current session's applied values, or explicitly
+says polling is stopped when disconnected. A checked box after idle release is
+a saved preference, not an active connection. Select Never idle release before
+connecting if you need persistent direct polling. Controls are disabled during
+bridge ownership; use the Control Bridge settings in that mode.

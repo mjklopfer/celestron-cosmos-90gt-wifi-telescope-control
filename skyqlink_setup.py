@@ -469,7 +469,7 @@ class SetupApp(ttk.Frame):
         self.reload_calibration()
 
         ttk.Label(pad, text='Timed jog duration (seconds)').grid(row=5, column=0, sticky='w')
-        self.duration_box = ttk.Combobox(pad, textvariable=self.duration, values=('0.25', '0.5', '1.0', '2.0'), state='readonly', width=5)
+        self.duration_box = ttk.Combobox(pad, textvariable=self.duration, values=('0.1', '0.25', '0.5', '1.0', '2.0', '3.0', '4.0', '5.0'), state='readonly', width=5)
         self.duration_box.grid(row=5, column=1, sticky='w')
         ttk.Radiobutton(pad, text='Hold to move', variable=self.drive_mode, value='hold', command=self.stop_motors).grid(row=6, column=0, columnspan=2, sticky='w', pady=(8, 0))
         ttk.Radiobutton(pad, text='Timed jog', variable=self.drive_mode, value='jog', command=self.stop_motors).grid(row=6, column=2, sticky='w', pady=(8, 0))
@@ -484,19 +484,24 @@ class SetupApp(ttk.Frame):
             background='#fff0c2', foreground='#513800', wraplength=310, justify='left', padx=5, pady=5)
         self.motor_bridge_polling_label.grid(row=1, column=0, sticky='ew', pady=4)
         self.motor_bridge_polling_label.grid_remove()
+        self.direct_polling_applied = (True, 1.0, 30)
+        self.direct_polling_status = tk.StringVar(value='Polling stopped — disconnected. Click Connect Motors to start.')
+        self.direct_polling_label = tk.Label(policy_area, textvariable=self.direct_polling_status,
+            background='#e2ebf5', foreground='#172b44', wraplength=310, justify='left', padx=5, pady=5)
+        self.direct_polling_label.grid(row=2, column=0, sticky='ew', pady=4)
         ttk.Label(policy, text='Applied on next connection').grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 4))
         ttk.Label(policy, text='Idle release').grid(row=1, column=0, sticky='w')
         self.idle_release_box = ttk.Combobox(policy, textvariable=self.idle_release,
             values=('10 seconds', '20 seconds', '30 seconds', '1 minute', '2 minutes', '5 minutes', 'Never'), state='readonly', width=12)
         self.idle_release_box.grid(row=1, column=1, sticky='w')
         self.idle_release_box.bind('<<ComboboxSelected>>', lambda event: self.update_controls())
-        self.motor_heartbeat_box = ttk.Checkbutton(policy, text='Keep connection alive',
+        self.motor_heartbeat_box = ttk.Checkbutton(policy, text='Poll motor positions\n(keep connection alive)',
             variable=self.motor_heartbeat, command=self.update_controls)
         self.motor_heartbeat_box.grid(row=2, column=0, sticky='w')
         self.motor_heartbeat_box_interval = ttk.Spinbox(policy, from_=1, to=300,
             textvariable=self.motor_heartbeat_interval, width=7)
         self.motor_heartbeat_box_interval.grid(row=2, column=1, sticky='w')
-        ttk.Label(policy, text='seconds (1–300)').grid(row=3, column=1, sticky='w')
+        ttk.Label(policy, text='Polling interval, seconds (1–300)').grid(row=3, column=1, sticky='w')
         ttk.Label(policy, textvariable=self.motor_connection_help, wraplength=310).grid(
             row=4, column=0, columnspan=2, sticky='w', pady=3)
 
@@ -567,7 +572,7 @@ class SetupApp(ttk.Frame):
         self.bridge_reset_button = tk.Button(policy, text='Restart local jogging', command=self.reset_bridge_jog, state='disabled', disabledforeground='#777777')
         self.bridge_reset_button.pack(side='left', padx=8)
         tk.Label(self.bridge_jog_box, background='#fff0c2', foreground='#513800', wraplength=800, justify='left',
-                 text='Default: 2 seconds; allowed: 1–10. Click Apply timeout to use the value now. Longer values delay Stop after missing feedback. This does not change the polling rate or direct Motor control. After a feedback fault, buttons unlock automatically after both axes report fresh positions consistently for one second; stopped motion never resumes. Restart local jogging switches jogging OFF for one second, then ON. It does not restart the bridge or resume movement; fresh positions are required before moving.').pack(anchor='w')
+                 text='Default: 2 seconds; allowed: 1–10. Click Apply timeout to use the value now. Longer values delay Stop after missing feedback. This does not change the polling rate or direct Motor control. After a feedback fault, buttons unlock automatically after both axes report fresh positions consistently across a recovery window (at least one second, longer for slow polling); stopped motion never resumes. Restart local jogging switches jogging OFF for one second, then ON. It does not restart the bridge or resume movement; fresh positions are required before moving.').pack(anchor='w')
         tk.Label(self.bridge_jog_box, textvariable=self.bridge_jog_note, background='#fff0c2',
                  foreground='#513800', wraplength=800, justify='left').pack(anchor='w')
         self.bridge_jog_box.grid_remove()
@@ -598,9 +603,25 @@ class SetupApp(ttk.Frame):
         except (ValueError, TypeError) as error:
             self.bridge_background_status.set(f'Not applied: {error}. Use heartbeat 1–300s and recording 0.2–300s, then click Apply intervals.')
 
+    def apply_bridge_local_polling(self):
+        try:
+            value = float(self.bridge_local_polling.get())
+            if not math.isfinite(value) or not .2 <= value <= 5:
+                raise ValueError('Enter 0.2–5 seconds.')
+            if value >= self.bridge_feedback_applied:
+                raise ValueError('Use an interval shorter than the local-jog feedback timeout. Increase that timeout in Motor control first if needed.')
+            if self.bridge:
+                self.bridge.configure_local_polling(value)
+            self.bridge_local_polling_applied = value
+            self.bridge_local_polling.set(f'{value:g}')
+            self.bridge_background_status.set(f'Local-jog feedback polling interval applied: {value:g}s. Used when local jogging is ON.')
+            self.refresh_bridge_polling_summary()
+        except (ValueError, TypeError) as error:
+            self.bridge_background_status.set(f'Local-jog interval not applied: {error}')
+
     def bridge_polling_interval(self):
         heartbeat, quiet, monitor, sample = self.bridge_polling_applied
-        intervals = ([.4] if self.bridge_jog_active else []) + ([sample] if monitor else []) + ([quiet] if heartbeat else [])
+        intervals = ([self.bridge_local_polling_applied] if self.bridge_jog_active else []) + ([sample] if monitor else []) + ([quiet] if heartbeat else [])
         # Heartbeat can fill quiet gaps between slower position requests.
         return min(intervals) if intervals else None
 
@@ -620,7 +641,7 @@ class SetupApp(ttk.Frame):
         if not self.bridge or not self.bridge_is_ready:
             source = 'Bridge is not ready; no active bridge polling. Saved settings: '
         elif self.bridge_jog_active:
-            source = (f'Local-jog feedback polling is active (0.4s target; shared polling target {interval:g}s). '
+            source = (f'Local-jog feedback polling is active ({self.bridge_local_polling_applied:g}s target; shared polling target {interval:g}s). '
                       'It also keeps the connection alive. ')
         elif monitor:
             source = f'Position polling is active ({sample:g}s target). '
@@ -633,18 +654,33 @@ class SetupApp(ttk.Frame):
         self.bridge_polling_source.set('Current polling source: ' + source + settings
             + ' Incoming replies are reused; duplicate reads are suppressed. Settings are preserved when local jogging changes.')
         self.motor_bridge_polling_text.set('Bridge polling settings — change these in Control Bridge.\n'
-            + settings + f'\nLocal-jog feedback: 0.4s target. Encoder display marks readings STALE after {self.encoder_stale_after():g}s. '
+            + settings + f'\nLocal-jog feedback: {self.bridge_local_polling_applied:g}s target. Encoder display marks readings STALE after {self.encoder_stale_after():g}s. '
             'The local-jog safety timeout is separate.')
         if self.bridge and self.bridge_jog_active:
             self.motor_bridge_polling_label.grid()
         else:
             self.motor_bridge_polling_label.grid_remove()
+        if self.bridge:
+            self.direct_polling_label.grid_remove()
+        else:
+            self.direct_polling_label.grid()
+            if self.motor is None:
+                self.direct_polling_status.set('Polling stopped — disconnected. The controls above are saved settings. Click Connect Motors to start.')
+            else:
+                enabled, seconds, idle = self.direct_polling_applied
+                self.direct_polling_status.set(
+                    (f'Direct session: encoder polling ON, every {seconds:g}s.' if enabled else
+                     'Direct session: idle encoder polling OFF; movement feedback checks remain active.')
+                    + (' Idle release: Never.' if not idle else f' Idle release: {idle:g}s without movement commands.')
+                    + ' Polling does not reset idle release.')
 
     def apply_bridge_feedback_timeout(self):
         try:
             value = float(self.bridge_feedback_timeout.get())
             if not math.isfinite(value) or not 1 <= value <= 10:
                 raise ValueError('Enter 1–10 seconds.')
+            if value <= self.bridge_local_polling_applied:
+                raise ValueError('Timeout must be longer than the local-jog polling interval in Control Bridge.')
             if self.bridge:
                 self.bridge.configure_local_feedback(value)
             self.bridge_feedback_applied = value
@@ -665,7 +701,7 @@ class SetupApp(ttk.Frame):
             self.bridge.restart_local_jog()
             self.bridge_jog_ready = False
             self.bridge_jog_requested.set(False)
-            self.bridge_jog_note.set('Restarting local jogging: OFF for one second, then ON. Previous movement will not resume.')
+            self.bridge_jog_note.set('Restarting local jogging: OFF for one second, then ON. Press a direction to move after fresh feedback returns.')
         except RuntimeError as error:
             self.bridge_jog_note.set(str(error))
         self.update_controls()
@@ -1391,6 +1427,8 @@ class SetupApp(ttk.Frame):
         self.bridge_monitor_interval = tk.StringVar(value='1')
         self.bridge_background_status = tk.StringVar(value='Heartbeat OFF; position recording OFF. Existing replies are still logged.')
         self.bridge_polling_applied = (False, 5.0, False, 1.0)
+        self.bridge_local_polling = tk.StringVar(value='0.4')
+        self.bridge_local_polling_applied = .4
         self.bridge_polling_source = tk.StringVar(value='Current polling source: Bridge OFF.')
         background = ttk.LabelFrame(tab, text='Connection keep-alive and motor-position polling', padding=6)
         background.grid(row=13, sticky='ew', pady=(8, 0))
@@ -1403,10 +1441,17 @@ class SetupApp(ttk.Frame):
         ttk.Spinbox(background, from_=0.2, to=300, increment=0.2, width=7, textvariable=self.bridge_monitor_interval).grid(row=1, column=1)
         ttk.Label(background, text='seconds between motor-position reads (0.2–300; default 1)').grid(row=1, column=2, sticky='w')
         ttk.Button(background, text='Apply intervals', command=self.apply_bridge_background_reads).grid(row=2, column=0, sticky='w', pady=4)
+        ttk.Label(background, text='Local-jog feedback polling interval').grid(row=6, column=0, sticky='w', pady=(8, 0))
+        ttk.Spinbox(background, from_=.2, to=5, increment=.1, width=7,
+                    textvariable=self.bridge_local_polling).grid(row=6, column=1)
+        ttk.Label(background, text='seconds (0.2–5; default 0.4)').grid(row=6, column=2, sticky='w')
+        ttk.Button(background, text='Apply local-jog interval', command=self.apply_bridge_local_polling).grid(row=7, column=0, sticky='w', pady=4)
+        ttk.Label(background, wraplength=760, text='Used only while local jogging through bridge is ON. Start at 0.4s; try a longer interval to reduce position-query traffic. Shorter intervals increase traffic and may worsen delays. Keep this interval shorter than the local-jog feedback timeout in Motor control; increase that timeout first if needed. Longer intervals give less frequent position feedback. Faster optional position polling, heartbeat requests, or external-app requests can still generate traffic. Click Apply local-jog interval to apply now; this does not start movement. Settings last for this app session.').grid(row=8, columnspan=3, sticky='w')
+
         ttk.Label(background, textvariable=self.bridge_background_status, wraplength=760).grid(row=3, columnspan=3, sticky='w')
         tk.Label(background, textvariable=self.bridge_polling_source, background='#e2ebf5', foreground='#172b44',
                  wraplength=760, justify='left', padx=8, pady=6).grid(row=5, columnspan=3, sticky='ew', pady=5)
-        ttk.Label(background, text='To record motion: check Poll and record motor positions, enter the interval in seconds, then click Apply intervals. 1 = about one sample per second; 5 = one every five seconds; 0.2 = up to five per second (experimental). Smaller numbers add traffic. Incoming position replies are reused; missing samples are requested.\nTo keep an otherwise quiet connection active: check Keep connection alive and set its quiet interval. Normal traffic or position polling satisfies it; a second set of requests is not sent. Both options work with or without a connected control app.\nBoth unchecked: no optional position queries; received replies are still logged. Local jogging, when enabled on Motor control, requires fresh feedback at 0.4-second intervals and shares this same scheduler. Turn local jogging OFF when using only your external control app to avoid those additional safety reads. Missing replies are logged as gaps; no idle timeout closes the bridge. These options cannot guarantee recovery from a stalled Wi-Fi adapter.', wraplength=760).grid(row=4, columnspan=3, sticky='w')
+        ttk.Label(background, text='To record motion: check Poll and record motor positions, enter the interval in seconds, then click Apply intervals. 1 = about one sample per second; 5 = one every five seconds; 0.2 = up to five per second (experimental). Smaller numbers add traffic. Incoming position replies are reused; missing samples are requested.\nTo keep an otherwise quiet connection active: check Keep connection alive and set its quiet interval. Normal traffic or position polling satisfies it; a second set of requests is not sent. Both options work with or without a connected control app.\nBoth unchecked: no optional position queries; received replies are still logged. Local jogging, when enabled on Motor control, requires fresh feedback at the local-jog interval below (default 0.4 seconds) and shares this same scheduler. Turn local jogging OFF when using only your external control app to avoid those additional safety reads. Missing replies are logged as gaps; no idle timeout closes the bridge. These options cannot guarantee recovery from a stalled Wi-Fi adapter.', wraplength=760).grid(row=4, columnspan=3, sticky='w')
 
     def open_recording_export(self):
         window = tk.Toplevel(self.root)
@@ -1580,6 +1625,8 @@ class SetupApp(ttk.Frame):
             self.tabs.select(self.bridge_tab)
             if self.bridge_feedback_applied != 2.0:
                 self.bridge.configure_local_feedback(self.bridge_feedback_applied)
+            if self.bridge_local_polling_applied != .4:
+                self.bridge.configure_local_polling(self.bridge_local_polling_applied)
             self.bridge.start()
         except Exception as error:
             self.bridge = None
@@ -1590,6 +1637,8 @@ class SetupApp(ttk.Frame):
     def handle_bridge_event(self, event):
         """Apply worker events to bridge status, tab locks and readbacks."""
         kind = event['event']
+        if kind == 'bridge_local_polling':
+            self.bridge_local_polling_applied = float(event['interval'])
         if kind == 'bridge_background_config':
             self.bridge_polling_applied = (event['heartbeat_enabled'], float(event['heartbeat_interval']),
                                            event['monitor_enabled'], float(event['monitor_interval']))
@@ -1607,7 +1656,7 @@ class SetupApp(ttk.Frame):
                 self.held = False
             self.bridge_jog_note.set(event['message'])
             if kind == 'bridge_local_recovered':
-                self.motor_status.set('Bridge connected — local jogging ready; previous movement cancelled')
+                self.motor_status.set('Bridge connected — jog buttons ready; press a direction to move')
             if getattr(self.bridge, 'local_fault', False):
                 self.bridge_jog_ready = False
                 self.motor_status.set('Bridge connected — local jogging locked after feedback loss')
@@ -1875,7 +1924,7 @@ class SetupApp(ttk.Frame):
             ('Click Disconnect, edit these settings, then click Connect Motors to apply them. ' if self.motor is not None else 'Choose settings here, then click Connect Motors to apply them. No Apply button or Enter key is needed. ') +
             'Default: release after 30 seconds without movement activity. Keep-alive reads positions while idle; it does not reset this timer. Never retains the connection until Disconnect or a fault. '
             + ('Caution: beyond 30 seconds or Never with keep-alive ON can keep the adapter occupied and lock out other control apps. Disconnect before switching apps. ' if self.motor_heartbeat.get() and self.idle_release.get() in ('1 minute', '2 minutes', '5 minutes', 'Never', 'Off') else '')
-            + 'The interval is used only when Keep connection alive is checked. Movement feedback checks remain active.')
+            + 'The interval is used only when Poll motor positions is checked. This polls encoder positions and also keeps the connection alive. Movement feedback checks remain active.')
         bridge_allowed = self.connection_mode.get() == 'infrastructure' or self.bridge_dual.get()
         if self.bridge is not None:
             notice = 'Control Bridge is running. Switch it OFF to stop and release the connection.'
@@ -1921,6 +1970,7 @@ class SetupApp(ttk.Frame):
             idle = {'Off': 0, 'Never': 0, '10 seconds': 10, '20 seconds': 20, '30 seconds': 30, '1 minute': 60, '2 minutes': 120, '5 minutes': 300}[self.idle_release.get()]
             self.motor = self.motor_factory(host, port, self.events.put, idle_release=idle,
                 heartbeat_enabled=self.motor_heartbeat.get(), heartbeat_interval=float(self.motor_heartbeat_interval.get()))
+            self.direct_polling_applied = (self.motor_heartbeat.get(), float(self.motor_heartbeat_interval.get()), idle)
             self.connect_request_active = True
             self.connect_recovery_attempted = recover_attempted
             self.last_motor_error = None
@@ -2395,7 +2445,9 @@ class SetupApp(ttk.Frame):
             pass
         for axis, last in self.last_positions.items():
             age = time.monotonic() - last
-            self.values[axis]['age'].set(f'{age:.1f}s ago' + (' · STALE' if age > self.encoder_stale_after() else ''))
+            suffix = (' · NOT LIVE — disconnected' if self.motor is None and self.bridge is None
+                      else ' · STALE' if age > self.encoder_stale_after() else '')
+            self.values[axis]['age'].set(f'{age:.1f}s ago' + suffix)
         if self.held and self.motor_ready and self.motor is not None:
             self.motor.renew_hold()
         if self.closing and self.motor is None and self.bridge is None:

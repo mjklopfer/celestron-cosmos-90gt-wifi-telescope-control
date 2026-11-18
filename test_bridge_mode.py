@@ -354,7 +354,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_local_unknown_writes_forwarded_and_invalid_jogs_rejected(self):
         self.enable_local()
-        for args in ((16, 1, 2, float('nan')), (16, 1, 2, 3), (16, 1, 0, .1), (18, 1, 2, .1)):
+        for args in ((16, 1, 2, float('nan')), (16, 1, 2, 6), (16, 1, 0, .1), (18, 1, 2, .1)):
             with self.assertRaises(ValueError):
                 self.bridge.jog(*args)
         with self.connect(self.bridge.listen_port) as client:
@@ -553,6 +553,40 @@ class LocalJogRecoveryTests(unittest.TestCase):
         self.b.upstream = Mock()
         self.b.ready.set()
         self.b.local_enabled = self.b.local_requested = True
+
+    def test_local_interval_validation_scheduler_and_slow_recovery(self):
+        b = self.b
+        for value in (.1, 6, float('nan'), 2):
+            with self.assertRaises(ValueError):
+                b.configure_local_polling(value)
+        b.configure_local_feedback(5)
+        b.configure_local_polling(2)
+        with self.assertRaises(ValueError):
+            b.configure_local_feedback(2)
+        b.local_feedback = {16: 100, 17: 100}
+        b.last_background_query = 100
+        b.background_read_tick(101)
+        b.upstream.sendall.assert_not_called()
+        b.background_read_tick(102.1)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+        b.local_fault = True
+        b.local_feedback = {16: 103, 17: 103}
+        b.local_tick(103)
+        b.local_tick(104.1)
+        self.assertTrue(b.local_fault)
+        b.local_feedback = {16: 105.1, 17: 105.1}
+        b.local_tick(105.1)
+        self.assertFalse(b.local_fault)
+        self.assertIsNone(b.local_deadline)
+
+    def test_timed_jog_accepts_five_seconds_and_rejects_longer(self):
+        b = self.b
+        b.jog(16, 1, 2, 5)
+        self.assertEqual(b.local_pending[3], 5)
+        b.local_pending = None
+        for seconds in (5.01, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                b.jog(16, 1, 2, seconds)
 
     def test_timeout_validation_and_effect(self):
         b = self.b

@@ -9,7 +9,7 @@ MCP-session state, not a claim that the GUI has the same connection/state.
 
 Long operations return job IDs; job_status retrieves results and abort_diagnostics
 cooperatively cancels only diagnostic jobs. Motor commands are bounded timed jogs
-(0.1-2 seconds); continuous unattended movement and arbitrary AUX packets are not
+(0.1-5 seconds); continuous unattended movement and arbitrary AUX packets are not
 exposed. Explicit confirmation flags document intent for writes/movement but do
 not replace the calling assistant obtaining actual user authorization. Use motor_stop
 at any time, even while a job runs. Normal EOF/shutdown requests Stop/disconnect.
@@ -209,7 +209,7 @@ def motor_connect(idle_release_seconds: int = 30) -> dict:
 @mcp.tool()
 def motor_jog(axis: str, direction: int, speed: int, seconds: float,
               confirm_movement: bool = False) -> dict:
-    """Request a physical bounded 0.1-2 second jog. Verify clearance and user intent first."""
+    """Request a physical bounded 0.1-5 second jog. Verify clearance and user intent first."""
     if not confirm_movement:
         raise ValueError('Explicit movement authorization required')
     address = next((a for a, name in AXES.items() if name.lower() == axis.lower()), None)
