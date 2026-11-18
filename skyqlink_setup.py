@@ -25,6 +25,7 @@ from diagnostics import diagnose
 from time_settings import configure_time, test_time_server, COMMON_TIME_SERVERS, UptimeEvidence
 from recover_link import recover
 from bridge_mode import Bridge
+from bridge_decode import describe_aux
 from export_recording import export_recording, recording_bounds, parse_timestamp
 from network_info import network_interfaces, open_directory
 from ui_zoom import UiZoom, scale_argument
@@ -355,13 +356,14 @@ class SetupApp(ttk.Frame):
 
         transfer = ttk.LabelFrame(self, text='Transfer log — credentials redacted', padding=8)
         transfer.grid(row=6, sticky='nsew')
-        transfer.rowconfigure(0, weight=1)
+        transfer.rowconfigure(1, weight=1)
         transfer.columnconfigure(0, weight=1)
+        ttk.Label(transfer, text='This program’s outgoing commands and requests (including encoder polling), plus operation status. AUX hex is followed by its known meaning in parentheses. Motor replies update the readouts and are saved in the session log. For external-app traffic and telescope replies, use the Control Bridge log.', wraplength=760, justify='left').grid(row=0, column=0, sticky='w', pady=(0, 6))
         self.console = ScrolledText(transfer, height=6, wrap='word', state='disabled',
                                    font=('TkFixedFont', 11), background='#17212b', foreground='#e7edf3',
                                    insertbackground='white', relief='flat')
-        self.console.grid(sticky='nsew')
-        self.copy_button(transfer, lambda: self.console.get('1.0', 'end-1c'), 'Copy transfer log').grid(row=1, sticky='w', pady=4)
+        self.console.grid(row=1, column=0, sticky='nsew')
+        self.copy_button(transfer, lambda: self.console.get('1.0', 'end-1c'), 'Copy transfer log').grid(row=2, sticky='w', pady=4)
         footer = ttk.Frame(self)
         footer.grid(row=7, sticky='ew', pady=(10, 0))
         self.logs_button = ttk.Button(footer, text='Open Saved Logs', state='disabled', command=self.open_logs)
@@ -1416,10 +1418,14 @@ class SetupApp(ttk.Frame):
             for column, field in enumerate(('encoder', 'angle', 'firmware', 'age'), start=1):
                 ttk.Label(readout, textvariable=self.values[axis][field], width=17).grid(row=row, column=column)
         self.copy_button(readout, self.motor_output, 'Copy motor table').grid(row=2, columnspan=5, sticky='w', pady=3)
+        bridge_log_heading = ttk.Frame(tab)
+        bridge_log_heading.grid(row=10, sticky='ew', pady=(8, 0))
+        ttk.Label(bridge_log_heading, text='Communications Log', font=('TkDefaultFont', 12, 'bold')).pack(anchor='w')
+        ttk.Label(bridge_log_heading, text='This program’s actions, forwarded commands from external control apps, and telescope replies. Entries identify the source and destination IPs. Raw AUX hex is followed by its known meaning; unknown values remain unverified.', wraplength=760, justify='left').pack(anchor='w', pady=(3, 4))
         self.bridge_console = ScrolledText(tab, height=8, wrap='word', state='disabled', font=('TkFixedFont', 10))
-        self.bridge_console.grid(row=10, sticky='ew', pady=8)
-        ttk.Button(tab, text='Export bridge recording…', command=self.open_recording_export).grid(row=12, sticky='w', pady=6)
-        self.copy_button(tab, lambda: self.bridge_status.get() + '\n' + self.bridge_endpoint.get() + '\n' + self.bridge_console.get('1.0', 'end-1c'), 'Copy bridge status and log').grid(row=11, sticky='w')
+        self.bridge_console.grid(row=11, sticky='ew', pady=8)
+        ttk.Button(tab, text='Export bridge recording…', command=self.open_recording_export).grid(row=13, sticky='w', pady=6)
+        self.copy_button(tab, lambda: self.bridge_status.get() + '\n' + self.bridge_endpoint.get() + '\n' + self.bridge_console.get('1.0', 'end-1c'), 'Copy bridge status and log').grid(row=12, sticky='w')
 
         self.bridge_heartbeat = tk.BooleanVar(value=False)
         self.bridge_heartbeat_interval = tk.StringVar(value='5')
@@ -1431,7 +1437,7 @@ class SetupApp(ttk.Frame):
         self.bridge_local_polling_applied = .4
         self.bridge_polling_source = tk.StringVar(value='Current polling source: Bridge OFF.')
         background = ttk.LabelFrame(tab, text='Connection keep-alive and motor-position polling', padding=6)
-        background.grid(row=13, sticky='ew', pady=(8, 0))
+        background.grid(row=14, sticky='ew', pady=(8, 0))
         ttk.Checkbutton(background, text='Keep connection alive (heartbeat)', variable=self.bridge_heartbeat,
                         command=self.apply_bridge_background_reads).grid(row=0, column=0, sticky='w')
         ttk.Spinbox(background, from_=1, to=300, increment=1, width=7, textvariable=self.bridge_heartbeat_interval).grid(row=0, column=1)
@@ -1702,9 +1708,10 @@ class SetupApp(ttk.Frame):
                 message += ' One or more Stop acknowledgements were not received; physical rest is unverified.'
         if message:
             self.bridge_status.set(message)
-        line = message or (f'{event.get("direction", "")} AUX {event["hex"]} ({event.get("interpretation", "interpretation unavailable")})' if kind == 'bridge_packet'
-                           else f'Management request: {event.get("operation", "")}' if kind == 'bridge_management' else kind)
-        self.append('BRIDGE ' + line)
+        line = message or (f'{event.get("route", event.get("direction", ""))} AUX {event["hex"]} ({event.get("interpretation", "interpretation unavailable")})' if kind == 'bridge_packet'
+                           else f'Management client ({event.get("source_ip", "unknown")}) → This program ({event.get("destination_ip", "unknown")}): {event.get("operation", "")}' if kind == 'bridge_management' else kind)
+        if kind not in ('bridge_packet', 'bridge_management') or event.get('direction') == 'local':
+            self.append('BRIDGE ' + line)
         self.bridge_console.configure(state='normal')
         self.bridge_console.insert('end', line + '\n')
         if int(self.bridge_console.index('end-1c').split('.')[0]) > 1000:
@@ -2482,16 +2489,24 @@ class SetupApp(ttk.Frame):
             if axis in self.reference_poll_pending:
                 self.reference_poll_pending.discard(axis)
                 self.motion_status.set(f'{AXES[axis]} position polled at {dt.datetime.now().strftime("%H:%M:%S")}.')
+        elif kind == 'motor_request_timeout':
+            self.append(f'*** Reply Timeout *** {AXES.get(event.get("axis"), "Motor")}, AUX command 0x{event.get("command", 0):02X}: no matching reply within {event.get("elapsed_seconds", 0):.2f}s.')
+        elif kind == 'motor_connection_policy':
+            idle = event.get('idle_release', 0)
+            self.append(f'*** Direct Connection Settings *** Encoder polling {"ON" if event.get("heartbeat_enabled") else "OFF"}; interval {event.get("heartbeat_interval", 0):g}s; idle release {str(idle) + "s" if idle else "Never"}.')
         elif kind == 'motor_feedback_retry':
+            self.append('*** Feedback Missing *** ' + event['message'])
             self.clear_local_references()
             self.motor_ready = False
             self.motor_status.set('Waiting for encoder feedback')
             self.motion_status.set(event['message'])
         elif kind == 'motor_feedback_restored':
+            self.append('*** Feedback Restored *** ' + event['message'])
             self.motor_ready = True
             self.motor_status.set('Motor encoder connection verified')
             self.motion_status.set(event['message'])
         elif kind == 'motor_idle_release':
+            self.append(f'*** Idle Timeout *** No movement commands for {event["seconds"]} seconds; releasing the direct motor connection. Click Connect Motors to reconnect.')
             self.motor_ready = False
             self.motion_status.set(f'Idle release after {event["seconds"]} seconds. Reconnect to continue moving.')
             self.status.set(self.motion_status.get())
@@ -2591,8 +2606,13 @@ class SetupApp(ttk.Frame):
             if event.get('log_directory'):
                 self.log_directory = event['log_directory']
                 self.logs_button.configure(state='normal')
-        elif kind == 'motor_tx' and event['command'] in (0x24, 0x25):
-            self.append('SEND AUX  ' + event['hex'])
+        elif kind == 'motor_tx' and event.get('hex'):
+            raw = event['hex']
+            try:
+                interpretation = describe_aux(bytes.fromhex(raw))
+            except (ValueError, TypeError):
+                interpretation = 'Invalid packet text; interpretation unavailable'
+            self.append(f'SEND AUX  {raw} ({interpretation})')
         self.update_controls()
 
     def open_logs(self):

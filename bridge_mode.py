@@ -58,6 +58,7 @@ class Bridge:
         self.telemetry_dropped = 0
         self.recording_failed = False
         self.upstream = self.client = self.manager = None
+        self.client_peer = self.manager_peer = None
         self.listeners = []
         self.udp = None
         self.parser = FrameParser()
@@ -148,6 +149,25 @@ class Bridge:
                 except Exception:
                     pass
         self.report['telemetry_events_dropped'] = self.telemetry_dropped
+
+    def packet_route(self, direction, forwarded_to=None):
+        local_ip = self.report.get('upstream_local', (self.bind_host, 0))[0]
+        if direction == 'local':
+            return dict(origin='this_program', source_ip=local_ip, destination_ip=self.host,
+                        route=f'This program ({local_ip}) → Telescope ({self.host}:{self.port})')
+        if direction == 'client':
+            peer = self.client_peer[0] if self.client_peer else 'unknown'
+            return dict(origin='external_client', source_ip=peer, destination_ip=self.host,
+                        route=f'External client ({peer}) → Telescope ({self.host}:{self.port}) via this program ({local_ip})')
+        destination = forwarded_to[0] if forwarded_to else local_ip
+        return dict(origin='telescope', source_ip=self.host, destination_ip=destination,
+                    route=(f'Telescope ({self.host}:{self.port}) → External client ({destination}) via this program ({local_ip})'
+                           if forwarded_to else f'Telescope ({self.host}:{self.port}) → This program ({local_ip}); not forwarded'))
+
+    def send_local(self, frame):
+        """Send first, then queue local-origin trace; no decoding/disk IO on relay."""
+        self.upstream.sendall(frame)
+        self.emit('bridge_packet', direction='local', hex=frame.hex(), **self.packet_route('local'))
 
     def start(self):
         """Start the relay worker; construction alone never opens a telescope connection."""
@@ -298,7 +318,7 @@ class Bridge:
                 with self.local_lock:
                     if self.local_stop_requested or not self.local_requested:
                         return
-                    self.upstream.sendall(motor_packet(axis, 0x24 if direction > 0 else 0x25, bytes((rate,))))
+                    self.send_local(motor_packet(axis, 0x24 if direction > 0 else 0x25, bytes((rate,))))
                     self.local_deadline = time.monotonic() + seconds
                 self.emit('bridge_local_motion', moving=True, message=f'Local jog: {AXES[axis]}, speed {rate}, maximum {seconds:g}s.')
             else:
@@ -354,7 +374,7 @@ class Bridge:
         if not axes:
             return
         for axis in axes:
-            self.upstream.sendall(motor_packet(axis, 1))
+            self.send_local(motor_packet(axis, 1))
             self.background_pending[axis] = now + 2.0
         self.last_background_query = now
         reason = 'Jog feedback' if self.local_enabled else ('Keep connection alive' if quiet_due else 'Position recording')
@@ -393,7 +413,7 @@ class Bridge:
                 self.background_pending.setdefault(axis, time.monotonic() + 2.0)
         self.observe(raw, 'client', frames=frames)
 
-    def observe(self, raw, direction, frames=None):
+    def observe(self, raw, direction, frames=None, forwarded_to=None):
         """Log valid AUX frames and update readbacks from controller position replies."""
         if direction == 'mount' and raw:
             self.last_mount_activity = time.monotonic()
@@ -402,7 +422,7 @@ class Bridge:
             frames = parser.feed(raw)
         for frame in frames:
             # Log checksummed AUX frames, not arbitrary ASCII/configuration data.
-            self.emit('bridge_packet', direction=direction, hex=frame.hex())
+            self.emit('bridge_packet', direction=direction, hex=frame.hex(), **self.packet_route(direction, forwarded_to))
             axis = frame[2]
             if direction != 'mount' or axis not in AXES or frame[3] != 0x20:
                 continue
@@ -421,7 +441,7 @@ class Bridge:
 
     def request(self, axis, command, timeout=1.2):
         """Send a controller query and wait within its reply deadline."""
-        self.upstream.sendall(motor_packet(axis, command))
+        self.send_local(motor_packet(axis, command))
         deadline = time.monotonic() + timeout
         while not self.stopping.is_set() and time.monotonic() < deadline:
             try:
@@ -439,7 +459,7 @@ class Bridge:
         """Attempt Stop on the requested axes and record unconfirmed delivery."""
         for axis in axes:
             try:
-                self.upstream.sendall(motor_packet(axis, 0x24, b'\x00'))
+                self.send_local(motor_packet(axis, 0x24, b'\x00'))
                 self.report['stop_attempts'].append({'axis': axis, 'sent': True})
             except Exception as error:
                 self.report['stop_attempts'].append({'axis': axis, 'sent': False, 'error': str(error)})
@@ -454,6 +474,7 @@ class Bridge:
             self.stop_local_jog()
             self.client.close()
             self.client = None
+            self.client_peer = None
             self.background_pending.clear()
             self.client_parser = FrameParser()
             self.send_stops()
@@ -559,6 +580,7 @@ class Bridge:
                                 self.emit('bridge_status', message='Rejected a second motor-control client')
                             else:
                                 self.client = connection
+                                self.client_peer = peer
                                 self.last_client_activity = time.monotonic()
                                 self.report['clients'].append(peer[0])
                                 self.emit('bridge_client', message=f'Client {peer[0]} connected; AUX traffic forwarding')
@@ -566,18 +588,21 @@ class Bridge:
                             connection.close()
                         else:
                             self.manager = connection
+                            self.manager_peer = peer
                             manager_buffer.clear()
                     elif source is self.upstream:
                         raw = source.recv(4096)
                         if not raw:
                             raise ConnectionError('Telescope disconnected')
+                        forwarded_to = None
                         if self.client:
                             try:
                                 self.client.sendall(raw)
+                                forwarded_to = self.client_peer
                                 self.report['bytes_to_client'] += len(raw)
                             except OSError as error:
                                 self.close_client(f'writing to control app failed: {error}')
-                        self.observe(raw, 'mount')
+                        self.observe(raw, 'mount', forwarded_to=forwarded_to)
                     elif source is self.client:
                         try:
                             raw = source.recv(4096)
@@ -601,7 +626,7 @@ class Bridge:
                                 command = line.decode('ascii', 'replace').strip()
                                 # Log operation name only, never potential password arguments.
                                 operation = command.split(' ', 1)[0]
-                                self.emit('bridge_management', operation=operation if operation in
+                                self.emit('bridge_management', source_ip=self.manager_peer[0] if self.manager_peer else 'unknown', destination_ip=self.bind_host, operation=operation if operation in
                                           ('get', 'set', 'version', 'save', 'reset', 'exit') else 'unsupported')
                                 if command == 'exit':
                                     raise ConnectionError('Management exit')

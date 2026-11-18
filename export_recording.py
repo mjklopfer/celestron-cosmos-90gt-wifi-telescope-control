@@ -14,7 +14,7 @@ from pathlib import Path
 from bridge_decode import describe_aux
 
 COLUMNS = ('record_type', 'source_session', 'source_line', 'export_time', 'utc', 'monotonic_seconds', 'event',
-           'direction', 'axis', 'encoder_counts', 'raw_angle_degrees',
+           'direction', 'origin', 'source_ip', 'destination_ip', 'route', 'axis', 'encoder_counts', 'raw_angle_degrees',
            'source_node_hex', 'destination_node_hex', 'command_hex', 'payload_hex',
            'frame_hex', 'interpretation', 'message', 'details_json')
 
@@ -104,6 +104,7 @@ def export_recording(source, destination, selection='both', format='csv',
             elif packet:
                 raw = event.get('hex', '')
                 row.update(direction=event.get('direction', ''), frame_hex=raw)
+                row.update({key: event.get(key, '') for key in ('origin', 'source_ip', 'destination_ip', 'route')})
                 try:
                     frame = bytes.fromhex(raw)
                     if len(frame) < 6:

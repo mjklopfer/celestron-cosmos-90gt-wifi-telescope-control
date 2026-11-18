@@ -648,6 +648,32 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertEqual(app.encoder_stale_after(), 10)
         app.bridge = None
 
+    def test_direct_aux_log_decodes_outgoing_commands_without_received_traffic(self):
+        app = self.app
+        app.handle_motor_event({'event': 'motor_tx', 'command': 0x24, 'hex': '3b0420102400a8'})
+        app.handle_motor_event({'event': 'motor_reply', 'command': 1, 'hex': '3b0610200140000089'})
+        app.handle_motor_event({'event': 'motor_tx', 'command': 0xaa, 'hex': '3b032010aa23'})
+        text = app.console.get('1.0', 'end')
+        self.assertIn('SEND AUX  3b0420102400a8 (Control app', text)
+        self.assertIn('STOP', text)
+        self.assertNotIn('RECEIVE AUX', text)
+        self.assertNotIn('3b0610200140000089', text)
+        self.assertIn('Unknown command 0xAA', text)
+
+    def test_transfer_log_includes_local_bridge_packets_and_idle_timeout_only(self):
+        app = self.app
+        for direction, raw in [('local', '3b03201001cc'), ('client', '3b03201101cb')]:
+            app.handle_bridge_event({'event': 'bridge_packet', 'direction': direction,
+                                     'hex': raw, 'route': 'Route example', 'interpretation': 'Read position'})
+        app.handle_motor_event({'event': 'motor_idle_release', 'seconds': 10})
+        text = app.console.get('1.0', 'end')
+        self.assertIn('3b03201001cc', text)
+        self.assertNotIn('3b03201101cb', text)
+        self.assertIn('*** Idle Timeout ***', text)
+        bridge = app.bridge_console.get('1.0', 'end')
+        self.assertIn('3b03201001cc', bridge)
+        self.assertIn('3b03201101cb', bridge)
+
     def test_disconnected_polling_state_does_not_claim_checkbox_is_active(self):
         from unittest.mock import Mock
         app = self.app

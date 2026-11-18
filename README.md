@@ -763,3 +763,27 @@ connection alive)** to read encoders at the selected interval. Its status distin
 saved settings from an active session. Idle release still closes the connection;
 retained values then show **NOT LIVE — disconnected**. Choose Never before connecting
 only when persistent direct ownership is desired.
+
+
+The Transfer log shows this program's outgoing AUX queries/commands as raw hex
+followed by a known-command interpretation in parentheses, including encoder
+polling, plus operation status. Received motor replies update the readouts and are
+saved rather than displayed as outgoing actions. The Control Bridge log includes
+both this program's actions and forwarded external-app traffic, plus telescope
+replies. External packets and replies are not duplicated into the Transfer log. Unknown commands/payloads remain explicitly unknown or
+unverified. A decoded Stop request describes what was sent, not proof the mount
+stopped; use encoder feedback for that. Full received byte streams, including
+unmatched traffic, remain in the saved session log.
+
+
+The Transfer log also labels lifecycle events such as **Idle Timeout**, missing
+feedback, restored feedback and connection settings. Locally generated bridge
+queries, moves and Stop commands appear there; forwarded external packets do not.
+The Control Bridge log includes both, with source/destination IPs and labels for
+**This program**, **External client**, and **Telescope**. A telescope packet is
+marked forwarded only after a successful client socket write; otherwise it is
+shown as received by this program and not forwarded. These are network routes,
+not proof of which request caused a reply: AUX has no transaction IDs, and echoes
+can resemble requests. Origin/route fields are included in new CSV/JSON exports;
+older recordings without those fields retain blank values. IP metadata stays in
+local logs unless the user exports or shares it.

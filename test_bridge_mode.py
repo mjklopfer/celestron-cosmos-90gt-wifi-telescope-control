@@ -588,6 +588,20 @@ class LocalJogRecoveryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 b.jog(16, 1, 2, seconds)
 
+    def test_packet_routes_distinguish_local_client_and_return_destination(self):
+        b = self.b
+        b.report['upstream_local'] = ('192.0.2.10', 40000)
+        b.client_peer = ('192.0.2.20', 50000)
+        b.send_local(motor_packet(16, 1))
+        event, fields = b.event_queue.get_nowait()
+        self.assertEqual(event, 'bridge_packet')
+        self.assertEqual(fields['origin'], 'this_program')
+        self.assertEqual(fields['source_ip'], '192.0.2.10')
+        self.assertEqual(fields['destination_ip'], b.host)
+        self.assertEqual(b.packet_route('client')['source_ip'], '192.0.2.20')
+        self.assertEqual(b.packet_route('mount', b.client_peer)['destination_ip'], '192.0.2.20')
+        self.assertIn('not forwarded', b.packet_route('mount')['route'])
+
     def test_timeout_validation_and_effect(self):
         b = self.b
         for value in (0, 11, float('nan'), float('inf')):

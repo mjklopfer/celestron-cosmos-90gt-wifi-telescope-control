@@ -388,3 +388,16 @@ until the intentional release, explaining subsequently aged retained readings.
 UI now explicitly reports polling stopped when disconnected and reports applied
 polling/idle settings during a direct session. Retained readings say NOT LIVE —
 disconnected; a checked preference is not presented as an active connection.
+
+
+## Transfer log decoding and bridge Communications Log routing
+
+61 bridge, decoder, export and GUI tests passed after adding local-origin packet
+traces, IP route metadata, outgoing-only Transfer log filtering, lifecycle notices
+and decoded motor commands. Regression checks distinguish local/external/returned
+routes, ensure external packets remain in the bridge log but not Transfer log,
+and verify idle timeout notices and unknown-command handling. Five focused decoder
+and direct-motor checks also passed during development. Ruff, whitespace and final
+source/wheel build passed. The Communications Log heading is included in the build.
+No new physical commands were sent for verification, and the running GUI was not
+restarted by this change. New log behavior requires restarting the GUI.

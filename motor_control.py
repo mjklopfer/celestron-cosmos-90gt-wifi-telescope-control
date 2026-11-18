@@ -232,7 +232,7 @@ class MotorController:
             self.recorder.record('motor_rx', hex=data.hex())
             for frame in self.parser.feed(data):
                 if frame[2] == axis and frame[3] == 0x20 and frame[4] == command:
-                    self.emit('motor_reply', axis=axis, command=command,
+                    self.emit('motor_reply', axis=axis, command=command, hex=frame.hex(),
                               elapsed_seconds=time.monotonic() - requested_at, received_bytes=received_bytes)
                     return frame[5:-1]
         self.emit('motor_request_timeout', axis=axis, command=command,

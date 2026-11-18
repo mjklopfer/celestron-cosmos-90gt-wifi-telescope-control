@@ -50,3 +50,21 @@ a configured 10s idle release intentionally disconnected. The display now labels
 retained readings NOT LIVE — disconnected instead of implying a live feedback
 fault. Diagnostics cord-wrap is read-only; backlash editing remains under Motor
 control's Controller Angle / Backlash Settings, requiring exclusive ownership.
+
+
+## Log scope, AUX decoding and IP routes
+
+Transfer log is for this program's outgoing commands/queries and operation status,
+including polling, Stop, idle release, feedback retry/restoration and connection
+policy. It no longer duplicates external client/received bridge packets. Local
+bridge-generated commands are included. Raw AUX hex gains conservative decoded
+meaning; no unknown payload is assigned a guessed interpretation.
+
+Control Bridge now has a prominent Communications Log header. Its entries cover
+both external and local actions plus telescope traffic, with origin, source IP,
+destination IP and route metadata. Forwarded-return labels require a successful
+socket write; no client means not forwarded. AUX lacks transaction IDs, so these
+labels describe network routing, not causal matching of a reply to a requester.
+New CSV/JSON exports preserve the route fields, while old recordings remain usable.
+Packet forwarding precedes asynchronous logging/decoding. No new telescope queries
+or movement are added by the display changes. Local raw logs are not committed.
