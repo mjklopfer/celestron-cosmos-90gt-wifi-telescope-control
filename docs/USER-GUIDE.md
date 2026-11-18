@@ -282,7 +282,10 @@ jog buttons. The bridge can remain connected and forward external commands.
 Default **2 seconds**, allowed **1–10**; click **Apply timeout** to apply immediately.
 Longer values delay Stop after missing feedback. This changes only the bridge-local
 jog watchdog, not direct Motor control, polling intervals, or the two-second limit
-on a single jog. The applied value lasts for this GUI session.
+on a single jog. The applied value lasts for this GUI session. If local jogging
+is OFF, clicking Apply timeout displays an OK acknowledgment explaining that the
+value takes effect the next time local jogging through bridge is enabled; applying
+a timeout does not enable jogging or start movement.
 
 When both axes provide readings less than one second old consistently across a
 one-second window, local jog buttons unlock automatically. Both axes must provide

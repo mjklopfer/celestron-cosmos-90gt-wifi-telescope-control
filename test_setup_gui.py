@@ -619,7 +619,7 @@ class BridgeGuiTests(unittest.TestCase):
         app.bridge = None
 
     def test_bridge_restart_button_and_timeout_controls(self):
-        from unittest.mock import Mock
+        from unittest.mock import Mock, patch
         app = self.app
         app.update_controls()
         self.assertEqual(str(app.bridge_reset_button['state']), 'disabled')
@@ -634,7 +634,10 @@ class BridgeGuiTests(unittest.TestCase):
         app.bridge.restart_local_jog.assert_called_once()
         self.assertEqual(str(app.bridge_reset_button['state']), 'disabled')
         app.bridge_feedback_timeout.set('5')
-        app.apply_bridge_feedback_timeout()
+        with patch('skyqlink_setup.messagebox.showinfo') as notice:
+            app.apply_bridge_feedback_timeout()
+        notice.assert_called_once()
+        self.assertIn('next time you enable', notice.call_args.args[1])
         app.bridge.configure_local_feedback.assert_called_once_with(5.0)
         self.assertEqual(app.bridge_feedback_applied, 5)
         app.bridge_feedback_timeout.set('nan')

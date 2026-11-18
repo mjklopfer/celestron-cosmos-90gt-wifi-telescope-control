@@ -599,6 +599,11 @@ class SetupApp(ttk.Frame):
             self.bridge_feedback_applied = value
             self.bridge_feedback_timeout.set(f'{value:g}')
             self.bridge_jog_note.set(f'Bridge local-jog feedback timeout applied: {value:g} seconds.')
+            if not self.bridge_jog_requested.get():
+                messagebox.showinfo('Feedback timeout saved',
+                    f'Local jogging through bridge is OFF. The {value:g}-second feedback timeout '
+                    'will take effect the next time you enable local jogging through bridge. '
+                    'This does not enable jogging or start movement.', parent=self.root)
         except (ValueError, TypeError) as error:
             self.bridge_jog_note.set(f'Timeout not applied: {error}')
 
