@@ -53,6 +53,17 @@ The target hardware is the original WiFly **Wi-Fi** interface, not a Bluetooth
 not established. Bridge mode instead presents selected later-generation-style
 behavior to control applications while communicating with the original module.
 
+## Legacy interface example: Control Bridge enabled
+
+The screenshot below shows the legacy COSMOS 90GT interface with **Control Bridge
+ON** in infrastructure Wi-Fi mode. The green Control Bridge indicator shows that
+the bridge is running; the yellow Motor control indicator identifies control
+through the bridge. This captures the interface before the major application
+refresh. The displayed IP address is an example from that session; use your own
+network addresses when configuring the application.
+
+![Legacy telescope application with Control Bridge enabled in infrastructure Wi-Fi mode](docs/screenshots/legacy-control-bridge-enabled.png)
+
 ## Supported telescope and Wi-Fi hardware
 
 This project targets the **Celestron COSMOS 90GT Wi-Fi telescope (model 22094)**
