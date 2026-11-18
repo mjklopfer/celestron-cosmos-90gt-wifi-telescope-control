@@ -404,14 +404,19 @@ SkySafari, SkyPortal or CPWI. Check the telescope destination, computer listenin
 IP and physical network joins. A telescope power-cycle may be needed after a lost
 connection; it is not a guaranteed cure.
 
-Idle encoder polling tolerates isolated missing replies. Three consecutive missed
-polls for either axis close the bridge; TCP failure still fails immediately.
-This change is mock-tested and awaits further hardware endurance testing. Earlier
-hardware sessions showed intermittent idle reply delays; connection reliability
-must not be inferred from one successful session. The bridge does not inject
-position polls while a control client owns the connection. Client loss or 15
-seconds without incoming client traffic triggers Stop attempts. Stop delivery
-cannot be guaranteed after transport/power loss; inspect the readback and mount.
+Control Bridge has no control-client or management-client inactivity cutoff.
+Optional keep-alive and motor-position polling share one scheduler; both default
+OFF and can be configured under Control Bridge. Local jogging uses the same
+scheduler for required safety feedback. Incoming replies and pending external
+queries are reused to avoid duplicate bridge-generated reads.
+
+Missing optional replies are logged as gaps rather than closing the bridge after
+three misses. A transport failure can still end the connection. Client disconnect
+attempts Stop and leaves the bridge waiting for reconnection. Active local jogging
+also attempts Stop if feedback is stale. Stop delivery cannot be guaranteed after
+transport/power loss; inspect the readback and mount. Switching away from SkySafari
+was observed to close its socket; a bridge heartbeat cannot prevent that. Reliability
+and uninterrupted tracking must not be inferred from one successful session.
 
 ## Logs and private configuration
 
@@ -679,7 +684,7 @@ idle. Idle release applies only to the direct Motor control connection; local-jo
 duration and feedback safeguards remain separate.
 
 
-While Control Bridge runs, Motor control offers independent **Record motor positions**
+The **Control Bridge** tab offers **Poll and record motor positions**
 (0.2–300 seconds; default 1, subsecond experimental) and optional **Keep connection alive (heartbeat)** (1–300 seconds; default 5). Both start OFF and are configured on Control Bridge. One scheduler reuses incoming replies and handles both options, including when no control app is connected. Local jogging shares it for required safety feedback; turn local jogging OFF when using only your external app.
 See the [user guide](docs/USER-GUIDE.md#record-motor-positions-and-optional-idle-heartbeat)
 and [CLI reference](docs/RUNTIME-OPTIONS.md#optional-bridge-background-reads-cli-and-gui).

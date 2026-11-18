@@ -294,10 +294,13 @@ Ethernet plus SkyQLink Wi-Fi has earlier hardware evidence; two-Wi-Fi, hosted-ho
 and direct-Ethernet arrangements are described options, not newly tested setups.
 
 
-ON reserves the telescope connection and locks the other tabs. OFF attempts Stop
+ON reserves the telescope connection and disables Diagnostics and Wi-Fi provisioning.
+Motor control remains available for optional mediated local jogging; its controller
+settings are unavailable while the bridge owns the connection. OFF attempts Stop
 on both motors and closes the bridge; consult acknowledgements in the log.
-Reported motor positions are observed from the control application's traffic;
-the bridge does not insert extra position queries while a client is connected.
+Reported positions use incoming replies. Optional polling and keep-alive controls
+on Control Bridge can request missing samples, and local jogging requires safety
+feedback through the same scheduler. See [recording and polling controls](#record-motor-positions-and-optional-idle-heartbeat).
 
 SkySafari use has been tested in documented configurations. This is selected
 discovery/management emulation, not a full modern-module replacement. Compatibility
@@ -655,7 +658,10 @@ Both controls apply with or without a connected control application. There is no
 separate automatic one-second polling loop or three-missed-polls bridge shutdown.
 Both unchecked means no optional position queries; received replies are still
 logged. Startup still verifies both motor controllers before declaring the bridge
-ready. Discovery broadcasts are separate from motor polling.
+ready. Discovery broadcasts are separate from motor polling. If no control app is
+requesting positions and all polling/jogging options are OFF, the last readback
+will age and show STALE. That is expected: it means no recent measurement, not
+proof of a disconnected transport. Enable position polling for current readbacks.
 
 **Local jogging safety exception:** enabling local jogging in Motor control requires
 fresh encoder feedback at a 0.4-second interval, even between jogs so the buttons

@@ -49,8 +49,9 @@ Release preparation: 2026-11-15.
   on macOS. Both a shared infrastructure LAN and Wi-Fi-to-telescope plus Ethernet-
   to-phone-LAN topology were verified. Exact phone app editions/versions were not
   recorded. An additional SkySafari application was reported working.
-- Real hardware showed occasional idle encoder delays. The new three-miss policy
-  is covered by loopback integration tests; live endurance validation remains due.
+- Real hardware showed occasional idle encoder delays. The then-current three-miss
+  policy was covered by loopback tests; it was subsequently removed by the unified
+  scheduler on November 18. See the latest validation section below.
 - Windows/Linux CI validates software without a real telescope. Hardware tests
   and a native Windows application build remain separate follow-up work.
 
@@ -194,3 +195,40 @@ reduces duplicate reads but its live timing/stability remains to be verified.
 Pending: restart for visual user review, live foreground/background comparisons,
 measured end-to-end latency, sustained subsecond sampling, and simultaneous external
 AUX-controller tests. No physical motion was commanded by the agent in this change.
+
+
+## Restart, documentation audit and live read-only check — 2026-11-18
+
+The previous GUI closed normally and the committed unified-scheduler version
+reopened successfully on Windows. Control Bridge started at 08:56:09 UTC; both
+motor controllers returned position and firmware 5.24. With both optional controls
+OFF and local jogging OFF, no recurring queries were logged for approximately
+38 seconds after readiness. Enabling five-second keep-alive produced three query
+pairs with measured spacings approximately 5.07 seconds. Both axes replied.
+
+Enabling one-second recording while keeping heartbeat ON produced 82 readings per
+axis over a 91.2-second observation. No extra keep-alive query pairs were injected
+during recording, and no bridge errors or missing-sample messages occurred. Actual
+sample intervals exceeded one second slightly, as documented for best-effort timing.
+This was a stationary, no-control-client test, not a SkySafari endurance benchmark.
+Local jogging stayed OFF; no movement commands were used for the check.
+
+The actual GUI showed the controls and instructions on Control Bridge. Its export
+dialog populated the available date/time bounds with UTC offsets. GUI CSV export
+saved 133 records plus a metadata row; independent parsing verified packet,
+position and status records and the timestamp_local_iso8601 header/offset values.
+Private captures and the exported CSV remain local, outside the repository.
+
+Corrected stale current-behavior text in README, USER-GUIDE, BRIDGE-MODE and the
+engineering history: removed claims of a 15-second bridge idle cutoff, automatic
+three-missed-polls shutdown, blanket Motor control lockout and no injected reads
+with a connected client. Historical observations remain explicitly dated; the
+separate ESP32 simulator's documented timeout remains its own behavior.
+
+The same application code passed the full 173-test suite (172 pass, one macOS-only
+skip) immediately before this documentation audit. Lint and whitespace checks
+passed again. Package builds include the updated documentation. Left the GUI and
+bridge running with one-second recording ON, heartbeat OFF and local jogging OFF.
+Still pending: SkySafari foreground/background comparison, measured relay latency,
+long-duration stability, subsecond hardware load and independent external AUX
+motion capture. These checks do not establish all-platform hardware compatibility.

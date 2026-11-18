@@ -118,8 +118,9 @@ observed sequence, not a required authentication handshake or a universal sequen
 for every control application. No TCP 3000 management requests were logged in the
 reviewed interval.
 
-Historical bridge timers in the captured build (the inactivity cutoffs below
-were removed on November 18; see the update below):
+Historical bridge timers in the captured build (the client inactivity cutoffs and
+fixed no-client polling/shutdown described below were removed on November 18;
+these bullets describe the old capture, not current behavior):
 
 - Control-client inactivity: 15 seconds without incoming client data closes that
   client and attempts Stop. Position requests count as activity. Mount replies
@@ -215,3 +216,21 @@ These observations were recorded from the old running bridge without injecting
 commands or restarting it. The decoder's maximum-rate labels still require a
 follow-up change; this note preserves the stronger evidence without claiming that
 new controls or physical validation have already been added.
+
+
+## Current polling behavior and app-switch observation (November 18)
+
+Commit 5614b48 consolidates all bridge-generated position reads into one
+nonblocking scheduler. Keep-alive and motor-position polling are configured on
+Control Bridge, OFF by default. Local jogging shares the scheduler for required
+0.4-second feedback; incoming replies and pending external position requests are
+reused. There is no longer a hidden one-second no-client loop or three-miss idle
+shutdown. See the user guide for intervals, missing samples and safety behavior.
+
+The subsequent capture recorded control-client TCP EOF after approximately 122,
+40 and 106 seconds, with reconnection and continued bridge operation. The user
+reported switching away from SkySafari disconnects it. This is consistent with
+phone-app lifecycle behavior, but does not isolate SkySafari from iOS as the cause.
+It does not establish a universal fixed idle timeout. Keep-alive cannot prevent
+an app from closing its socket. The bridge attempts Stop on client disconnect;
+tracking continuity and alignment must be checked after reconnection.

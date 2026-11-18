@@ -9,9 +9,14 @@ required and must be on the phone's network, not the telescope-facing network.
 
 Verified configurations include one infrastructure LAN and Ethernet plus direct
 SkyQLink Wi-Fi. SkySafari is a tested control application, not the exclusive client.
-Successful sessions do not establish long-duration reliability. Isolated idle
-reply delays now retry; repeated missing replies still fail closed. This retry
-change needs further live endurance verification.
+Successful sessions do not establish long-duration reliability. Control Bridge has
+no inactivity cutoff. Optional keep-alive and position polling share one scheduler
+and default OFF; configure them on Control Bridge. Missing optional replies are
+logged as gaps, not a three-miss shutdown. Local-jog feedback safety remains active
+when local jogging is enabled. Client disconnect attempts Stop and waits for a new
+client; a transport failure can still close the bridge. See the
+[user guide](docs/USER-GUIDE.md#record-motor-positions-and-optional-idle-heartbeat)
+for intervals, controls, recording/export and limitations.
 
 The proxy emulates selected later-generation Celestron module discovery and
 limited management behavior, then forwards native AUX traffic to the original
