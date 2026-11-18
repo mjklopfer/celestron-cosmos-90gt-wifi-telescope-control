@@ -672,3 +672,8 @@ unknown. See the [user-guide appendix](docs/USER-GUIDE.md#technical-appendix-int
 for captured SkySafari command findings, including commands without GUI controls.
 [Local jogging through the bridge](docs/USER-GUIDE.md#local-jogging-while-control-bridge-is-on-experimental)
 is OFF by default and experimental; supervised live coexistence testing is pending.
+
+
+Control Bridge does not disconnect control or management clients because they are
+idle. Idle release applies only to the direct Motor control connection; local-jog
+duration and feedback safeguards remain separate.

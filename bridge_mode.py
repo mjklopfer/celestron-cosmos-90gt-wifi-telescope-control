@@ -323,7 +323,6 @@ class Bridge:
                       **{k: self.report[k] for k in ('bind_host', 'listen_port', 'management_port', 'upstream_local')})
             missed_polls = {axis: 0 for axis in AXES}
             next_poll = next_advert = 0
-            last_client = last_manager = time.monotonic()
             manager_buffer = bytearray()
             while not self.stopping.is_set():
                 now = time.monotonic()
@@ -361,14 +360,12 @@ class Bridge:
                                 self.emit('bridge_status', message='Rejected a second motor-control client')
                             else:
                                 self.client = connection
-                                last_client = time.monotonic()
                                 self.report['clients'].append(peer[0])
                                 self.emit('bridge_client', message=f'Client {peer[0]} connected; AUX traffic forwarding')
                         elif self.manager is not None:
                             connection.close()
                         else:
                             self.manager = connection
-                            last_manager = time.monotonic()
                             manager_buffer.clear()
                     elif source is self.upstream:
                         raw = source.recv(4096)
@@ -390,7 +387,6 @@ class Bridge:
                             self.close_client()
                         else:
                             self.forward_client(raw)
-                            last_client = time.monotonic()
                     elif source is self.manager:
                         try:
                             raw = source.recv(4096)
@@ -399,7 +395,6 @@ class Bridge:
                             manager_buffer.extend(raw)
                             if len(manager_buffer) > 4096:
                                 raise ConnectionError('Management command too long')
-                            last_manager = time.monotonic()
                             while b'\n' in manager_buffer:
                                 line, _, manager_buffer = manager_buffer.partition(b'\n')
                                 command = line.decode('ascii', 'replace').strip()
@@ -413,11 +408,9 @@ class Bridge:
                         except OSError:
                             source.close()
                             self.manager = None
-                if self.client and time.monotonic() - last_client > 15:
-                    self.close_client('no incoming control-app data for 15 seconds')
-                if self.manager and time.monotonic() - last_manager > 10:
-                    self.manager.close()
-                    self.manager = None
+                # The bridge has no client/management inactivity lease. A quiet
+                # controller may retain its connection indefinitely. Direct motor
+                # idle release and local-jog feedback/deadline guards are separate.
         except Exception as error:
             message = str(error)
             if isinstance(error, (BrokenPipeError, ConnectionResetError, ConnectionRefusedError)):

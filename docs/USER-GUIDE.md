@@ -595,10 +595,11 @@ It also records the absence of recognized encoder-reset/time/location writes in
 the reviewed capture, without claiming those features cannot exist.
 
 
-The bridge disconnects a control application after **15 seconds without incoming
-commands**, attempts Stop, and waits for reconnection; ordinary position requests
-keep it active. Its management socket has a separate 10-second inactivity limit.
-These are bridge timers, not a confirmed WiFly timeout. Startup accessory probes
+**Control Bridge has no inactivity cutoff**, for either the control connection or
+management connection. Quiet clients remain connected. The idle-release preference
+applies only to the direct Motor control connection. Explicit disconnects, socket
+failures, and bounded local-jog/feedback safeguards remain in effect. The former
+15-second control and 10-second management cutoffs were removed on November 18. Startup accessory probes
 can also delay connection: the observed SkySafari sequence spent about 36 seconds
 retrying nonresponding accessories. See the observation record for startup order,
 shutdown handling and evidence limits.

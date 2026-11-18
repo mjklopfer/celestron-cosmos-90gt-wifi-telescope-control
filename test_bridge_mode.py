@@ -127,6 +127,28 @@ class BridgeTests(unittest.TestCase):
             time.sleep(.01)
         self.assertTrue(any(f[4:6] == b'\x24\x00' for f in self.frames))
 
+    def test_quiet_control_and_management_connections_survive_former_cutoffs(self):
+        with self.connect(self.bridge.listen_port) as client, self.connect(self.bridge.management_port) as manager:
+            self.wait('bridge_client')
+            time.sleep(.2)  # Finish any startup poll before the quiet interval.
+            stops_before = len(self.bridge.report['stop_attempts'])
+            time.sleep(16)  # Beyond both removed 15s/10s cutoffs; loopback only.
+            self.assertIsNotNone(self.bridge.client)
+            self.assertIsNotNone(self.bridge.manager)
+            self.assertEqual(len(self.bridge.report['stop_attempts']), stops_before)
+            manager.settimeout(2)
+            manager.sendall(b'version\n')
+            self.assertIn(b'AMW007', manager.recv(4096))
+            client.settimeout(2)
+            client.sendall(motor_packet(16, 1))
+            parser = FrameParser()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if any(f[2:5] == b'\x10\x20\x01' for f in parser.feed(client.recv(4096))):
+                    break
+            else:
+                self.fail('No position reply after quiet interval')
+
     def test_single_idle_timeout_keeps_bridge_alive_and_recovers(self):
         self.drop_positions = 1
         event = self.wait('bridge_status', timeout=5)

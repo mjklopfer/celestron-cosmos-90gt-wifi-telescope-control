@@ -126,3 +126,12 @@ Live evidence covers external SkySafari traffic on the previously running build,
 not the new local-jog mediation. Live joint jogging, new Pi/macOS UI review and
 alignment preservation remain unverified. See the
 [observation record](engineering/2026-11-17-skysafari-aux-observations.md).
+
+
+## Bridge inactivity removal — 2026-11-18
+
+All 18 loopback bridge tests passed, including a 16-second quiet interval for
+both control and management sockets, subsequent successful requests, and no
+inactivity-triggered Stop. Ruff and whitespace checks passed. Direct Motor control
+idle release was not modified. Live app restart remains pending; the existing
+process retains its old timeout behavior until restarted.

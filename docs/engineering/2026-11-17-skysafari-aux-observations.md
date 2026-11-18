@@ -118,7 +118,8 @@ observed sequence, not a required authentication handshake or a universal sequen
 for every control application. No TCP 3000 management requests were logged in the
 reviewed interval.
 
-Bridge timers are separate from SkySafari and WiFly firmware behavior:
+Historical bridge timers in the captured build (the inactivity cutoffs below
+were removed on November 18; see the update below):
 
 - Control-client inactivity: 15 seconds without incoming client data closes that
   client and attempts Stop. Position requests count as activity. Mount replies
@@ -136,7 +137,8 @@ Bridge timers are separate from SkySafari and WiFly firmware behavior:
 
 The older running build logged client disconnects without a reason, so its trace
 cannot distinguish a user disconnect, socket error and bridge inactivity expiry.
-The updated build identifies 15-second inactivity explicitly. This capture does
+Commit bab0a0a added an explicit inactivity reason; the subsequent November 18
+change removes the inactivity cutoffs entirely. This capture does
 not establish SkySafari's complete internal timeout policy, a special AUX logout
 command, or a natural 30-second WiFly inactivity timeout. Do not conflate the GUI's
 direct-motor idle-release preference with these bridge timers.
@@ -170,3 +172,46 @@ hibernation or alignment selection. Do not treat software slew limits as physica
 stops. Next useful passive test: change one named maximum-rate setting to a second
 recorded value, then compare outgoing writes and subsequent reads; likewise toggle
 the enable switch separately. No new write controls are added by this research.
+
+
+## November 18: remove bridge inactivity cutoffs
+
+The user requires a bridge that does not release quiet clients. Removed both the
+15-second control-client cutoff and the 10-second management-client cutoff; no
+replacement idle limit is enabled. Direct Motor control retains its idle-release
+setting. Explicit socket closure/error, bridge OFF, missing-feedback handling and
+bounded local-jog guards are unchanged. This is transport inactivity policy, not
+permission to continue an unsafe local jog. The old capture contains two closes
+15.001/15.031 seconds after the last client packet, consistent with the former
+cutoff. Other closes occurred within fractions of a second of client commands and
+motor replies; removing inactivity expiry does not explain or fix those cases.
+The running old process must be restarted to acquire this change.
+
+
+## Subsequent user-correlated tests, November 18 00:02–00:10 Pacific
+
+- Maximum rate: at 00:03:17, 0x22 changed to 01 on both axes and 0x20 wrote
+  08 DF (2271). The user confirmed the UI showed approximately 2.27 degrees/s.
+  This corroborates the 0.001 degrees/s scale for the rate write, superseding
+  the earlier single-value uncertainty. Subsequent 0x21 readback was 08 DF 0C B2:
+  the first word tracks the changed setting, while the second remains 3250.
+  Do not label these two fields as the two axes; their exact roles remain open.
+  Physical speed enforcement and persistence across power cycling remain untested.
+- Backlash: at 00:06:42, positive and negative writes changed to 15 hex (21)
+  for azimuth and 1C hex (28) for elevation, with replies.
+- Tracking Off: that same batch ended with 0x06 and three zero bytes on each
+  axis. At 00:10:21, the user-reported Off-to-Sidereal change produced nonzero
+  0x06 rates: azimuth 00 38 E2 (14562), elevation 00 15 87 (5511), both replied.
+  These are per-axis rate values, not Sidereal mode identifiers. Separate solar
+  and lunar mappings were not established by rapid menu cycling.
+- SkyAlign/Manual Align changes: two batches at 00:04:27 and 00:04:33 carried
+  identical ordinary settings; no distinct alignment-selection or encoder-reset
+  command was observed. Possible app-local handling remains an inference.
+- Hibernate OFF: ordinary settings were resent without a distinct Hibernate
+  command. A later reconnect repeated full accessory probes whereas one preceding
+  connection skipped them; one comparison does not establish causation.
+
+These observations were recorded from the old running bridge without injecting
+commands or restarting it. The decoder's maximum-rate labels still require a
+follow-up change; this note preserves the stronger evidence without claiming that
+new controls or physical validation have already been added.
