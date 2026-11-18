@@ -1209,7 +1209,7 @@ class SetupApp(ttk.Frame):
         """Create bridge controls, interface selection and relay status readbacks."""
         tab = self.bridge_tab
         tab.columnconfigure(0, weight=1)
-        ttk.Label(tab, text='This feature allows your local computer to create a proxy link between the SkyQLink telescope and control software that uses modern Celestron Wi-Fi connections. It relays telescope commands and replies for one controlling application at a time. Alignment and tracking calculations remain the responsibility of the control software.', wraplength=820).grid(row=0, sticky='w', pady=(0, 8))
+        ttk.Label(tab, text='This feature allows your local computer to create a proxy link between the SkyQLink telescope and control software that uses modern Celestron Wi-Fi connectivity/protocol. It relays telescope commands and replies for one controlling application at a time. Alignment and tracking calculations remain the responsibility of the control software.', wraplength=820).grid(row=0, sticky='w', pady=(0, 8))
         self.bridge_switch = BridgeRocker(tab, variable=self.bridge_enabled, command=self.toggle_bridge)
         self.bridge_switch.grid(row=1, sticky='nw')
         self.bridge_requirement = tk.StringVar()
@@ -1262,16 +1262,17 @@ class SetupApp(ttk.Frame):
         self.interface_refresh_button.pack(anchor='w', pady=4)
         self.copy_button(inventory, lambda: self.table_output(self.interface_table), 'Copy network adapter table').pack(anchor='w')
         ttk.Label(inventory, textvariable=self.bridge_endpoint, wraplength=800).pack(anchor='w')
-        ttk.Label(tab, text='Connect your control application on this computer or another device:\n'
-                  '1. Connect this computer to the telescope’s network. At the top of this window, enter or discover the Telescope Wi-Fi Interface IP address. For a telescope on a separate direct/ad hoc link, follow Two Interface Mode above.\n'
+        self.bridge_setup_template = ('Connect your control application on this computer or another device:\n'
+                  '1. {network_step}\n'
                   '2. Choose where your control application runs (e.g., SkySafari, CPWI, KStars/INDI, etc.):\n'
                   '   • On THIS computer: use the bridge address displayed after startup. No second computer is needed. For local-only access, enter 127.0.0.1 in the bridge IP box before startup, then use 127.0.0.1 in your control application.\n'
                   '   • On ANOTHER computer, tablet or phone: connect that device and this computer to the same shared LAN segment. Select this computer’s adapter on that LAN in Local System Network Interfaces, or type that adapter’s IPv4 address in the bridge IP box. Do not enter the other device’s IP. The network must allow devices to communicate.\n'
                   '3. Switch Control Bridge ON here, in this window. Wait for Bridge ON and the address/port readback. This computer now relays between the control application and the telescope; no bridge needs to run on the other device.\n'
                   '4. In your control application, select its compatible Celestron Wi-Fi/AUX network connection and enter the displayed bridge IP address and TCP port (normally 2000). Do not use the telescope’s IP for this bridge connection. Use localhost only when this bridge listens on 127.0.0.1 AND the control application runs on this same computer. The tested SkySafari configuration uses Celestron WiFi and Access Point mode; other applications use their own connection menus.\n'
                   'While Control Bridge is ON, Diagnostics and Wi-Fi provisioning are disabled. Motor control remains available for optional local jogging; external commands have priority. Switching it OFF attempts Stop on both motors and closes the connection; check the Transfer log for replies. The connected control application can move the telescope.\n'
-                  'This application relays telescope traffic, not general LAN traffic or Internet sharing. Compatibility and long-duration operation depend on the control application and network; see the documented validation results.',
-                  wraplength=820).grid(row=7, sticky='w', pady=8)
+                  'This application relays telescope traffic, not general LAN traffic or Internet sharing. Compatibility and long-duration operation depend on the control application and network; see the documented validation results.')
+        self.bridge_setup_steps = tk.StringVar()
+        ttk.Label(tab, textvariable=self.bridge_setup_steps, wraplength=820).grid(row=7, sticky='w', pady=8)
         self.bridge_firewall_label = ttk.Label(tab, foreground='#b36b00', wraplength=820,
                   text='FIREWALL / LOCAL NETWORK: allow this Python application incoming TCP 2000 and 3000 '
                   'from your local network, and outgoing UDP broadcasts to port 55555. '
@@ -1718,6 +1719,11 @@ class SetupApp(ttk.Frame):
             if separate_network else
             'Shared infrastructure network: the telescope, this computer and your control device are connected to the same local network. You may leave this field blank: the program automatically uses this computer’s network adapter used to reach the telescope. To choose explicitly, select that adapter in the table below or enter its IPv4 address. Enter this computer’s address, not the telescope’s address or a MAC address.')
         direct_mode = self.connection_mode.get() == 'direct'
+        network_step = (
+            'Direct / ad hoc: connect this computer’s telescope-facing Wi-Fi adapter to the telescope’s SkyQLink network. Use 1.2.3.4, port 2000, at the top of this window. For a control application on another device, use Two Interface Mode and a second adapter on the shared control-device LAN, as explained above.'
+            if direct_mode else
+            'Infrastructure: connect this computer to the access point/LAN shared with the telescope. If the control application runs on another computer, tablet or phone, connect that device to the same shared LAN. If it runs on this computer, no separate control device is needed. Enter or discover the telescope’s assigned IP address at the top of this window. For deliberately separate networks, follow Two Interface Mode above.')
+        self.bridge_setup_steps.set(self.bridge_setup_template.format(network_step=network_step))
         self.bridge_direct_help.configure(
             text=('Direct/ad hoc: check the Two Interface Mode checkbox. One Wi-Fi adapter connects to SkyQLink; choose a second connection below for a control device on another network.' if direct_mode else
                   'Shared Infrastructure: one adapter normally connects this computer, telescope and control device through the same network. Leave the Two Interface Mode checkbox unchecked. Use the options below only when deliberately bridging separate networks.'),
@@ -1765,7 +1771,7 @@ class SetupApp(ttk.Frame):
         elif self.bridge_dual.get():
             notice = 'Two Interface Mode: select this computer’s IPv4 address on the astronomy app’s network, then switch Control Bridge ON.'
         else:
-            notice = 'Connect this computer to the telescope network, then switch Control Bridge ON here. Your control app can run here or on another device on the shared LAN; see the steps below.'
+            notice = 'Infrastructure: connect this computer to the LAN shared with the telescope and any separate device running your control app. Then switch Control Bridge ON here; see the steps below.'
         self.bridge_requirement.set(notice)
         self.bridge_switch.configure(state='normal' if self.bridge is not None or (not locked and bridge_allowed) else 'disabled')
         self.bridge_bind_entry.configure(state='disabled' if locked else 'normal')

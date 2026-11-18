@@ -203,7 +203,7 @@ afterward. A missing or different-endpoint profile cannot supply a reliable esti
 
 This feature allows your local computer to create a proxy link between the
 SkyQLink telescope and control software that uses modern Celestron Wi-Fi
-connections. It relays commands and replies for one control application at a
+connectivity/protocol. It relays commands and replies for one control application at a
 time. The control application remains responsible for alignment and tracking.
 
 There are two different addresses:
@@ -213,8 +213,17 @@ There are two different addresses:
 | Telescope Wi-Fi interface IP address, at the top | The SkyQLink module that this computer connects to |
 | This computer’s IP on the control-device network | The local adapter address on the network used by your astronomy app; not a MAC address or the telescope’s IP |
 
-First connect this computer to the telescope network and enter/discover the
-Telescope Wi-Fi Interface IP address at the top of the window. Then choose where
+The first on-screen connection step follows the selected mode:
+
+- **Direct / ad hoc:** join the telescope's SkyQLink network with this computer's
+  telescope-facing Wi-Fi adapter; use `1.2.3.4:2000`. Follow Two Interface Mode for
+  a control device on a separate shared LAN.
+- **Infrastructure:** join the access point/LAN shared with the telescope. If your
+  control application runs on another computer, tablet or phone, put that device
+  on the same shared LAN. No separate control device is needed when the control
+  application runs here. Enter/discover the telescope's assigned IP at the top.
+
+Then choose where
 your control application runs (e.g., SkySafari, CPWI, KStars/INDI, etc.):
 
 - **On this computer:** no other computer is needed. Use the bridge address shown
