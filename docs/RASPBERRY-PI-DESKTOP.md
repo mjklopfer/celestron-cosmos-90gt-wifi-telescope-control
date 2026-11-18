@@ -12,6 +12,8 @@ were present. The desktop app launched successfully; shortcut display actions
 and the Desktop Start Here guide were refreshed. No new live telescope/GoTo
 validation is implied. See [validation](VALIDATION.md).
 
+Existing installations may keep their older checkout directory; use that actual path when updating. New installs below use `celestron-telescope-network-control`. The shortcut installer detects its checkout location automatically.
+
 ## Recorded environment
 
 Validation date: November 16, 2026. Application baseline: `d0b92c9`.
@@ -144,14 +146,14 @@ For a fresh checkout:
 
 ```sh
 cd ~
-git clone https://github.com/mjklopfer/celestron-telescope-network-control.git celestron-cosmos-90gt-wifi-telescope-control
-cd celestron-cosmos-90gt-wifi-telescope-control
+git clone https://github.com/mjklopfer/celestron-telescope-network-control.git
+cd celestron-telescope-network-control
 ```
 
 For an existing checkout with no conflicting local changes:
 
 ```sh
-cd ~/celestron-cosmos-90gt-wifi-telescope-control
+cd ~/celestron-telescope-network-control
 git checkout main
 git pull --ff-only origin main
 ```
@@ -211,8 +213,8 @@ Version=1.0
 Type=Application
 Name=Celestron Cosmos 90GT
 Comment=Telescope Wi-Fi control with View menu zoom
-Exec="$HOME/celestron-cosmos-90gt-wifi-telescope-control/.venv312/bin/python" -m skyqlink_setup --zoom-controls --ui-scale 0.8
-Path=$HOME/celestron-cosmos-90gt-wifi-telescope-control
+Exec="$HOME/celestron-telescope-network-control/.venv312/bin/python" -m skyqlink_setup --zoom-controls --ui-scale 0.8
+Path=$HOME/celestron-telescope-network-control
 Icon=applications-science
 Terminal=false
 Categories=Education;Astronomy;

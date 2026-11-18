@@ -19,7 +19,7 @@ rediscover after network changes. A web portal is not assumed for all modules.
 
 Celestron Telescope Network Control controls telescopes over Wi-Fi (WiFi),
 through direct/ad hoc or infrastructure networks. Its specialized legacy
-support covers the Celestron COSMOS 90GT with the V1 WiFly / SkyQLink RN-171
+support covers the Celestron COSMOS 90GT WiFi Telescope with the V1 WiFly / SkyQLink RN-171
 module. The existing package and command names remain compatible.
 
 | Selected interface | Motor control | Control Bridge | Provisioning and diagnostics |
@@ -116,8 +116,7 @@ does not expose motion or settings writes.
 
 ### Modern polling controls in Diagnostics
 
-For the modern Celestron profile, Diagnostics → Direct motor connection: polling
-and recording edits the same polling enable/interval values used by Motor control.
+For the modern Celestron profile, Diagnostics → Motor polling / keep-alive and recording edits the same polling enable/interval values used by Motor control.
 Motor control shows the configured values while disconnected and the applied
 values during a connection. Disconnect, edit, then reconnect to apply changes;
 the fields are disabled during a connection. No additional socket or scheduler is
@@ -232,10 +231,26 @@ Reference: https://celestron-site-support-files.s3.amazonaws.com/support_files/9
 Validation: eight mocked backend tests and two focused GUI tests pass; lint passes.
 ESP32 compilation, upload, actual configuration/network recovery and commercial
 module interoperability remain unverified. No credentials or live configuration
-were sent during implementation. The running desktop app must be relaunched to
-show these additions. The portal remains an alternative, not a prerequisite for command-based configuration.
+were sent during implementation. The portal remains an alternative, not a prerequisite for command-based configuration.
 
 
 Approach controls in both physical-module profiles are labelled Azimuth (RA/E–W) and Elevation (Dec/N–S), with Default / Reversed choices. Provisional UI convention: Default = positive (0), Reversed = negative (1). This does not assert a factory default or verified SkySafari mapping; raw interpretation remains visible in readback and confirmation. Manual jog mapping is unchanged.
 
-**Module & Profile Selected** means the target and communication profile have been applied; it is not a connection indicator. The text below directs you to Connect Motors or, for SkyQLink, Control Bridge ON. Inside Local reference, a separate indicator shows Disconnected, Connected -- Link Unconfirmed or Connected -- Link Confirmed. The Disconnect / Connect switch highlights disconnected red and verified connected green, with a matching status light. Connect stays unselected until motor feedback confirms success; connection/recovery is amber. Disconnect becomes available when connected; Cancel is available during connection/recovery.
+**Module & Profile Selected** applies the target and profile; it does not connect.
+Use Connect Motors or, for SkyQLink, Control Bridge ON. The indicator beside the
+profile dropdown reflects fresh feedback (green), unconfirmed/retained state
+(orange), or disconnected/failure (red). Motor release retains orange without a
+live socket. There is no top connection switch. Local reference has ordinary
+Connect Motors and Disconnect buttons for the same direct motor session.
+
+Modern-module Diagnostics contains the shared latest-position readout and motor
+polling/keep-alive controls. No additional socket or polling loop is created.
+The legacy bridge retains its own controls on Control Bridge. Proxy mode remains
+read-only. See the user guide for application and idle-release behavior.
+
+Bridge link confirmation uses incoming valid telescope AUX traffic, including
+encoder replies, independently of the per-axis jogging safety checks. With
+heartbeat enabled, the confirmation window is its applied interval plus three
+seconds for the reply; without heartbeat it is 60 seconds. Silence makes the
+indicator orange; a terminal bridge failure makes it red. Outgoing commands and
+echoes of this app's requests do not confirm the link.

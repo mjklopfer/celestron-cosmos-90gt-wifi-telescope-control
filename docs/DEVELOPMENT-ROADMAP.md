@@ -262,5 +262,5 @@ would request a guarded reset, not assert success. Show Reset applied only after
 Stop/close/reconnect completes, then report the observed state; preserve the error
 and return to Disconnected if it fails. Do not replay prior movement. Verify Stop
 priority, exclusive endpoint ownership, failed reconnect and cancellation before
-release. This is a future revision, not implemented in the two-position control.
-The current reset remains explicit Disconnect followed by Connect.
+release. This is a future revision, not implemented; the current top-level UI is an indicator only.
+For a direct motor session, reset with Disconnect then Connect Motors; for the bridge, use Restart Bridge Connection.

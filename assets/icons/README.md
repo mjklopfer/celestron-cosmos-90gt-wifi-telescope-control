@@ -1,6 +1,6 @@
 # Desktop icon assets
 
-Preferred shortcut name: **Celestron Cosmos 90GT WiFi Control**.
+Preferred shortcut name: **Celestron Telescope Network Control**.
 Use this exact label beneath desktop shortcuts. The spelling here follows the
 requested shortcut name; descriptive documentation continues to use “Wi-Fi”.
 

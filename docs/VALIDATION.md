@@ -439,3 +439,23 @@ file manager; this deployment verified the installed action definitions.
 The final state refinement additionally tests explicit errors returning the
 switch to Disconnected/red during cleanup and matching orange switch/pilot colors
 for an unconfirmed link. A three-position reset gesture is recorded as future work.
+
+## Final review: indicator-only connection status and modern readout
+
+The Windows GUI module completed 69 tests successfully. Focused link-indicator
+and guarded handoff tests passed, and the zoom suite passed with its platform-only
+Aqua test skipped. The initial combined test invocation named a nonexistent zoom
+module; it was corrected to test_ui_zoom. The modern polling test belongs to
+BridgeGuiTests, not GuiTests; the corrected invocation is used for verification.
+Ruff and whitespace checks passed. Version 1.1 source/wheel packages built.
+
+Bridge link confirmation now uses valid incoming telescope packets (not outgoing
+requests), with the applied heartbeat interval plus three seconds, or 60 seconds
+when heartbeat is off. Per-axis encoder safety checks remain independent.
+The modern Diagnostics readout shares existing motor values without extra queries.
+Live hardware validation of the new handoff and indicator timing remains pending
+user review. These latest refinements have not yet been deployed to the Pi.
+
+Corrected final bridge/readout run: 46 tests passed (modern Diagnostics sharing,
+bridge service and AUX decoding). Final startup smoke passed without sending
+network or hardware commands. The updated Windows GUI was relaunched for review.

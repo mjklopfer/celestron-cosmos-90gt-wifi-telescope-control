@@ -47,4 +47,17 @@ No physical movement or credential writes were performed for this release check.
 The GUI test harness now waits for its queued events to drain instead of assuming
 all rendering finishes in 150 ms; the production GUI retains its bounded batches.
 
-Local reference works in both physical-module profiles over a direct motor connection. A Disconnect / Connect switch is available inside that section, alongside connection status, current raw encoder angles, sample ages and operation status. Read buttons request a fresh axis sample even with periodic polling off; reads do not renew the user-idle release timer or issue movement. Wait for one axis read to finish before requesting another. Set local reference changes only this app’s coordinate display, not telescope or other-app alignment. Controller-proxy and active-bridge sessions do not support these direct local-reference operations.
+Local reference works in both physical-module profiles over a direct motor connection. Connect Motors and Disconnect buttons are available inside that section, alongside connection status, current raw encoder angles, sample ages and operation status. Read buttons request a fresh axis sample even with periodic polling off; reads do not renew the user-idle release timer or issue movement. Wait for one axis read to finish before requesting another. Set local reference changes only this app’s coordinate display, not telescope or other-app alignment. Controller-proxy and active-bridge sessions do not support these direct local-reference operations.
+
+## Final review refinements
+
+- The top connection control is now an indicator only, aligned beside the profile
+  dropdown. Connect through Motor control or the legacy Control Bridge. Motor
+  release retains orange/unconfirmed without holding a connection; terminal
+  failures show red. Fresh bridge feedback shows green.
+- SkyQLink can hand off a direct motor session to the bridge after Stop replies
+  from both axes and socket release. Failure prevents bridge startup.
+- Modern Celestron Diagnostics includes the latest motor-position table and
+  shared polling/keep-alive controls. This display adds no polling traffic.
+- README uses the current bridge screenshot and current repository clone path;
+  the obsolete legacy screenshot section and switch instructions are removed.

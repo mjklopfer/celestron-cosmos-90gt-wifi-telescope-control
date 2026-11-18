@@ -13,6 +13,14 @@ astronomy software. It is not a planetarium or a complete celestial alignment
 system. The four tabs are **Motor control**, **Control Bridge**, **Diagnostics**,
 and **Wi-Fi provisioning**.
 
+## Current interface
+
+![Current Control Bridge interface with confirmed telescope connection](screenshots/network-control-1.1.png)
+
+Control Bridge is ON in the SkyQLink profile. The green indicator beside the
+profile dropdown confirms fresh telescope replies. Addresses are examples from
+this session; select addresses appropriate to your network.
+
 ## Install, start and resize
 
 Follow [README installation](../README.md#install-and-run). Source installations
@@ -68,7 +76,8 @@ apps, other desktop controllers and this application's bridge before manual
 motor control, diagnostics or settings work.
 
 **Telescope Wi-Fi interface IP address** identifies the telescope, not this computer. The normal
-port is 2000. Choose the connection mode matching the telescope and computer:
+port is 2000. The following physical switch directions are for the verified
+COSMOS 90GT V1 SkyQLink, not all modern modules. Choose the connection mode matching the telescope and computer:
 
 | Mode | Telescope switch / computer connection | Telescope address |
 | --- | --- | --- |
@@ -81,6 +90,47 @@ telescope switch. Use **Discover SkyQLink / Celestron Modules** to find respondi
 the selected connection, then select a result. An infrastructure address may
 change after a restart. Discovery checks protocol replies; it does not move the
 telescope or change its settings.
+
+### Select a module and connect
+
+**View Local Network Interfaces** shows this computer's adapters, IPv4 addresses,
+subnets and status. These are not telescope addresses. Discovery searches attached
+active private IPv4 /24 or narrower networks automatically; Direct mode checks
+1.2.3.4 on the attached 1.2.3.x network. For unsupported subnets, find the telescope
+address in the router's device list and enter that address manually.
+
+Choose a discovery result, review its communications profile and click
+**Apply Module & Profile**. The green **Module & Profile Selected** button means
+selection is applied, not that the link is live. Click **Connect Motors** on
+Motor control or turn **Control Bridge ON** for SkyQLink. The top row has a status
+indicator, not a connection switch.
+
+| Indicator | Meaning |
+| --- | --- |
+| Green — **Connected -- Link Confirmed** | Fresh motor feedback, directly or through the bridge |
+| Orange — **Connected -- Link Unconfirmed** | Feedback pending/aged, or motor session released with target retained |
+| Red — **Disconnected** | No established session, bridge switched off, or terminal motor/bridge failure |
+
+Motor Disconnect or idle release ends the motor socket but leaves the indicator
+orange; no live link is held. Reconnect using Connect Motors or start the bridge.
+For SkyQLink, starting the bridge while directly connected automatically stops
+both axes and releases the motor socket. Both Stop acknowledgments are required
+before bridge startup. If handoff fails, inspect the log and resolve the reported
+failure before trying again. Modern modules do not use this bridge.
+
+Control Bridge uses the same top indicator: fresh telescope replies are green,
+aged replies orange, and the bridge's existing failed-retry/timeout decision red.
+An external astronomy app disconnecting does not alone mean the telescope-side
+bridge connection failed. No extra polling loop is created for this indicator.
+
+Keep-alive/heartbeat may prevent unwanted idle disconnects on some devices.
+The on-screen note points to **Control Bridge** for SkyQLink and **Diagnostics**
+for modern Celestron profiles. Direct SkyQLink motor sessions separately use their
+Motor control polling setting. These reads do not override Idle release. See the
+polling sections below for intervals and traffic considerations.
+
+The controller-proxy profile remains diagnostics-only. A future three-position
+reset switch is on the roadmap; reset a direct session with Disconnect then Connect Motors, or use Restart Bridge Connection for the bridge.
 
 ## Motor control
 
@@ -141,7 +191,7 @@ Hold/Timed jog mode applies to keyboard directions as well.
 Open **Controller Angle / Backlash Settings…**. This contains both former
 reference controls and the hardware settings; choose the intended mode:
 
-- **Local reference (this app only):** use the **Connect** side of the connection switch inside this section, point at a known object,
+- **Local reference (this app only):** use **Connect Motors** inside this section, point at a known object,
   and enter that object's current azimuth/elevation. Current readings and the
   proposed coordinate offset are displayed before setting the reference. This
   changes this application's displayed coordinates only; it clears on disconnect.
@@ -165,6 +215,26 @@ accepted. Units, commas, scientific notation, excessive precision, nonfinite or
 out-of-range values produce an error before sending a setting. Writes round to
 the nearest encoder count. These are coordinate ranges, not mechanical limits;
 the suspected approximately -10-degree lower stop is not verified.
+
+### Reading local-reference values without leaving the dialog
+
+Open **Motor control → Controller Angle / Backlash Settings… → Local reference
+(this app only)**. The dialog has **Connect Motors** and **Disconnect** buttons
+for the same direct motor connection. Click **Connect Motors** there, wait for verified feedback, then **Read Azimuth position now** or
+**Read Elevation position now**. Current encoder angles, sample ages and operation
+status appear in the same window. A Read requests a fresh sample even with periodic
+polling off; it does not move the telescope or reset the idle-release timer.
+Wait for one axis read to finish before reading the other.
+
+This works with both SkyQLink and Celestron module profiles over a direct motor
+connection. It is unavailable during active bridging or in proxy diagnostics mode.
+**Set local reference** affects only this app's displayed coordinates. It does not
+write celestial alignment into the mount or another control application.
+
+The controller-settings menu has one entry point on Motor control. Diagnostics
+does not duplicate it. In **Telescope controller** mode, read one axis at a time,
+watch **Settings operation status**, and wait for completion before the next read.
+**New values to send (Apply to send)** identifies proposed edits, not readback.
 
 ### Backlash editing and retained changes
 
@@ -513,7 +583,7 @@ interpret this interface as a completed ISS or rocket tracker.
 
 Each copy button names its source: **Copy status message**, **Copy motor table**,
 **Copy diagnostics table**, **Copy selected reply**, **Copy network adapter table**,
-and **Copy transfer log**, for example. Table copies contain headings and quoted
+and **Copy Network Transfer Log**, for example. Table copies contain headings and quoted
 tab-separated cells for direct Excel paste. Free-form messages/logs remain plain
 text. Copying neither clears the display nor includes hidden password fields.
 
@@ -635,7 +705,7 @@ On a shared infrastructure network, the telescope, bridge computer and control d
 In Two Interface Mode, the address field must not be blank. Select or enter this computer’s IPv4 address on the network used by the phone, tablet or other control computer. The bridge needs this address to accept connections from that network and forward commands to the telescope. Do not select the adapter connected directly to SkyQLink. Configure the adapter’s network connection in the operating system first; selecting it in the app does not connect it to a network.
 
 Wi-Fi provisioning uses **Infrastructure / Router Wi-Fi Settings** for new values.
-**Connect & Read Settings** reads the stored SSID and network configuration without changing them; the **Settings read from telescope** panel shows the SSID in bold, separately from instructions and editable fields. Full replies appear in the Transfer log. Password fields are redacted before display and saving; provisioning logs do not provide password recovery. **Show password** reveals only entered text. Password recovery through other tools is unverified for RN-171 / 2.40-CEL.
+**Connect & Read Settings** reads the stored SSID and network configuration without changing them; the **Settings read from telescope** panel shows the SSID in bold, separately from instructions and editable fields. Full replies appear in the Network Transfer Log. Password fields are redacted before display and saving; provisioning logs do not provide password recovery. **Show password** reveals only entered text. Password recovery through other tools is unverified for RN-171 / 2.40-CEL.
 
 For the original SkyQLink RN-171, use the physical slider **LEFT** for Direct/ad hoc: connect this computer to SkyQLink-xx and read at `1.2.3.4:2000`. Use **RIGHT** for Infrastructure: connect this computer to the telescope’s current network and discover its assigned IP. Power OFF before moving the slider, then power ON. The app’s mode selector does not move the switch or join Wi-Fi. Readback describes stored settings, not a sensed physical switch position.
 
@@ -950,22 +1020,22 @@ connecting if you need persistent direct polling. Controls are disabled during
 bridge ownership; use the Control Bridge settings in that mode.
 
 
-The Transfer log shows this program's outgoing AUX queries/commands as raw hex
+The Network Transfer Log shows this program's outgoing AUX queries/commands as raw hex
 followed by a known-command interpretation in parentheses, including encoder
 polling, plus operation status. Received motor replies update the readouts and are
 saved rather than displayed as outgoing actions. The Control Bridge log includes
 both this program's actions and forwarded external-app traffic, plus telescope
-replies. External packets and replies are not duplicated into the Transfer log. Unknown commands/payloads remain explicitly unknown or
+replies. External packets and replies are not duplicated into the Network Transfer Log. Unknown commands/payloads remain explicitly unknown or
 unverified. A decoded Stop request describes what was sent, not proof the mount
 stopped; use encoder feedback for that. Full received byte streams, including
 unmatched traffic, remain in the saved session log.
 
 
-The Transfer log also labels lifecycle events such as **Idle Timeout**, missing
+The Network Transfer Log also labels lifecycle events such as **Idle Timeout**, missing
 feedback, restored feedback and connection settings. Locally generated bridge
 queries, moves and Stop commands appear there; forwarded external packets do not.
 The Control Bridge log includes both, with source/destination IPs and labels for
-**This program**, **External client**, and **Telescope**. A telescope packet is
+**This control app**, **External control app**, and **Telescope**. A telescope packet is
 marked forwarded only after a successful client socket write; otherwise it is
 shown as received by this program and not forwarded. These are network routes,
 not proof of which request caused a reply: AUX has no transaction IDs, and echoes
@@ -1019,8 +1089,7 @@ Reference: https://celestron-site-support-files.s3.amazonaws.com/support_files/9
 Validation: eight mocked backend tests and two focused GUI tests pass; lint passes.
 ESP32 compilation, upload, actual configuration/network recovery and commercial
 module interoperability remain unverified. No credentials or live configuration
-were sent during implementation. The running desktop app must be relaunched to
-show these additions. The captive portal remains an optional alternative on supported emulated modules.
+were sent during implementation. The captive portal remains an optional alternative on supported emulated modules.
 
 
 ## Module selection and bridge restart
@@ -1043,27 +1112,20 @@ have Default/Reversed choices. These are provisional labels for positive (0) and
 negative (1), not verified SkySafari defaults or a factory reset. Raw meanings
 remain in readback and confirmation. They do not reverse manual jog buttons.
 
-### Finding the telescope address
+### Modern-profile position readout and keep-alive
 
-Use **View Local Network Interfaces** in the Telescope connection section to see this computer’s adapters, IPv4 addresses, subnets and status in every communications profile. These are computer addresses; do not copy them into **Telescope Wi-Fi interface IP address**. Click **Discover SkyQLink / Celestron Modules**, select the telescope found, then **Apply Module & Profile**. Discovery searches attached active private IPv4 /24 or narrower networks automatically; Direct mode checks the known 1.2.3.4 endpoint on the attached direct network. For unsupported subnet sizes or an undiscovered telescope, look up its assigned address in your router’s device list and enter that telescope address manually. Adapter inspection does not change network settings or select a scan interface.
+For the **Celestron module** profile, Diagnostics contains **Motor polling /
+keep-alive and recording** and **Latest motor-position replies from the telescope**.
+The readout shares the Motor control values, including sample age; it does not
+create extra requests. Control Bridge is disabled in this profile. Enable polling
+and choose 1–300 seconds while disconnected, then Connect Motors to apply. The
+same requests record positions and keep the connection active. Idle release on
+Motor control still applies and is not reset by polling. Proxy diagnostics mode
+does not enable direct motor polling or movement.
 
-Controller Angle / Backlash Settings reads one axis at a time. Wait for the current read operation to finish before reading the other axis. Watch **Settings operation status** for completion or an error; a second operation cannot run concurrently.
-
-Local reference works in both physical-module profiles over a direct motor connection. A Disconnect / Connect switch is available inside that section, alongside connection status, current raw encoder angles, sample ages and operation status. Read buttons request a fresh axis sample even with periodic polling off; reads do not renew the user-idle release timer or issue movement. Wait for one axis read to finish before requesting another. Set local reference changes only this app’s coordinate display, not telescope or other-app alignment. Controller-proxy and active-bridge sessions do not support these direct local-reference operations.
-
-**Controller Angle / Backlash Settings…** has one entry point: the Motor control tab, for both SkyQLink and Celestron module profiles. Diagnostics does not duplicate that settings menu.
-
-**Module & Profile Selected** means the target and communication profile have been applied; it is not a connection indicator. The text below directs you to Connect Motors or, for SkyQLink, Control Bridge ON. Inside Local reference, a separate indicator shows Disconnected, Connected -- Link Unconfirmed or Connected -- Link Confirmed. The Disconnect / Connect switch highlights disconnected red and verified connected green, with a matching status light. Connect stays unselected until motor feedback confirms success; connection/recovery is amber. Disconnect becomes available when connected; Cancel is available during connection/recovery.
-
-The Local reference light uses three states: green **Connected -- Link Confirmed**
-for fresh feedback from both motors, orange **Connected -- Link Unconfirmed** while
-feedback is pending or overdue, and red **Disconnected** with no active connection.
-Unconfirmed is not proof of a broken socket. The detail line identifies expected
-aging when periodic polling is off and directs the user to Read for a fresh sample.
-The Connect side does not turn green until motor feedback verifies the connection.
-A module reply alone cannot establish motor health. Disconnect/Cancel remains
-available to release an active connection or attempt.
-
-An explicit motor connection error immediately returns the connection switch and light to **Disconnected / red**, even while the worker finishes Stop/close cleanup. The error remains visible. Delayed feedback alone remains **Connected -- Link Unconfirmed / orange**; it does not cause the UI to falsely report a closed socket.
-
-The selected side of the connection switch mirrors the pilot light: green confirmed, orange unconfirmed, red disconnected. Initial connection attempts do not select Connect before verification. Temporary recovery retains the Connect position in orange; an explicit failure returns the switch to Disconnect in red.
+Bridge link confirmation uses incoming valid telescope AUX traffic, including
+encoder replies, independently of the per-axis jogging safety checks. With
+heartbeat enabled, the confirmation window is its applied interval plus three
+seconds for the reply; without heartbeat it is 60 seconds. Silence makes the
+indicator orange; a terminal bridge failure makes it red. Outgoing commands and
+echoes of this app's requests do not confirm the link.

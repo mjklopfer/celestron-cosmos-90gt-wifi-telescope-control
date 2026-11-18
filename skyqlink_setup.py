@@ -152,6 +152,9 @@ class SetupApp(ttk.Frame):
         self.bind('<Configure>', lambda event: self.resize_content())
         self.root, self.operation = root, operation
         self.events = queue.Queue()
+        self.connection_switches = []
+        self.module_connection_retained = False
+        self.bridge_handoff_pending = None
         self.busy = False
         self.motor_factory = motor_factory
         self.scanner = scanner
@@ -163,6 +166,7 @@ class SetupApp(ttk.Frame):
         self.interface_mode = tk.StringVar(value='SkyQLink')
         self.endpoint_identity = {}
         self.bridge_enabled = tk.BooleanVar(value=False)
+        self.bridge_last_reply = 0.0
         self.bridge_status = tk.StringVar(value='Control Bridge is OFF. Follow the setup steps below before switching it ON.')
         self.bridge_bind = tk.StringVar()
         self.bridge_dual = tk.BooleanVar(value=False)
@@ -278,6 +282,8 @@ class SetupApp(ttk.Frame):
         self.profile_box = ttk.Combobox(interface_line, textvariable=self.recommended_profile,
             values=('SkyQLink', 'Celestron module', 'Controller proxy (diagnostic)'), state='readonly', width=30)
         self.profile_box.pack(side='left', padx=8)
+        self.main_connection_switch = self.build_connection_switch(interface_line, module_level=True)
+        self.main_connection_switch['frame'].pack(side='left', padx=(8, 0))
         self.profile_box.bind('<<ComboboxSelected>>', lambda event: self.mark_profile_pending())
         self.selection_controls = ttk.Frame(connection)
         self.selection_controls.grid(row=8, column=0, columnspan=4, sticky='ew', pady=5)
@@ -969,16 +975,12 @@ class SetupApp(ttk.Frame):
         refs = ttk.LabelFrame(parent, text='Set Alignment Using Known Position Reference', padding=8)
         connection = ttk.LabelFrame(parent, text='Local reference connection', padding=8)
         connection.pack(fill='x', pady=5)
-        switch = ttk.Frame(connection, relief='sunken', padding=2)
-        switch.grid(row=0, column=0, sticky='w')
-        self.reference_disconnect_button = tk.Button(switch, text='Disconnect', command=self.disconnect_motors, width=12, font=('TkDefaultFont', 10, 'bold'))
-        self.reference_disconnect_button.grid(row=0, column=0)
-        self.reference_connect_button = tk.Button(switch, text='Connect', command=self.connect_motors, width=12, font=('TkDefaultFont', 10, 'bold'))
-        self.reference_connect_button.grid(row=0, column=1)
-        self.reference_connection_detail = tk.StringVar()
-        self.reference_connection_indicator = tk.Label(connection, text='● Disconnected', background='#b52b2b', foreground='white', relief='sunken', padx=10, pady=6, font=('TkDefaultFont', 10, 'bold'))
-        self.reference_connection_indicator.grid(row=0, column=1, sticky='w', padx=10)
-        ttk.Label(connection, textvariable=self.reference_connection_detail, wraplength=780).grid(row=1, columnspan=2, sticky='w', pady=4)
+        controls = self.build_connection_switch(connection)
+        controls['frame'].pack(anchor='w')
+        self.reference_connect_button = controls['connect']
+        self.reference_disconnect_button = controls['disconnect']
+        self.reference_connection_indicator = controls['indicator']
+        self.reference_connection_detail = controls['detail']
         self.refresh_reference_connection_controls()
         refs.pack(fill='x', pady=8)
         for column, label in enumerate(('Axis / range', 'Current encoder angle / sample age', 'Known position', 'Proposed offset', '')):
@@ -993,7 +995,7 @@ class SetupApp(ttk.Frame):
             ttk.Entry(refs, textvariable=self.reference_inputs[axis], width=12).grid(row=row, column=2)
             ttk.Label(refs, textvariable=self.reference_delta[axis], width=18).grid(row=row, column=3)
             ttk.Button(refs, text='Set local reference', command=lambda a=axis: self.set_position_reference(a)).grid(row=row, column=4, padx=8)
-        ttk.Label(refs, text='Click Connect above, then Read for either axis to request a fresh position. No need to close this window. Point at a known object and enter its current azimuth/elevation. Offset = known minus current encoder angle, wrapped to ±180°. This sets LOCAL coordinates only; it does not program shared celestial alignment or tracking into the mount. Clears on disconnect.', wraplength=780).grid(row=3, column=0, columnspan=5, sticky='w', pady=5)
+        ttk.Label(refs, text='Click Connect Motors above, then Read for either axis to request a fresh position. No need to close this window. Point at a known object and enter its current azimuth/elevation. Offset = known minus current encoder angle, wrapped to ±180°. This sets LOCAL coordinates only; it does not program shared celestial alignment or tracking into the mount. Clears on disconnect.', wraplength=780).grid(row=3, column=0, columnspan=5, sticky='w', pady=5)
         ttk.Label(refs, text='Examples: azimuth 100.52 or 060.84; elevation -60.31. Up to 5 decimals; leading zeros OK. Coordinate ranges are NOT safe mechanical travel limits.', wraplength=780).grid(row=4, column=0, columnspan=5, sticky='w')
         for row, axis in enumerate(AXES, 5):
             ttk.Button(refs, text=f'Read {AXES[axis]} position now', command=lambda a=axis: self.poll_local_reference(a)).grid(row=row, column=0, sticky='w', pady=5)
@@ -1291,7 +1293,7 @@ class SetupApp(ttk.Frame):
 
     def poll_local_reference(self, axis):
         if not self.motor_ready or self.motor is None or self.bridge is not None:
-            self.motion_status.set('Click Connect above, wait for connection confirmation, then click Read for an axis. Local references require a direct motor connection.')
+            self.motion_status.set('Click Connect Motors above, wait for connection confirmation, then click Read for an axis. Local references require a direct motor connection.')
             return
         if self.reference_poll_pending:
             self.motion_status.set('Wait for the current axis read to finish before reading the other axis.')
@@ -1322,43 +1324,69 @@ class SetupApp(ttk.Frame):
         self.reference_inputs[axis].set(f'{known:.5f}')
         self.set_position_reference(axis)
 
+    def build_connection_switch(self, parent, module_level=False):
+        """Main row is an indicator; the local dialog also has ordinary buttons."""
+        frame = ttk.Frame(parent)
+        on = off = None
+        if not module_level:
+            buttons = ttk.Frame(frame)
+            buttons.pack(anchor='w')
+            on = ttk.Button(buttons, text='Connect Motors', command=self.connect_motors)
+            on.pack(side='left')
+            off = ttk.Button(buttons, text='Disconnect', command=self.disconnect_motors)
+            off.pack(side='left', padx=8)
+        indicator = tk.Label(frame, text='● Disconnected', background='#b52b2b', foreground='white', wraplength=250, font=('TkDefaultFont', 9, 'bold'), padx=6, pady=5)
+        indicator.pack(fill='x')
+        detail = tk.StringVar()
+        if not module_level:
+            ttk.Label(frame, textvariable=detail, wraplength=780).pack(anchor='w')
+        controls = dict(frame=frame, connect=on, disconnect=off, indicator=indicator, detail=detail, module_level=module_level)
+        self.connection_switches.append(controls)
+        return controls
+
     def refresh_reference_connection_controls(self):
-        button = getattr(self, 'reference_connect_button', None)
-        if button is None or not button.winfo_exists():
-            return
         active = self.motor is not None
         failed = active and bool(self.last_motor_error)
+        retained = self.module_connection_retained and not failed
         connected = active and self.motor_ready and not failed
         fresh = all(time.monotonic() - self.last_positions.get(axis, 0) <= self.encoder_stale_after() for axis in AXES)
         ready = connected and fresh
         blocked = active or self.busy or self.bridge is not None or self.selection_pending or self.interface_kind() == 'proxy'
         if ready:
             state, color = 'Connected -- Link Confirmed', '#146b39'
-        elif active and not failed:
+        elif (active or retained) and not failed:
             state, color = 'Connected -- Link Unconfirmed', '#b86500'
         else:
             state, color = 'Disconnected', '#b52b2b'
         # The requested state is not the confirmed state: stay on Disconnect
         # during initial acquisition; retain Connect through temporary recovery.
-        selected_connect = active and not failed and not self.connect_request_active
-        button.configure(state='disabled' if blocked else 'normal',
-                         background=color if selected_connect else '#dddddd',
-                         foreground='white' if selected_connect else '#333333',
-                         disabledforeground='white' if selected_connect else '#777777',
-                         relief='sunken' if selected_connect else 'raised')
-        self.reference_disconnect_button.configure(state='normal' if active else 'disabled',
-            text='Cancel' if active and self.connect_request_active and not failed else 'Disconnect',
-            background='#dddddd' if selected_connect else color,
-            foreground='#333333' if selected_connect else 'white', disabledforeground='white',
-            relief='raised' if selected_connect else 'sunken')
         polling = self.direct_polling_applied[0] if self.direct_polling_applied else self.motor_heartbeat.get()
         detail = (self.last_motor_error if failed else
                   'Fresh motor feedback received.' if ready else
                   'Periodic polling is off; click Read for a fresh sample.' if connected and not polling else
                   'Motor feedback is overdue; the connection may be delayed or lost.' if connected else
-                  self.motor_status.get() if active else 'Click Connect to open the motor connection.')
-        self.reference_connection_detail.set(detail)
-        self.reference_connection_indicator.configure(text='● ' + state, background=color, foreground='white')
+                  self.motor_status.get() if active else
+                  'Motor session released; no live link is held. Click Connect to verify again.' if retained else 'Click Connect Motors to establish link.')
+        if self.bridge is not None:
+            bridge_failed = bool(self.bridge_last_error)
+            if bridge_failed:
+                state, color = 'Disconnected', '#b52b2b'
+                detail = self.bridge_last_error or 'Closing the bridge connection.'
+            elif self.bridge_is_ready and self.bridge_last_reply > 0 and time.monotonic() - self.bridge_last_reply <= self.bridge_link_confirmation_window():
+                state, color = 'Connected -- Link Confirmed', '#146b39'
+                detail = 'Control Bridge owns the connection; telescope replies are fresh.'
+            else:
+                state, color = 'Connected -- Link Unconfirmed', '#b86500'
+                detail = f'No confirmed telescope traffic within {self.bridge_link_confirmation_window():g}s; bridge failure is determined separately by its retry/timeout policy.'
+        elif self.interface_kind() == 'proxy':
+            detail = 'Diagnostics only. Run read-only diagnostics to inspect this proxy.'
+        self.connection_switches = [item for item in self.connection_switches if item['frame'].winfo_exists()]
+        for controls in self.connection_switches:
+            if controls['connect'] is not None:
+                controls['connect'].configure(state='disabled' if blocked else 'normal')
+                controls['disconnect'].configure(state='normal' if active else 'disabled')
+            controls['detail'].set(detail)
+            controls['indicator'].configure(text='● ' + state, background=color, foreground='white')
 
     def refresh_reference_preview(self, axis):
         try:
@@ -1552,6 +1580,8 @@ class SetupApp(ttk.Frame):
         self.modern_polling_frame = ttk.LabelFrame(self.modern_diagnostic_controls,
             text='Motor polling / keep-alive and recording', padding=8)
         self.modern_polling_frame.grid(row=0, sticky='ew', pady=8)
+        self.modern_position_readout = self.build_position_readout(self.modern_diagnostic_controls)
+        self.modern_position_readout.grid(row=1, sticky='ew', pady=8)
         self.modern_polling_toggle = ttk.Checkbutton(self.modern_polling_frame,
             text='Poll and record motor positions (also keeps the connection alive)',
             variable=self.motor_heartbeat, command=self.update_controls)
@@ -1569,6 +1599,18 @@ class SetupApp(ttk.Frame):
         ttk.Label(self.modern_diagnostic_controls, text='No writable modern-module clock, time-server or observing-site endpoint has been verified here. Read-only diagnostics can report responding optional GPS/RTC devices.', wraplength=780, state='disabled').grid(row=4, sticky='w')
         self.modern_diagnostic_controls.grid_remove()
         group.grid_remove()
+
+    def build_position_readout(self, parent):
+        readout = ttk.LabelFrame(parent, text='Latest motor-position replies from the telescope', padding=6)
+        for column, label in enumerate(('Axis', 'Encoder counts', 'Raw angle (degrees)', 'Firmware', 'Time since reading')):
+            ttk.Label(readout, text=label).grid(row=0, column=column, sticky='w', padx=8)
+        for row, axis in enumerate(AXES, start=1):
+            ttk.Label(readout, text=AXES[axis]).grid(row=row, column=0, sticky='w', padx=8)
+            for column, field in enumerate(('encoder', 'angle', 'firmware', 'age'), start=1):
+                ttk.Label(readout, textvariable=self.values[axis][field]).grid(row=row, column=column, sticky='w', padx=8)
+        self.copy_button(readout, self.motor_output, 'Copy motor table').grid(row=3, columnspan=5, sticky='w', pady=3)
+        ttk.Label(readout, text='Received values from the active connection; this display does not start another polling loop. Raw encoder angles are not aligned sky coordinates. Check the reading age before using a value.', wraplength=780).grid(row=4, columnspan=5, sticky='w')
+        return readout
 
     def refresh_diagnostic_log(self):
         # Appends mirror incrementally, preserving each viewer's own scroll state.
@@ -1741,13 +1783,8 @@ class SetupApp(ttk.Frame):
                   'Do not forward these ports from the Internet. A running bridge does not prove that your firewall allows the control app to connect.\n'
                   'For Two Interface Mode, allow these connections on the adapter facing the astronomy app. The app forwards telescope commands between its connections; it does not enable operating-system network bridging or Internet sharing.')
         self.bridge_firewall_label.grid(row=8, sticky='w', pady=6)
-        readout = ttk.LabelFrame(tab, text='Latest motor-position replies from the telescope', padding=6)
-        readout.grid(row=9, sticky='ew')
-        for row, axis in enumerate(AXES):
-            ttk.Label(readout, text=AXES[axis]).grid(row=row, column=0, padx=8)
-            for column, field in enumerate(('encoder', 'angle', 'firmware', 'age'), start=1):
-                ttk.Label(readout, textvariable=self.values[axis][field], width=17).grid(row=row, column=column)
-        self.copy_button(readout, self.motor_output, 'Copy motor table').grid(row=2, columnspan=5, sticky='w', pady=3)
+        self.bridge_position_readout = self.build_position_readout(tab)
+        self.bridge_position_readout.grid(row=9, sticky='ew')
         bridge_log_heading = ttk.Frame(tab)
         bridge_log_heading.grid(row=10, sticky='ew', pady=(8, 0))
         ttk.Label(bridge_log_heading, text='Communications Log', font=('TkDefaultFont', 12, 'bold')).pack(anchor='w')
@@ -2072,6 +2109,7 @@ class SetupApp(ttk.Frame):
             return
         """Validate shared-network settings, then start or stop the exclusive relay."""
         if not self.bridge_enabled.get():
+            self.bridge_handoff_pending = None
             self.bridge_is_ready = False
             self.update_controls()
             if self.bridge:
@@ -2081,9 +2119,9 @@ class SetupApp(ttk.Frame):
         if self.bridge is not None:
             self.bridge_enabled.set(False)
             return
-        if self.busy or self.motor is not None:
+        if self.busy:
             self.bridge_enabled.set(False)
-            self.bridge_status.set('Control Bridge cannot start yet. On Motor control, click Disconnect if connected. Check that all requested diagnostics, discovery, recovery, and settings operations have finished. Then switch Control Bridge ON.')
+            self.bridge_status.set('Control Bridge cannot start yet. Wait for diagnostics, discovery, recovery or settings operations to finish, then switch Control Bridge ON.')
             return
         if self.connection_mode.get() != 'infrastructure' and not self.bridge_dual.get():
             self.bridge_enabled.set(False)
@@ -2092,6 +2130,12 @@ class SetupApp(ttk.Frame):
         if self.bridge_dual.get() and not self.bridge_bind.get().strip():
             self.bridge_enabled.set(False)
             self.bridge_status.set('Two Interface Mode requires this computer’s IPv4 address on the astronomy app’s network. Select that adapter in Local System Network Interfaces, or enter its IPv4 address above.')
+            return
+        if self.motor is not None:
+            self.bridge_handoff_pending = (self.host.get(), self.port.get())
+            self.bridge_status.set('Transferring control: stopping direct motor control and closing its connection. The bridge starts after both Stop replies and socket release.')
+            self.disconnect_motors()
+            self.update_controls()
             return
         try:
             self.bridge_last_error = None
@@ -2123,9 +2167,35 @@ class SetupApp(ttk.Frame):
             self.bridge_status.set(str(error))
         self.update_controls()
 
+    def finish_bridge_handoff(self, target):
+        if (self.closing or self.selection_pending or self.busy or self.motor is not None
+                or self.bridge is not None or self.interface_kind() != 'legacy'
+                or target != (self.host.get(), self.port.get()) or not self.bridge_enabled.get()):
+            self.bridge_enabled.set(False)
+            self.bridge_status.set('Bridge handoff canceled because the target, profile or connection state changed.')
+            return
+        self.toggle_bridge()
+
+    def bridge_link_confirmation_window(self):
+        # Link liveness is independent of both-axis freshness required for jogging.
+        # Heartbeat scheduling needs a reply allowance; without heartbeat, accept
+        # a quiet bridge for one minute. Outgoing packets never confirm the link.
+        heartbeat, interval, _monitor, _sample = self.bridge_polling_applied
+        return float(interval) + 3.0 if heartbeat else 60.0
+
     def handle_bridge_event(self, event):
         """Apply worker events to bridge status, tab locks and readbacks."""
         kind = event['event']
+        if kind == 'bridge_values':
+            self.bridge_last_reply = event.get('monotonic', time.monotonic())
+        elif kind == 'bridge_packet' and event.get('direction') == 'mount':
+            # Incoming echoes of this app's requests are not device replies.
+            try:
+                frame = bytes.fromhex(event.get('hex', ''))
+                if len(frame) >= 6 and frame[2] != 0x20:
+                    self.bridge_last_reply = event.get('monotonic', time.monotonic())
+            except ValueError:
+                pass
         if kind == 'bridge_local_polling':
             self.bridge_local_polling_applied = float(event['interval'])
         if kind == 'bridge_background_config':
@@ -2159,6 +2229,8 @@ class SetupApp(ttk.Frame):
             self.logs_button.configure(state='normal')
         message = event.get('message')
         if kind in ('bridge_error', 'bridge_off', 'bridge_starting'):
+            self.bridge_last_reply = 0.0
+            self.module_connection_retained = False
             self.bridge_is_ready = False
         if kind == 'bridge_error' and self.bridge_last_error is None:
             self.bridge_last_error = message
@@ -2408,6 +2480,7 @@ class SetupApp(ttk.Frame):
         if 0 <= index < len(self.discovered):
             match = self.discovered[index]
             kind = match.get('endpoint_kind')
+            self.module_connection_retained = False
             self.endpoint_identity = dict(match)
             if self.recommended_index != index:
                 self.recommend_module_profile()
@@ -2501,7 +2574,7 @@ class SetupApp(ttk.Frame):
             notice = 'Infrastructure: connect this computer to the LAN shared with the telescope and any separate device running your control app. Then switch Control Bridge ON here; see the steps below.'
         self.bridge_requirement.set(notice)
         self.bridge_restart_button.configure(state='normal' if self.bridge is not None and bridge_allowed and not self.bridge_restart_pending else 'disabled')
-        self.bridge_switch.configure(state='normal' if self.bridge is not None or (not locked and bridge_allowed) else 'disabled')
+        self.bridge_switch.configure(state='normal' if self.bridge is not None or (not self.busy and bridge_allowed) else 'disabled')
         self.bridge_bind_entry.configure(state='disabled' if locked else 'normal')
         self.bridge_dual_box.configure(state='disabled' if locked else 'normal')
         for widget in self.inputs:
@@ -2534,8 +2607,13 @@ class SetupApp(ttk.Frame):
         self.profile_connection_help.set(
             'Select a module and profile, then click Apply Module & Profile before connecting.' if self.selection_pending else
             'Diagnostic-only proxy selected. To inspect it, click Run read-only diagnostics on the Diagnostics tab. Motor connections are unavailable.' if self.interface_kind() == 'proxy' else
-            'To connect, click Connect Motors on the Motor control tab. For an external control application through SkyQLink, switch Control Bridge ON instead.' if self.interface_kind() == 'legacy' else
-            'To connect, click Connect Motors on the Motor control tab. Control Bridge is not needed for this module.')
+            'Click Connect Motors or turn Control Bridge ON to establish link.' if self.interface_kind() == 'legacy' else
+            'Click Connect Motors to establish link. Control Bridge is not needed for this module.')
+        self.profile_connection_help.set(self.profile_connection_help.get() + '\n' + self.main_connection_switch['detail'].get())
+        if self.interface_kind() != 'proxy':
+            location = ('Diagnostics → Motor polling / keep-alive and recording' if self.interface_kind() == 'modern' else
+                        'Control Bridge')
+            self.profile_connection_help.set(self.profile_connection_help.get() + '\nKeep-alive / heartbeat may prevent idle disconnects on some devices. Configure it under ' + location + '. It does not override Idle release.')
         self.applied_profile_label.set(f'Applied profile: {self.interface_mode.get()} | Target: {self.host.get()}:{self.port.get()}' + (' | Disconnect Motor control / switch Bridge OFF before applying another module.' if locked else ' | A discovery selection takes effect only after Apply Module & Profile.'))
         # Modern profiles edit the existing direct-session variables in Diagnostics.
         # No bridge scheduler or additional socket is created by these controls.
@@ -2549,7 +2627,7 @@ class SetupApp(ttk.Frame):
             self.modern_polling_frame.grid()
             for widget in self.modern_polling_frame.winfo_children():
                 widget.state(['disabled'] if direct_policy_locked else ['!disabled'])
-            self.motor_connection_help.set('Polling and recording settings are under Diagnostics → Direct motor connection: polling and recording. Disconnect before editing, then Connect Motors to apply. Idle release remains independent of polling; choose Never only when you intend to retain control until disconnect.')
+            self.motor_connection_help.set('Polling and recording settings are under Diagnostics → Motor polling / keep-alive and recording. Disconnect before editing, then Connect Motors to apply. Idle release remains independent of polling; choose Never only when you intend to retain control until disconnect.')
             enabled, interval = (self.direct_polling_applied[:2] if self.motor is not None else
                                  (self.motor_heartbeat.get(), self.motor_heartbeat_interval.get()))
             self.direct_polling_status.set(('Active connection' if self.motor is not None else 'Next connection — disconnected')
@@ -2666,6 +2744,7 @@ class SetupApp(ttk.Frame):
             self.update_controls()
         except Exception as e:
             self.motor = None
+            self.module_connection_retained = False
             self.motor_status.set('Connection failed')
             self.status.set(str(e))
             self.update_controls()
@@ -3238,6 +3317,7 @@ class SetupApp(ttk.Frame):
             self.motion_status.set(f'Idle release after {event["seconds"]} seconds. Reconnect to continue moving.')
             self.status.set(self.motion_status.get())
         elif kind == 'motor_connected':
+            self.module_connection_retained = True
             self.connect_request_active = False
             self.motor_ready = True
             self.motor_status.set('Motor encoder connection verified')
@@ -3271,7 +3351,18 @@ class SetupApp(ttk.Frame):
             self.log_directory = event['log_directory']
             self.logs_button.configure(state='normal')
             self.append('Motor connection closed. Logs: ' + self.log_directory)
-            if retry_with_restart:
+            handoff = self.bridge_handoff_pending
+            self.bridge_handoff_pending = None
+            if handoff:
+                replies = event.get('stop_replies', {})
+                verified = all(replies.get(str(axis), replies.get(axis, False)) for axis in AXES)
+                if verified and not self.last_motor_error and not self.closing:
+                    self.after(1, lambda target=handoff: self.finish_bridge_handoff(target))
+                else:
+                    self.bridge_enabled.set(False)
+                    self.module_connection_retained = False
+                    self.bridge_status.set('Bridge handoff canceled: direct motor shutdown or both Stop replies were not confirmed. Check the telescope and reconnect manually.')
+            elif retry_with_restart:
                 self.append('Initial motor replies missing: attempting one verified RN-171 restart, then reconnecting.')
                 self.start_recovery(reconnect=True)
         elif kind == 'motor_jog_started':
@@ -3302,6 +3393,7 @@ class SetupApp(ttk.Frame):
                 self.motor_status.set('Stop sent to both axes')
             self.append(event['message'])
         elif kind == 'motor_error':
+            self.module_connection_retained = False
             self.last_motor_error = event['message']
             self.measuring_motion = False
             self.jogging = False

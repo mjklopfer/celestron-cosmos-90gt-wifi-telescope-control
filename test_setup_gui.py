@@ -162,12 +162,83 @@ class GuiTests(unittest.TestCase):
         self.assertAlmostEqual(float(self.app.controller_fields[0x11]['angle'].get()), -60.31)
         self.assertEqual(self.app.idle_release.get(), '30 seconds')
 
+    def test_legacy_bridge_handoff_waits_for_stop_and_socket_release(self):
+        from unittest.mock import Mock, patch
+        app = self.app
+        app.connection_mode.set('infrastructure')
+        app.motor = Mock()
+        app.motor_ready = True
+        app.bridge_enabled.set(True)
+        app.toggle_bridge()
+        self.assertIsNone(app.bridge)
+        self.assertIsNotNone(app.bridge_handoff_pending)
+        app.motor.disconnect.assert_called_once()
+        with patch.object(app, 'finish_bridge_handoff') as finish:
+            app.handle_motor_event({'event': 'motor_disconnected', 'log_directory': '/tmp/fake',
+                                    'stop_replies': {'16': True, '17': True}})
+            self.drain_ui()
+            finish.assert_called_once_with((app.host.get(), app.port.get()))
+        app.motor = Mock()
+        app.bridge_enabled.set(True)
+        app.toggle_bridge()
+        app.handle_motor_event({'event': 'motor_disconnected', 'log_directory': '/tmp/fake',
+                                'stop_replies': {'16': True, '17': False}})
+        self.assertFalse(app.bridge_enabled.get())
+        self.assertIn('not confirmed', app.bridge_status.get())
+        self.assertIsNone(app.bridge)
+
+    def test_top_connection_indicator_uses_bridge_health_and_failure(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.bridge = Mock(local_fault=False)
+        app.bridge_is_ready = True
+        app.bridge_last_reply = time.monotonic()
+        app.last_positions = {axis: time.monotonic() for axis in (0x10, 0x11)}
+        app.refresh_reference_connection_controls()
+        main = app.main_connection_switch
+        self.assertIn('Link Confirmed', main['indicator'].cget('text'))
+        self.assertEqual(main['indicator'].cget('background'), '#146b39')
+        app.last_positions[0x10] = time.monotonic() - 1000
+        app.refresh_reference_connection_controls()
+        self.assertIn('Link Confirmed', main['indicator'].cget('text'))
+        app.bridge_last_reply = time.monotonic() - 61
+        app.refresh_reference_connection_controls()
+        self.assertIn('Link Unconfirmed', main['indicator'].cget('text'))
+        app.handle_bridge_event({'event': 'bridge_packet', 'direction': 'mount', 'hex': '3b031020feaf'})
+        app.refresh_reference_connection_controls()
+        self.assertIn('Link Confirmed', main['indicator'].cget('text'))
+        app.bridge_polling_applied = (True, 5, False, 1)
+        self.assertEqual(app.bridge_link_confirmation_window(), 8)
+        app.bridge_last_reply = time.monotonic() - 9
+        app.refresh_reference_connection_controls()
+        self.assertIn('Link Unconfirmed', main['indicator'].cget('text'))
+        app.handle_bridge_event({'event': 'bridge_error', 'message': 'Bridge telescope reply timeout'})
+        self.assertEqual(main['indicator'].cget('text'), '● Disconnected')
+        self.assertEqual(main['indicator'].cget('background'), '#b52b2b')
+        app.bridge = None
+
+    def test_motor_release_retains_orange_until_terminal_failure(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.motor = Mock()
+        app.handle_motor_event({'event': 'motor_connected', 'host': '192.0.2.10', 'port': 2000})
+        app.handle_motor_event({'event': 'motor_disconnected', 'log_directory': '/tmp/fake'})
+        main = app.main_connection_switch
+        self.assertEqual(main['indicator'].cget('text'), '● Connected -- Link Unconfirmed')
+        self.assertEqual(main['indicator'].cget('background'), '#b86500')
+        self.assertIn('no live link is held', main['detail'].get())
+        self.assertIsNone(main['connect'])
+        self.assertIsNone(main['disconnect'])
+        app.handle_motor_event({'event': 'motor_error', 'message': 'Terminal failure'})
+        self.assertEqual(main['indicator'].cget('text'), '● Disconnected')
+        self.assertEqual(main['indicator'].cget('background'), '#b52b2b')
+
     def test_local_reference_connection_indicator_and_disconnect_button(self):
         from unittest.mock import Mock
         app = self.app
         app.open_motor_settings()
         self.assertEqual(app.reference_connection_indicator.cget('text'), '● Disconnected')
-        self.assertEqual(app.reference_disconnect_button.cget('state'), 'disabled')
+        self.assertEqual(str(app.reference_disconnect_button.cget('state')), 'disabled')
         app.motor = Mock()
         app.motor_ready = False
         app.update_controls()
@@ -176,25 +247,21 @@ class GuiTests(unittest.TestCase):
         app.last_positions = {axis: time.monotonic() for axis in (0x10, 0x11)}
         app.update_controls()
         self.assertEqual(app.reference_connection_indicator.cget('text'), '● Connected -- Link Confirmed')
-        self.assertEqual(app.reference_connect_button.cget('background'), '#146b39')
-        self.assertEqual(app.reference_disconnect_button.cget('state'), 'normal')
+        self.assertEqual(str(app.reference_disconnect_button.cget('state')), 'normal')
         app.last_positions[0x10] = time.monotonic() - 1000
         app.refresh_reference_connection_controls()
         self.assertIn('Connected -- Link Unconfirmed', app.reference_connection_indicator.cget('text'))
-        self.assertEqual(app.reference_connect_button.cget('background'), app.reference_connection_indicator.cget('background'))
         app.direct_polling_applied = (False, 1.0, 30)
         app.refresh_reference_connection_controls()
         self.assertIn('Periodic polling is off', app.reference_connection_detail.get())
         app.handle_motor_event({'event': 'motor_error', 'message': 'Simulated connection failure'})
         self.assertEqual(app.reference_connection_indicator.cget('text'), '● Disconnected')
-        self.assertEqual(app.reference_disconnect_button.cget('background'), '#b52b2b')
-        self.assertEqual(app.reference_disconnect_button.cget('relief'), 'sunken')
         self.assertIn('Simulated connection failure', app.reference_connection_detail.get())
-        self.assertEqual(app.reference_disconnect_button.cget('state'), 'normal')
+        self.assertEqual(str(app.reference_disconnect_button.cget('state')), 'normal')
         app.motor = None
         app.motor_ready = False
         app.update_controls()
-        self.assertEqual(app.reference_disconnect_button.cget('state'), 'disabled')
+        self.assertEqual(str(app.reference_disconnect_button.cget('state')), 'disabled')
         self.assertEqual(app.reference_connection_indicator.cget('text'), '● Disconnected')
 
     def test_local_reference_read_apply_and_clear_in_both_profiles(self):
@@ -943,6 +1010,12 @@ class BridgeGuiTests(unittest.TestCase):
         app.interface_mode.set('Celestron module')
         app.update_controls()
         self.assertTrue(app.modern_polling_frame.grid_info())
+        self.assertTrue(app.modern_position_readout.grid_info())
+        self.assertEqual(str(app.tabs.tab(app.bridge_tab, 'state')), 'disabled')
+        app.values[0x10]['angle'].set('123.456')
+        labels = app.modern_position_readout.winfo_children()
+        self.assertTrue(any(str(w.cget('textvariable')) == str(app.values[0x10]['angle'])
+                            for w in labels if 'textvariable' in set(w.keys())))
         self.assertFalse(app.motor_heartbeat_box.grid_info())
         app.motor_heartbeat_interval.set('5')
         app.update_controls()

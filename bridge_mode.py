@@ -448,7 +448,7 @@ class Bridge:
             frames = parser.feed(raw)
         for frame in frames:
             # Log checksummed AUX frames, not arbitrary ASCII/configuration data.
-            self.emit('bridge_packet', direction=direction, hex=frame.hex(),
+            self.emit('bridge_packet', direction=direction, hex=frame.hex(), monotonic=time.monotonic(),
                       **self.packet_route(direction, forwarded_to),
                       **(self.position_reply_context(frame) if direction == 'mount' else {}))
             axis = frame[2]

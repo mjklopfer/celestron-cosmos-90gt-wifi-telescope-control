@@ -531,4 +531,5 @@ class MotorController:
                 self.recorder.finish(self.report)
             except Exception as e:
                 self.callback({'event': 'motor_error', 'message': f'Cannot save session report: {e}'})
-            self.callback({'event': 'motor_disconnected', 'log_directory': directory})
+            self.callback({'event': 'motor_disconnected', 'log_directory': directory,
+                           'stop_replies': self.report.get('cleanup_stop_replies', {})})
