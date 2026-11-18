@@ -391,6 +391,25 @@ The feedback-delay root cause is unresolved. Retrying idle feedback improved
 tolerance in a recorded stationary run; this does not prove a built-in 30-second
 hardware timeout or reliable unattended control.
 
+### Bridge works only after connecting Motor control first
+
+Connecting Motor control first is **not a required setup step**. Control Bridge
+performs its own motor startup checks. Direct Motor control and the bridge cannot
+own the telescope connection simultaneously: switch Control Bridge OFF before
+connecting Motor control, then click Disconnect on Motor control before restarting
+the bridge. Also disconnect any other application connected directly to the adapter.
+
+If that sequence appears to restore operation, it may reflect temporary recovery
+from missing motor replies or closing/reopening the connection; coincidence has
+not been ruled out. It does not prove Motor control initialized a missing alignment
+or required telescope setting. Do not treat it as a guaranteed workaround.
+
+If it recurs, stop jogging and check the telescope is stationary. Preserve the
+bridge and direct-motor logs, and note the times and order of actions so startup
+replies, timeouts and disconnects can be compared. Verify the telescope address,
+power and network access before reconnecting. A successful startup check does not
+guarantee uninterrupted feedback afterward.
+
 ## Generate the telescope configuration
 
 `calibrate_telescope.py` is a standalone utility, not a GUI wizard. Its module
