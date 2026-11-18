@@ -1,5 +1,7 @@
 # Celestron Telescope Network Control
 
+<img src="assets/icons/cosmos90gt.png" alt="Celestron telescope icon with WiFi on the telescope body" width="128" height="128">
+
 **Telescope control over Wi-Fi (WiFi), using direct/ad hoc and infrastructure networks, with specialized V1 WiFly / SkyQLink RN-171 support for the Celestron COSMOS 90GT WiFi Telescope.**
 
 A cross-platform Python desktop application for motor control, encoder readback,
