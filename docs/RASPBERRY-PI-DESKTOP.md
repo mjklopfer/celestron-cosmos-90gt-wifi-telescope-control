@@ -4,6 +4,14 @@ This guide runs the Python/Tk application in an existing graphical desktop.
 It is a source installation with a desktop shortcut, not a standalone binary.
 Real telescope and bridge operation require separate hardware validation.
 
+## Version 1.1 deployment — November 18, 2026
+
+Updated from GitHub, installed into the existing Python 3.12.16 environment, and
+passed startup smoke plus 36 focused offline tests. Tcl/Tk 8.6.9 and psutil 7.2.2
+were present. The desktop app launched successfully; shortcut display actions
+and the Desktop Start Here guide were refreshed. No new live telescope/GoTo
+validation is implied. See [validation](VALIDATION.md).
+
 ## Recorded environment
 
 Validation date: November 16, 2026. Application baseline: `d0b92c9`.

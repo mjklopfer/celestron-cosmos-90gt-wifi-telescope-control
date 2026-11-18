@@ -252,3 +252,15 @@ ESP32 source. Remaining: real commercial provisioning tests, firmware build/flas
 validation, actual AUX electrical transport, time/site extension GUI/MCP parity,
 verified SkySafari default-direction mapping and new macOS visual review.
 See HOMEBREW-INTERFACES.md and INTERFACE-MODES.md for exact boundaries.
+
+## Future revision: three-position connection/reset control
+
+Consider a genuine three-position visual switch resembling a tripped circuit
+breaker: Disconnected (red), Connected -- Link Unconfirmed (middle/orange), and
+Connected -- Link Confirmed (green). Pushing the middle state toward Connect
+would request a guarded reset, not assert success. Show Reset applied only after
+Stop/close/reconnect completes, then report the observed state; preserve the error
+and return to Disconnected if it fails. Do not replay prior movement. Verify Stop
+priority, exclusive endpoint ownership, failed reconnect and cancellation before
+release. This is a future revision, not implemented in the two-position control.
+The current reset remains explicit Disconnect followed by Connect.

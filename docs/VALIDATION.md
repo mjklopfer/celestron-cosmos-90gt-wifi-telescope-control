@@ -423,3 +423,19 @@ physical telescope movement, settings write or credential upload was performed.
 Commercial provisioning, ESP32 0.2.3 compilation/flash, physical ESP32 AUX
 transport and fresh macOS visual validation remain unverified. Pi deployment
 results will be recorded after installation of this committed release.
+
+### Raspberry Pi deployment and final state-indicator refinement
+
+The 1.1 release was pulled from GitHub and installed editable without dependency
+changes on the Raspberry Pi: Raspbian GNU/Linux 10 Buster, armv7l, Python 3.12.16,
+Tcl/Tk 8.6.9 and psutil 7.2.2. Startup smoke and 36 focused offline tests passed,
+including modern provisioning mocks, motor settings, network inventory, log
+archives and both-profile local references. The X desktop exposed the application
+window and its process stayed running. No real telescope motion was commanded.
+The installer refreshed the named desktop launcher and 80%/100% display actions;
+the desktop Start Here guide was refreshed. Menu visibility still depends on the
+file manager; this deployment verified the installed action definitions.
+
+The final state refinement additionally tests explicit errors returning the
+switch to Disconnected/red during cleanup and matching orange switch/pilot colors
+for an unconfirmed link. A three-position reset gesture is recorded as future work.

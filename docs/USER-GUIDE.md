@@ -1063,3 +1063,7 @@ aging when periodic polling is off and directs the user to Read for a fresh samp
 The Connect side does not turn green until motor feedback verifies the connection.
 A module reply alone cannot establish motor health. Disconnect/Cancel remains
 available to release an active connection or attempt.
+
+An explicit motor connection error immediately returns the connection switch and light to **Disconnected / red**, even while the worker finishes Stop/close cleanup. The error remains visible. Delayed feedback alone remains **Connected -- Link Unconfirmed / orange**; it does not cause the UI to falsely report a closed socket.
+
+The selected side of the connection switch mirrors the pilot light: green confirmed, orange unconfirmed, red disconnected. Initial connection attempts do not select Connect before verification. Temporary recovery retains the Connect position in orange; an explicit failure returns the switch to Disconnect in red.

@@ -1327,28 +1327,33 @@ class SetupApp(ttk.Frame):
         if button is None or not button.winfo_exists():
             return
         active = self.motor is not None
-        connected = active and self.motor_ready
+        failed = active and bool(self.last_motor_error)
+        connected = active and self.motor_ready and not failed
         fresh = all(time.monotonic() - self.last_positions.get(axis, 0) <= self.encoder_stale_after() for axis in AXES)
         ready = connected and fresh
         blocked = active or self.busy or self.bridge is not None or self.selection_pending or self.interface_kind() == 'proxy'
-        button.configure(state='disabled' if blocked else 'normal',
-                         background='#146b39' if ready else '#dddddd',
-                         foreground='white' if ready else '#333333',
-                         disabledforeground='white' if ready else '#777777',
-                         relief='sunken' if ready else 'raised')
-        self.reference_disconnect_button.configure(state='normal' if active else 'disabled',
-            text='Disconnect' if connected or not active else 'Cancel',
-            background='#dddddd' if active else '#b52b2b',
-            foreground='#333333' if active else 'white', disabledforeground='white',
-            relief='raised' if active else 'sunken')
         if ready:
             state, color = 'Connected -- Link Confirmed', '#146b39'
-        elif active:
+        elif active and not failed:
             state, color = 'Connected -- Link Unconfirmed', '#b86500'
         else:
             state, color = 'Disconnected', '#b52b2b'
+        # The requested state is not the confirmed state: stay on Disconnect
+        # during initial acquisition; retain Connect through temporary recovery.
+        selected_connect = active and not failed and not self.connect_request_active
+        button.configure(state='disabled' if blocked else 'normal',
+                         background=color if selected_connect else '#dddddd',
+                         foreground='white' if selected_connect else '#333333',
+                         disabledforeground='white' if selected_connect else '#777777',
+                         relief='sunken' if selected_connect else 'raised')
+        self.reference_disconnect_button.configure(state='normal' if active else 'disabled',
+            text='Cancel' if active and self.connect_request_active and not failed else 'Disconnect',
+            background='#dddddd' if selected_connect else color,
+            foreground='#333333' if selected_connect else 'white', disabledforeground='white',
+            relief='raised' if selected_connect else 'sunken')
         polling = self.direct_polling_applied[0] if self.direct_polling_applied else self.motor_heartbeat.get()
-        detail = ('Fresh motor feedback received.' if ready else
+        detail = (self.last_motor_error if failed else
+                  'Fresh motor feedback received.' if ready else
                   'Periodic polling is off; click Read for a fresh sample.' if connected and not polling else
                   'Motor feedback is overdue; the connection may be delayed or lost.' if connected else
                   self.motor_status.get() if active else 'Click Connect to open the motor connection.')

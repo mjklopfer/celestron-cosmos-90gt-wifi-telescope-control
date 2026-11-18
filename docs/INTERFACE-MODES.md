@@ -72,9 +72,8 @@ Archive import is limited to 256 MiB per member and 512 MiB total.
 ## Review limits
 
 Windows GUI review is complete; real-device validation remains separate. Prior COSMOS 90GT
-motion tests remain separate from verification of this revision. Commercial
-modern-module hardware, new macOS rendering and Raspberry Pi deployment have
-not yet been retested. Do not infer universal compatibility from discovery.
+motion tests remain separate from verification of this revision. Pi installation, startup and focused offline tests passed on Buster/Python 3.12.16.
+Commercial modern-module hardware and new macOS rendering have not been retested. Do not infer universal compatibility from discovery.
 
 ## Bridge controls by profile
 

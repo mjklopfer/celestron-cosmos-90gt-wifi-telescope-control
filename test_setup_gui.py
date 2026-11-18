@@ -181,9 +181,15 @@ class GuiTests(unittest.TestCase):
         app.last_positions[0x10] = time.monotonic() - 1000
         app.refresh_reference_connection_controls()
         self.assertIn('Connected -- Link Unconfirmed', app.reference_connection_indicator.cget('text'))
+        self.assertEqual(app.reference_connect_button.cget('background'), app.reference_connection_indicator.cget('background'))
         app.direct_polling_applied = (False, 1.0, 30)
         app.refresh_reference_connection_controls()
         self.assertIn('Periodic polling is off', app.reference_connection_detail.get())
+        app.handle_motor_event({'event': 'motor_error', 'message': 'Simulated connection failure'})
+        self.assertEqual(app.reference_connection_indicator.cget('text'), '● Disconnected')
+        self.assertEqual(app.reference_disconnect_button.cget('background'), '#b52b2b')
+        self.assertEqual(app.reference_disconnect_button.cget('relief'), 'sunken')
+        self.assertIn('Simulated connection failure', app.reference_connection_detail.get())
         self.assertEqual(app.reference_disconnect_button.cget('state'), 'normal')
         app.motor = None
         app.motor_ready = False
