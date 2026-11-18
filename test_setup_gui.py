@@ -571,7 +571,10 @@ class BridgeGuiTests(unittest.TestCase):
         app.bridge_enabled.set(True)
         app.toggle_bridge()
         self.drain_ui()
-        for tab in (app.motor_tab, app.diagnostic_tab, app.provision_tab):
+        self.assertEqual(app.tabs.tab(app.motor_tab, 'state'), 'normal')
+        self.assertFalse(app.bridge_jog_requested.get())
+        self.assertEqual(str(app.motor_settings_button.cget('state')), 'disabled')
+        for tab in (app.diagnostic_tab, app.provision_tab):
             self.assertEqual(app.tabs.tab(tab, 'state'), 'disabled')
         self.assertEqual(app.tabs.select(), str(app.bridge_tab))
         self.assertEqual(app.values[16]['encoder'].get(), '23456')
@@ -584,6 +587,32 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertIsNone(app.bridge)
         for tab in (app.motor_tab, app.diagnostic_tab, app.provision_tab):
             self.assertEqual(app.tabs.tab(tab, 'state'), 'normal')
+
+    def test_bridge_jog_requires_feedback_and_fault_stays_locked(self):
+        from unittest.mock import Mock, patch
+        app = self.app
+        app.bridge = Mock(local_fault=False)
+        app.bridge_jog_requested.set(True)
+        with patch('skyqlink_setup.messagebox.askyesno', return_value=True):
+            app.toggle_bridge_jog()
+        app.bridge.set_local_jog.assert_called_once_with(True)
+        self.assertFalse(app.bridge_jog_ready)
+        app.handle_bridge_event({'event': 'bridge_local_mode', 'enabled': True, 'message': 'Enabled'})
+        for axis in (16, 17):
+            app.handle_bridge_event({'event': 'bridge_values', 'axis': axis, 'encoder': 123,
+                                    'angle': .01, 'relative': 0, 'firmware': '5.24', 'monotonic': time.monotonic()})
+        self.assertTrue(app.bridge_jog_ready)
+        app.bridge_jog(16, 1, held=True)
+        app.bridge.jog.assert_called_once_with(16, 1, int(app.speed.get()), 2.0)
+        app.bridge.local_fault = True
+        app.handle_bridge_event({'event': 'bridge_local_motion', 'moving': False, 'message': 'Feedback lost'})
+        self.assertFalse(app.bridge_jog_ready)
+        app.handle_bridge_event({'event': 'bridge_values', 'axis': 16, 'encoder': 123,
+                                'angle': .01, 'relative': 0, 'firmware': '5.24', 'monotonic': time.monotonic()})
+        self.assertFalse(app.bridge_jog_ready)
+        app.handle_bridge_event({'event': 'bridge_packet', 'direction': 'client', 'hex': '3b0420102400a8', 'interpretation': 'Move positive request/echo: STOP'})
+        self.assertIn('3b0420102400a8 (Move positive request/echo: STOP)', app.bridge_console.get('1.0', 'end'))
+        app.bridge = None
 
     def test_bridge_requires_infrastructure_and_shows_firewall_ports(self):
         app = self.app

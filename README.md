@@ -325,8 +325,9 @@ move the telescope slider or connect the computer to a different Wi-Fi network.
    Encoder angles are raw motor positions converted to degrees. They do not show
    the telescope’s aligned sky-pointing azimuth/elevation or an object’s coordinates. Use the scope/app's alignment procedure for sky pointing.
 2. **Control Bridge:** relays native AUX traffic to a compatible phone/desktop control app.
-   Defaults OFF. While ON, the other control tabs are disabled and readbacks/logs
-   remain visible. The controlling application can command real telescope motion.
+   Defaults OFF. While ON, Diagnostics and Wi-Fi provisioning are disabled.
+   Motor control offers optional experimental local jogging through the bridge,
+   with external-command priority; readbacks/logs remain visible. The controlling application can command real telescope motion.
 3. **Diagnostics:** displays actual adapter query data, replies, timeouts and
    controller details. A responding RN-171 can be listed even when motors do not
    answer; adapter detection alone does not prove motor connectivity.
@@ -664,3 +665,10 @@ For direct/infrastructure addresses and the roles of TCP 2000, TCP 3000, UDP 555
 [^phone-hotspot]: Phone hotspot compatibility is unverified. The RN-171 accepted and saved iPhone Personal Hotspot settings, but association and reachable telescope control were not established, including after restarts. The cause (association/authentication, DHCP, or client isolation) is unresolved. Communication between hotspot clients, discovery, and control from the hotspot-hosting phone remain unverified; successful provisioning does not establish connectivity.
 
 Application note: [KStars/INDI connection and manual eyepiece alignment](docs/KSTARS-BRIDGE-NOTE.md), with [measured results and versions](docs/engineering/2026-11-16-pi-kstars-validation.md). [Portable desktop start/stop guide](docs/TELESCOPE-CONTROL-START-HERE.md).
+
+
+Bridge logs now show known AUX interpretations beside raw hex; unknowns remain
+unknown. See the [user-guide appendix](docs/USER-GUIDE.md#technical-appendix-interpreting-external-application-traffic)
+for captured SkySafari command findings, including commands without GUI controls.
+[Local jogging through the bridge](docs/USER-GUIDE.md#local-jogging-while-control-bridge-is-on-experimental)
+is OFF by default and experimental; supervised live coexistence testing is pending.

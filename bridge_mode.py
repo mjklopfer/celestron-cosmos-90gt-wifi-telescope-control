@@ -5,6 +5,7 @@ owns the upstream stream; other control sessions must remain disconnected."""
 import argparse
 import ipaddress
 import json
+import math
 import select
 import socket
 import threading
@@ -15,6 +16,7 @@ from endpoint_lock import EndpointLease
 from motor_control import AXES, angle, relative_angle, motor_packet, version
 from setup_backend import validate_endpoint, check_direct_route
 from network_info import route_source_address
+from bridge_decode import describe_aux
 
 IDENTITY = 'COSMOSBridge-AMW007-0.1.0.0, Python proxy'
 
@@ -53,6 +55,16 @@ class Bridge:
         self.udp = None
         self.parser = FrameParser()
         self.client_parser = FrameParser()
+        self.local_lock = threading.Lock()
+        self.local_requested = False
+        self.local_enabled = False
+        self.local_pending = None
+        self.local_stop_requested = False
+        self.local_deadline = None
+        self.local_feedback = {}
+        self.local_poll = 0
+        self.local_fault = False
+        self.local_generation = 0
         self.origins, self.firmware = {}, {}
         # A locally administered identity identifies this proxy, not the RN-171.
         self.mac = ':'.join(f'{b:02X}' for b in b'\x02' + uuid.uuid4().bytes[:5])
@@ -78,13 +90,121 @@ class Bridge:
         """Signal bridge shutdown; the worker attempts Stop and drains replies before closing."""
         self.stopping.set()
 
+    def set_local_jog(self, enabled):
+        """Enable/disable worker-mediated local jogging; never write a socket from UI."""
+        if not self.ready.is_set():
+            raise RuntimeError('Wait until Control Bridge is ready.')
+        with self.local_lock:
+            self.local_requested = bool(enabled)
+            self.local_pending = None
+            self.local_stop_requested = True
+            self.local_generation += 1
+
+    def jog(self, axis, direction, rate, seconds):
+        """Queue one expiring jog. No repeats, buffered sequences or hold renewal."""
+        if axis not in AXES or direction not in (-1, 1):
+            raise ValueError('Select a valid motor axis and direction.')
+        if isinstance(rate, bool) or not isinstance(rate, int) or not 1 <= rate <= 9:
+            raise ValueError('Speed must be a whole number from 1 to 9.')
+        if not math.isfinite(seconds) or not .1 <= seconds <= 2:
+            raise ValueError('Bridge jog duration must be 0.1–2 seconds.')
+        with self.local_lock:
+            if (not self.ready.is_set() or not self.local_requested or not self.local_enabled
+                    or self.local_fault or self.local_stop_requested):
+                raise RuntimeError('Enable local jogging and wait for fresh motor feedback.')
+            if self.local_pending or self.local_deadline is not None:
+                raise RuntimeError('Wait for the current jog to stop.')
+            self.local_pending = (axis, direction, rate, seconds, time.monotonic(), self.local_generation)
+
+    def stop_local_jog(self):
+        """Priority request cancels any pending jog, including on external Stop."""
+        with self.local_lock:
+            self.local_pending = None
+            self.local_stop_requested = True
+            self.local_generation += 1
+
+    def local_tick(self, now):
+        """Only the relay worker calls this; bounded motion never blocks relay IO."""
+        with self.local_lock:
+            desired = self.local_requested
+            stop = self.local_stop_requested
+            self.local_stop_requested = False
+            pending = self.local_pending
+            self.local_pending = None
+            generation = self.local_generation
+        transition = desired != self.local_enabled
+        if transition or stop or (self.local_deadline is not None and now >= self.local_deadline):
+            self.send_stops()
+            self.local_deadline = None
+            self.emit('bridge_local_motion', moving=False, message='Local motion stopped. External commands continue through the bridge.')
+        if transition:
+            self.local_enabled = desired
+            self.local_fault = False
+            # Preserve fragmented external frames across toggle changes. Only
+            # local requests are cancelled; external commands still pass in order.
+            self.local_feedback.clear()
+            self.local_poll = 0
+            self.emit('bridge_local_mode', enabled=desired,
+                      message='Local jogging enabled. External commands have priority and can interrupt a jog. Hold is limited to 2 seconds.' if desired else
+                      'Local jogging disabled. Pending local commands discarded; external commands continue.')
+        fresh = all(now - self.local_feedback.get(axis, -math.inf) < 2 for axis in AXES)
+        if self.local_enabled and self.local_deadline is not None and not fresh:
+            self.send_stops()
+            self.local_deadline = None
+            self.local_fault = True
+            self.emit('bridge_local_motion', moving=False, message='Encoder feedback lost: Stop attempted. Local jogging locked. Release and re-enable only after checking the telescope.')
+        if pending and self.local_enabled and not self.local_fault and not stop and not transition:
+            axis, direction, rate, seconds, queued, queued_generation = pending
+            if fresh and now - queued < .5 and generation == queued_generation:
+                # Recheck priority Stop immediately before dispatch.
+                with self.local_lock:
+                    if self.local_stop_requested or not self.local_requested:
+                        return
+                    self.upstream.sendall(motor_packet(axis, 0x24 if direction > 0 else 0x25, bytes((rate,))))
+                    self.local_deadline = time.monotonic() + seconds
+                self.emit('bridge_local_motion', moving=True, message=f'Local jog: {AXES[axis]}, speed {rate}, maximum {seconds:g}s.')
+            else:
+                self.emit('bridge_local_motion', moving=False, message='Jog discarded: feedback is stale or request expired. Wait for fresh values and try again.')
+        if self.local_enabled and now >= self.local_poll:
+            for axis in AXES:
+                self.upstream.sendall(motor_packet(axis, 1))
+            self.local_poll = now + .4
+
+    def forward_client(self, raw):
+        """External commands always pass. Potential conflicts cancel local motion first.
+
+        This is command arbitration, not independent TCP writers or synthetic ACKs.
+        Unknown commands conservatively preempt a jog, but remain transparent to
+        the external application. No cached command or tracking rate is replayed.
+        """
+        for frame in self.observe(raw, 'client'):
+            axis, command = frame[3:5]
+            stop = axis in AXES and command in (0x24, 0x25) and frame[5:-1] == b'\x00'
+            with self.local_lock:
+                guarded = self.local_enabled or self.local_requested
+            # Conservative read allowlist. Unknown commands are NOT assumed safe.
+            read = command == 0xfe and len(frame) == 6
+            read |= axis in AXES and command in (1, 5, 0x13, 0x40, 0x41, 0x47) and len(frame) == 6
+            if guarded and (stop or not read):
+                with self.local_lock:
+                    interrupted = self.local_pending is not None or self.local_deadline is not None
+                    self.local_pending = None
+                    self.local_deadline = None
+                    self.local_generation += 1
+                if interrupted:
+                    self.send_stops()
+                    self.emit('bridge_local_motion', moving=False,
+                              message=f'Local jog interrupted by external command 0x{command:02X} to 0x{axis:02X}. External command forwarded. Pause tracking in the external app if it repeatedly interrupts jogging.')
+            self.upstream.sendall(frame)
+            self.report['bytes_to_mount'] += len(frame)
+
     def observe(self, raw, direction):
         """Log valid AUX frames and update readbacks from controller position replies."""
         parser = self.parser if direction == 'mount' else self.client_parser
         frames = parser.feed(raw)
         for frame in frames:
             # Log checksummed AUX frames, not arbitrary ASCII/configuration data.
-            self.emit('bridge_packet', direction=direction, hex=frame.hex())
+            self.emit('bridge_packet', direction=direction, hex=frame.hex(), interpretation=describe_aux(frame))
             axis = frame[2]
             if direction != 'mount' or axis not in AXES or frame[3] != 0x20:
                 continue
@@ -92,6 +212,7 @@ class Bridge:
             if frame[4] == 0xfe:
                 self.firmware[axis] = version(data)
             if frame[4] == 1 and len(data) == 3:
+                self.local_feedback[axis] = time.monotonic()
                 count = int.from_bytes(data, 'big')
                 self.origins.setdefault(axis, count)
                 self.emit('bridge_values', axis=axis, encoder=count, angle=angle(count),
@@ -128,14 +249,15 @@ class Bridge:
                 self.callback({'event': 'bridge_error', 'message': message})
         self.emit('bridge_status', message='Stop attempted on both axes; encoder verification is separate.')
 
-    def close_client(self):
+    def close_client(self, reason="control app closed the socket or a socket error occurred"):
         """Drop the app socket, reset its parser and attempt motor Stop."""
         if self.client:
+            self.stop_local_jog()
             self.client.close()
             self.client = None
             self.client_parser = FrameParser()
             self.send_stops()
-            self.emit('bridge_client', message='App client disconnected; Stop attempted. Waiting for a new client.')
+            self.emit('bridge_client', message=f'App client disconnected ({reason}); Stop attempted. Waiting for a new client.')
 
     def management_reply(self, command):
         # This is a proxy, never a WiFly provisioning or firmware-update gateway.
@@ -205,6 +327,7 @@ class Bridge:
             manager_buffer = bytearray()
             while not self.stopping.is_set():
                 now = time.monotonic()
+                self.local_tick(now)
                 if self.udp and self.client is None and now >= next_advert:
                     packet = json.dumps({'mac': self.mac, 'version': IDENTITY}).encode()
                     try:
@@ -212,7 +335,7 @@ class Bridge:
                     except OSError as error:
                         self.emit('bridge_status', message=f'Discovery broadcast failed: {error}')
                     next_advert = now + 1
-                if self.client is None and now >= next_poll:
+                if self.client is None and not self.local_enabled and now >= next_poll:
                     for axis in AXES:
                         count = self.request(axis, 1)
                         if self.stopping.is_set():
@@ -266,9 +389,7 @@ class Bridge:
                         if not raw:
                             self.close_client()
                         else:
-                            self.observe(raw, 'client')
-                            self.upstream.sendall(raw)
-                            self.report['bytes_to_mount'] += len(raw)
+                            self.forward_client(raw)
                             last_client = time.monotonic()
                     elif source is self.manager:
                         try:
@@ -293,7 +414,7 @@ class Bridge:
                             source.close()
                             self.manager = None
                 if self.client and time.monotonic() - last_client > 15:
-                    self.close_client()
+                    self.close_client('no incoming control-app data for 15 seconds')
                 if self.manager and time.monotonic() - last_manager > 10:
                     self.manager.close()
                     self.manager = None

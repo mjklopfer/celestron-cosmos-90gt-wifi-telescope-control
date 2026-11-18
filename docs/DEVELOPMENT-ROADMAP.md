@@ -136,3 +136,14 @@ Resolved by the macOS appearance update (`775308e`, documented in `8262108`): re
 ## Pi/KStars closeout — 2026-11-16
 
 Completed: both-axis manual movement, Stop, fresh encoder readback, and fresh Pi-session connection after telescope power cycling. See the [versioned validation record](engineering/2026-11-16-pi-kstars-validation.md) and [manual operating note](KSTARS-BRIDGE-NOTE.md). Remaining: real-star manual alignment/GoTo accuracy, sustained tracking, intermittent adapter reply loss, coordinated external-client reset handling, and separate CPWI verification. No camera-based alignment work is planned for this deployment.
+
+
+## Bridge mediation and AUX observations — 2026-11-17
+
+Implemented: optional bounded local jogging using the bridge worker, external-command
+priority, and raw-hex plus conservative command interpretation. Captured findings,
+unknown commands, and remaining live-validation tasks are recorded in the
+[engineering note](engineering/2026-11-17-skysafari-aux-observations.md).
+No new controls for unknown commands, no claim of shared alignment, and no new
+verified time/location-write endpoint. Live SkySafari coexistence and new UI
+validation on Pi/macOS remain pending.

@@ -109,3 +109,20 @@ session, and no new telescope hardware/endurance validation is claimed.
 ## Pi/KStars closeout — 2026-11-16
 
 The earlier pending Pi integration status is superseded by the [versioned hardware validation record](engineering/2026-11-16-pi-kstars-validation.md): both-axis manual motion, Stop, fresh encoder feedback and fresh-session reconnection verified. Real-star alignment, GoTo accuracy and sustained tracking remain unverified.
+
+
+## Bridge mediation and trace decoder — 2026-11-17
+
+Windows / Python 3.14: broader offline suite ran 112 tests (111 passed, one skipped).
+Focused bridge/decoder/withdrawn-GUI suite subsequently passed 25 tests, including
+external-command priority, fragmented frames across a toggle, bounded jogging,
+stale-feedback lockout, GUI feedback gates and raw-hex/decoded logging. Initial
+parallel targeted tests collided on the simulated endpoint lease; rerun serially
+passed. Ruff and diff whitespace checks passed. Wheel and source archive built
+successfully with the decoder included. The full focus-taking GUI suite was not
+rerun during the user's ongoing capture.
+
+Live evidence covers external SkySafari traffic on the previously running build,
+not the new local-jog mediation. Live joint jogging, new Pi/macOS UI review and
+alignment preservation remain unverified. See the
+[observation record](engineering/2026-11-17-skysafari-aux-observations.md).

@@ -56,7 +56,7 @@ See [every launch option, default, usage case and limitation](RUNTIME-OPTIONS.md
 
 ## Connect to the telescope
 
-Only one application should control the telescope at a time. **Disconnect** means clicking the Disconnect button on the Motor control tab to release this application’s connection; it does not mean unplugging motor cables or turning off telescope power. For the bridge, switch Control Bridge OFF. Wait for an active operation to finish before starting another. Disconnect phone
+Only one connection may own the telescope interface at a time. Control Bridge can mediate local jogging with one external control application, as described below. **Disconnect** means clicking the Disconnect button on the Motor control tab to release this application’s connection; it does not mean unplugging motor cables or turning off telescope power. For the bridge, switch Control Bridge OFF. Wait for an active operation to finish before starting another. Disconnect phone
 apps, other desktop controllers and this application's bridge before manual
 motor control, diagnostics or settings work.
 
@@ -220,6 +220,31 @@ select Celestron WiFi and Access Point mode (the external app's spelling).
 The bridge also provides discovery on UDP 55555 and limited management on TCP
 3000. Allow local-network firewall access; opening a local port does not prove
 that another device can reach it.
+
+### Local jogging while Control Bridge is ON (experimental)
+
+The Motor control tab remains available with an amber marker and a warning panel.
+Local jogging starts **OFF**. With clear travel and the external app no longer
+slewing, turn **Enable local jogging through bridge** ON and confirm the warning.
+This attempts Stop, then waits for fresh position replies from both axes.
+Use the arrow buttons or the configured keyboard controls; keyboard control must
+also be ON. Hold-to-move stops on release and is capped at **2 seconds per press**;
+timed jogs accept **0.1–2 seconds**. O/P do not open or close a second motor connection
+while the bridge is active. Controller angle/backlash settings remain unavailable.
+
+**External commands have priority.** A conflicting external command first cancels
+the local jog and attempts Stop, then passes through to the telescope. Position
+reads continue normally. Unknown commands also interrupt local jogging rather
+than being assumed harmless. If tracking updates repeatedly interrupt your jog,
+pause tracking in your control application before trying again. Stop here does not
+block future movement requested by the external app. The bridge never replays an
+old local jog or pretends an external command succeeded.
+
+Turn the local-jog switch OFF when finished; this attempts Stop and leaves the
+external application connected. Switch Control Bridge OFF to close the telescope
+connection. Lost feedback locks local jogging; inspect the telescope before
+switching local jogging OFF and ON again. Network failure can prevent Stop from
+reaching the mount. Live coexistence with SkySafari remains pending validation.
 
 ### Direct/ad hoc: why Control Bridge is disabled
 
@@ -553,3 +578,34 @@ For an ordinary shared infrastructure network, leave the **Two Interface Mode** 
 ### Pi desktop and optional control clients
 
 See the [desktop installer and zoom actions](RASPBERRY-PI-DESKTOP.md#portable-desktop-installer-and-zoom-actions), [start/stop guide](TELESCOPE-CONTROL-START-HERE.md), and optional [KStars application note](KSTARS-BRIDGE-NOTE.md). Celestron AUX is a device tab in KStars' INDI Control Panel. Manual alignment uses eyepiece centering and Sync; no camera workflow is included.
+
+
+## Technical appendix: interpreting external application traffic
+
+The bridge log retains raw AUX hexadecimal bytes and adds a parenthesized
+interpretation for known commands: firmware and position reads, GoTo, tracking
+rates, movement/Stop, backlash, and cord-wrap commands. Unknown commands or payload
+meanings are explicitly left unknown. An echoed request is not a device reply;
+a reply is not proof of physical movement, permanent settings, or sky alignment.
+
+The [SkySafari AUX observation record](engineering/2026-11-17-skysafari-aux-observations.md)
+lists observed addresses, command IDs, payloads and decoded values, including
+commands without GUI controls and unknown commands reserved for later research.
+It also records the absence of recognized encoder-reset/time/location writes in
+the reviewed capture, without claiming those features cannot exist.
+
+
+The bridge disconnects a control application after **15 seconds without incoming
+commands**, attempts Stop, and waits for reconnection; ordinary position requests
+keep it active. Its management socket has a separate 10-second inactivity limit.
+These are bridge timers, not a confirmed WiFly timeout. Startup accessory probes
+can also delay connection: the observed SkySafari sequence spent about 36 seconds
+retrying nonresponding accessories. See the observation record for startup order,
+shutdown handling and evidence limits.
+
+
+A later screenshot/reference comparison identifies the GoTo-approach write command
+and records candidate maximum-slew-rate commands. Their uncertain scaling and
+readback field order remain qualified in the engineering note; no GUI controls
+were added for those candidate commands. Menu visibility alone does not establish
+onboard enforcement of slew limits or storage of alignment/hibernation settings.

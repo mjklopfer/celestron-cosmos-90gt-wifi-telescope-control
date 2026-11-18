@@ -512,7 +512,59 @@ class SetupApp(ttk.Frame):
         self.last_local_reference = {}
         self.reference_poll_pending = set()
         self.motor_setting_status = tk.StringVar(value='To read hardware settings, click Disconnect on the Motor control tab if connected, and switch Control Bridge OFF if running. Leave the telescope powered on.')
-        ttk.Button(tab, text='Controller Angle / Backlash Settings…', command=self.open_motor_settings).grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
+        self.motor_settings_button = ttk.Button(tab, text='Controller Angle / Backlash Settings…', command=self.open_motor_settings)
+        self.motor_settings_button.grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
+        for child in tab.grid_slaves():
+            child.grid_configure(row=int(child.grid_info()['row']) + 1)
+        self.bridge_jog_requested = tk.BooleanVar(value=False)
+        self.bridge_jog_active = False
+        self.bridge_jog_ready = False
+        self.bridge_jog_note = tk.StringVar(value='Bridge jogging is available only while Control Bridge is ON.')
+        self.bridge_jog_box = tk.Frame(tab, background='#fff0c2', padx=8, pady=6)
+        self.bridge_jog_box.grid(row=0, columnspan=2, sticky='ew')
+        tk.Label(self.bridge_jog_box, text='Enable local jogging through bridge (experimental)',
+                 background='#fff0c2', foreground='#513800', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
+        self.bridge_jog_switch = BridgeRocker(self.bridge_jog_box, variable=self.bridge_jog_requested,
+                                             command=self.toggle_bridge_jog, compact=True)
+        self.bridge_jog_switch.pack(anchor='w')
+        tk.Label(self.bridge_jog_box, textvariable=self.bridge_jog_note, background='#fff0c2',
+                 foreground='#513800', wraplength=800, justify='left').pack(anchor='w')
+        self.bridge_jog_box.grid_remove()
+        self.bridge_tab_mark = tk.PhotoImage(master=self.root, width=12, height=12)
+        self.bridge_tab_mark.put('#e5a329', to=(0, 0, 12, 12))
+
+    def toggle_bridge_jog(self):
+        if self.bridge is None:
+            self.bridge_jog_requested.set(False)
+            return
+        enabled = self.bridge_jog_requested.get()
+        if enabled and not messagebox.askyesno('Enable local jogging through bridge?',
+                'Confirm the telescope has clear travel and the external app is not slewing. '
+                'Enabling stops current motion. External commands continue and have priority: '
+                'a conflicting external command stops the local jog and is then forwarded. '
+                'Hold is capped at 2 seconds; timed jogs at the selected duration. '
+                'Frequent tracking updates can interrupt a jog; pause tracking in the external app if needed. Enable?', parent=self.root):
+            self.bridge_jog_requested.set(False)
+            return
+        try:
+            self.bridge.set_local_jog(enabled)
+            self.bridge_jog_ready = False
+            self.bridge_jog_note.set('Waiting for fresh motor positions before enabling local jogging…' if enabled else 'Stopping local movement and disabling local jogging…')
+        except (RuntimeError, ValueError) as error:
+            self.bridge_jog_requested.set(False)
+            self.bridge_jog_note.set(str(error))
+        self.update_controls()
+
+    def bridge_jog(self, axis, direction, held=False):
+        if not self.bridge or not self.bridge_jog_active or not self.bridge_jog_ready or self.jogging:
+            return
+        try:
+            self.bridge.jog(axis, direction, int(self.speed.get()), 2.0 if held else float(self.duration.get()))
+            self.jogging = True
+            self.held = held
+        except (RuntimeError, ValueError) as error:
+            self.bridge_jog_note.set(str(error))
+        self.update_controls()
 
     def reload_calibration(self):
         self.calibration = None
@@ -1171,7 +1223,7 @@ class SetupApp(ttk.Frame):
                   '2. Enter or discover the telescope’s IP address at the top of this window. In Local System Network Interfaces, select this computer’s adapter on the astronomy app’s network.\n'
                   '3. Switch Control Bridge ON. Wait for the connection details to appear above.\n'
                   '4. In your astronomy app, select Celestron WiFi and Access Point mode. If it asks for an address and port, enter this computer’s displayed IPv4 address and TCP port, not the telescope’s address.\n'
-                  'While Control Bridge is ON, the other control tabs are disabled. Switching it OFF sends Stop to both motors and closes the connection; check the Transfer log for replies. The connected astronomy app can move the telescope.\n'
+                  'While Control Bridge is ON, Diagnostics and Wi-Fi provisioning are disabled. Motor control remains available for optional local jogging; external commands have priority. Switching it OFF sends Stop to both motors and closes the connection; check the Transfer log for replies. The connected astronomy app can move the telescope.\n'
                   'SkySafari has been tested in documented configurations. Other apps and long-duration operation remain unverified; only selected modern-adapter features are supported.',
                   wraplength=820).grid(row=7, sticky='w', pady=8)
         self.bridge_firewall_label = ttk.Label(tab, foreground='#b36b00', wraplength=820,
@@ -1261,6 +1313,8 @@ class SetupApp(ttk.Frame):
                 for value in values.values():
                     value.set('—')
             self.bridge_status.set('Starting bridge — checking telescope communication…')
+            self.bridge_jog_note.set('Local jogging OFF. External app controls motion. Enable here only with clear travel; external commands have priority.')
+            self.tabs.select(self.bridge_tab)
             self.bridge.start()
         except Exception as error:
             self.bridge = None
@@ -1271,8 +1325,26 @@ class SetupApp(ttk.Frame):
     def handle_bridge_event(self, event):
         """Apply worker events to bridge status, tab locks and readbacks."""
         kind = event['event']
+        if kind == 'bridge_local_mode':
+            self.bridge_jog_active = event['enabled']
+            self.bridge_jog_requested.set(event['enabled'])
+            self.bridge_jog_ready = False
+            self.last_positions.clear()
+            self.clear_local_references()
+            self.bridge_jog_note.set(event['message'])
+            self.motor_status.set('Bridge connected — local jogging ' + ('ON; waiting for feedback' if event['enabled'] else 'OFF'))
+        elif kind == 'bridge_local_motion':
+            self.jogging = event['moving']
+            if not self.jogging:
+                self.held = False
+            self.bridge_jog_note.set(event['message'])
+            if getattr(self.bridge, 'local_fault', False):
+                self.bridge_jog_ready = False
+                self.motor_status.set('Bridge connected — local jogging locked after feedback loss')
         if kind == 'bridge_values':
             self.handle_motor_event({**event, 'event': 'motor_values'})
+            self.bridge_jog_ready = self.bridge_jog_active and not getattr(self.bridge, 'local_fault', False) and all(time.monotonic() - self.last_positions.get(a, 0) < 2 for a in AXES)
+            self.update_controls()
             return
         if event.get('log_directory'):
             self.log_directory = event['log_directory']
@@ -1280,6 +1352,8 @@ class SetupApp(ttk.Frame):
         message = event.get('message')
         if kind == 'bridge_error' and self.bridge_last_error is None:
             self.bridge_last_error = message
+        if kind == 'bridge_ready':
+            self.motor_status.set('Bridge connected — local jogging OFF')
         if kind == 'bridge_ready' and event.get('bind_host'):
             self.bridge_listener = (event['bind_host'], event['listen_port'], event['management_port'])
             self.bridge_upstream_local = event.get('upstream_local')
@@ -1291,6 +1365,10 @@ class SetupApp(ttk.Frame):
                     f' → {self.host.get()}:{self.port.get()}')
             self.show_network_interfaces()
         if kind == 'bridge_off':
+            self.motor_status.set('Disconnected — Control Bridge is OFF')
+            self.bridge_jog_active = self.bridge_jog_ready = False
+            self.bridge_jog_requested.set(False)
+            self.jogging = self.held = False
             self.bridge = None
             self.bridge_listener = None
             self.bridge_upstream_local = None
@@ -1302,7 +1380,7 @@ class SetupApp(ttk.Frame):
                 message += ' One or more Stop acknowledgements were not received; physical rest is unverified.'
         if message:
             self.bridge_status.set(message)
-        line = message or (f'{event.get("direction", "")} AUX {event["hex"]}' if kind == 'bridge_packet'
+        line = message or (f'{event.get("direction", "")} AUX {event["hex"]} ({event.get("interpretation", "interpretation unavailable")})' if kind == 'bridge_packet'
                            else f'Management request: {event.get("operation", "")}' if kind == 'bridge_management' else kind)
         self.append('BRIDGE ' + line)
         self.bridge_console.configure(state='normal')
@@ -1482,10 +1560,16 @@ class SetupApp(ttk.Frame):
         for label in self.bridge_option_labels:
             label.configure(foreground=self.normal_text if direct_mode or self.bridge_dual.get() else self.muted_text)
         locked = self.busy or self.motor is not None or self.bridge is not None
-        for tab in (self.motor_tab, self.diagnostic_tab, self.provision_tab):
+        for tab in (self.diagnostic_tab, self.provision_tab):
             self.tabs.tab(tab, state='disabled' if self.bridge is not None else 'normal')
-        if self.bridge is not None:
-            self.tabs.select(self.bridge_tab)
+        self.tabs.tab(self.motor_tab, state='normal', image=self.bridge_tab_mark if self.bridge else '', compound='left',
+                      text='Motor control — bridge' if self.bridge else 'Motor control')
+        if self.bridge:
+            self.bridge_jog_box.grid()
+        else:
+            self.bridge_jog_box.grid_remove()
+        self.bridge_jog_switch.configure(state='normal' if self.bridge else 'disabled')
+        self.motor_settings_button.configure(state='disabled' if self.bridge else 'normal')
         bridge_allowed = self.connection_mode.get() == 'infrastructure' or self.bridge_dual.get()
         if self.bridge is not None:
             notice = 'Control Bridge is running. Switch it OFF to stop and release the connection.'
@@ -1515,8 +1599,9 @@ class SetupApp(ttk.Frame):
         self.module_box.configure(state='readonly' if self.discovered and not locked else 'disabled')
         self.motor_disconnect_button.configure(state='normal' if self.motor is not None else 'disabled')
         for button in self.jog_buttons:
-            button.configure(state='normal' if self.motor_ready and (not self.jogging or self.held) else 'disabled')
-        self.stop_button.configure(state='normal' if self.motor is not None else 'disabled')
+            can_jog = self.bridge_jog_ready if self.bridge else self.motor_ready
+            button.configure(state='normal' if can_jog and (not self.jogging or self.held) else 'disabled')
+        self.stop_button.configure(state='normal' if self.motor is not None or self.bridge is not None else 'disabled')
         self.speed_box.configure(state='disabled' if self.jogging else 'readonly')
         self.duration_box.configure(state='disabled' if self.jogging else 'readonly')
         self.refresh_password()
@@ -1548,6 +1633,9 @@ class SetupApp(ttk.Frame):
 
     def jog(self, axis, direction):
         """Queue the selected bounded jog through the active motor service."""
+        if self.bridge:
+            self.bridge_jog(axis, direction)
+            return
         if not self.motor_ready or self.motor is None or self.jogging:
             return
         try:
@@ -1589,11 +1677,14 @@ class SetupApp(ttk.Frame):
         # 0x000C therefore disabled every shortcut with Num Lock enabled.
         # Windows Alt is 0x20000; X11 uses Mod1 for Alt. Keep Ctrl blocked.
         alt_mask = 0x20000 if self.root.tk.call('tk', 'windowingsystem') == 'win32' else 0x0008
-        if (not self.keymap or not self.keyboard_enabled.get() or event.widget.winfo_toplevel() != self.root or self.tabs.select() != str(self.motor_tab) or self.busy or self.bridge is not None
+        if (not self.keymap or not self.keyboard_enabled.get() or event.widget.winfo_toplevel() != self.root or self.tabs.select() != str(self.motor_tab) or self.busy
                 or event.widget.winfo_class() in ('Entry', 'TEntry', 'Text', 'TCombobox', 'Spinbox', 'TSpinbox')
                 or event.state & (0x0004 | alt_mask)):
             return
         action = next((action for action, value in self.keymap.items() if value == key), None)
+        if self.bridge and action in ('connect', 'disconnect'):
+            self.bridge_jog_note.set('Use the local-jog toggle to enable or disable local jogging. Use Control Bridge OFF to disconnect the bridge.')
+            return 'break'
         if action == 'connect':
             self.connect_motors()
             return 'break'
@@ -1612,7 +1703,7 @@ class SetupApp(ttk.Frame):
                 self.after_cancel(self.keyboard_release_id)
                 self.keyboard_release_id = None
             return 'break'
-        if self.keyboard_direction or not self.motor_ready or self.jogging:
+        if self.keyboard_direction or not (self.bridge_jog_ready if self.bridge else self.motor_ready) or self.jogging:
             return 'break'
         self.keyboard_direction = key
         if self.drive_mode.get() == 'hold':
@@ -1640,6 +1731,10 @@ class SetupApp(ttk.Frame):
 
     def press_direction(self, axis, direction):
         """Start a held direction when validated motor controls are ready."""
+        if self.bridge:
+            if self.drive_mode.get() == 'hold':
+                self.bridge_jog(axis, direction, held=True)
+            return
         if self.drive_mode.get() != 'hold' or not self.motor_ready or self.motor is None or self.jogging:
             return
         try:
@@ -1662,6 +1757,8 @@ class SetupApp(ttk.Frame):
             self.after_cancel(self.keyboard_release_id)
             self.keyboard_release_id = None
         self.held = False
+        if self.bridge:
+            self.bridge.stop_local_jog()
         if self.motor:
             self.motor.stop()
             self.motor_status.set('Stopping…')
@@ -1677,7 +1774,7 @@ class SetupApp(ttk.Frame):
 
     def stop_if_unfocused(self):
         """Stop a held direction when focus leaves the application."""
-        if self.motor and self.jogging and self.root.focus_get() is None:
+        if (self.motor or self.bridge) and self.jogging and self.root.focus_get() is None:
             self.stop_motors()
 
     def refresh_password(self):
