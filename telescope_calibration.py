@@ -51,6 +51,12 @@ def save_config(config, path=DEFAULT_CONFIG):
 
 
 def load_config(path=DEFAULT_CONFIG):
+    """Load embedded measurements; source_log is provenance, never a read/write path.
+
+    A copied profile may reference a missing folder on another computer. Do not
+    open or create that folder, or use it to select the new logging destination.
+    New logs continue under celestron_probe.ROOT / 'logs' (the configured default).
+    """
     config = json.loads(Path(path).read_text(encoding='utf-8'))
     if config.get('schema_version') != 1:
         raise ValueError('Unsupported calibration schema')

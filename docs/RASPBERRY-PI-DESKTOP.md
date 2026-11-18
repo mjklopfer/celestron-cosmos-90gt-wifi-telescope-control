@@ -1,5 +1,8 @@
 # Raspberry Pi OS / Raspbian desktop setup
 
+For the complete custom INDI build, wrappers, service and Ekos profile, see the
+[reproduction guide](KSTARS-INDI-REPRODUCIBLE-SETUP.md).
+
 This guide runs the Python/Tk application in an existing graphical desktop.
 It is a source installation with a desktop shortcut, not a standalone binary.
 Real telescope and bridge operation require separate hardware validation.
@@ -57,8 +60,10 @@ Validation date: November 16, 2026. Application baseline: `d0b92c9`.
   menu category. The system `/usr/bin/python3` remained at 3.7.3.
 
 The complete 92-test suite was previously run on Windows, not on this Pi during
-this validation. Real telescope connectivity, motor control, provisioning,
-bridge operation, and long-duration operation remain unverified on this Pi.
+this validation. At that initial desktop-only checkpoint, live telescope and bridge operation
+had not yet been tested. Subsequent two-axis motion/Stop and current readback
+checks are recorded in VALIDATION.md; long-duration reliability, provisioning
+and real-star alignment are separate verification tasks.
 
 Python 3.12 was selected for this machine; the app does not require 3.14.
 Installing another Python does not upgrade Buster or its underlying libraries.

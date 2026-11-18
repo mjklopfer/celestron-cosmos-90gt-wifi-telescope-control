@@ -482,3 +482,17 @@ possible lost SSID settings; causation and flash persistence remain unverified.
 See the KStars application note for the distinction between “not forwarded” and
 a failed telescope connection. Evidence snapshots are retained on the Pi in
 its local state directory and the workstation's deployment outputs.
+
+## Reproducible KStars/INDI setup documentation
+
+Published the standalone build/setup guide with exact upstream source revisions,
+actual seven-line INDI CMake patch, portable service/wrappers, dependency/build
+commands, profile settings, startup/shutdown and troubleshooting. README contains
+only a link. Source patch was checked against the installed Pi changes; adjunct
+shell syntax and document links were checked. A clean OS rebuild of the assembled
+recipe has not been run; live deployment evidence is not a claim of that test.
+
+Also verified a calibration JSON with a nonexistent source_log loads its embedded
+samples without creating or opening that path. Four calibration tests passed.
+Default logging remains under the user data directory; provenance does not select
+a log destination. Documentation and loader comments now make that explicit.

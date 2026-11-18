@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run from the logged-in graphical user's session, not with sudo.
+set -eu
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+systemctl --user start cosmos-indi.service
+exec /usr/bin/kstars "$@"

@@ -213,6 +213,9 @@ JSON/JSONL or session ZIP files without replaying commands. Complete recordings
 are on disk; the scrolling displays are bounded.
 
 Data defaults to `~/.cosmos90gt`; `COSMOS90GT_DATA_DIR` overrides that location.
+A calibration profile’s `source_log` is informational only. A missing original
+log folder does not prevent loading its embedded samples or change where new
+logs are saved: `<data directory>/logs`.
 Passwords are redacted, but logs may include IPs, device identifiers and movement.
 Review before sharing. The standalone `calibrate_telescope.py` can record settings
 and explicitly authorized measurements into JSON; see
@@ -242,7 +245,7 @@ are separate capabilities; a general GUI-control HTTP API is not implemented.
 
 
 
-<small>Application note: [KStars/INDI bridge recipe and recorded versions](docs/KSTARS-BRIDGE-NOTE.md).
+<small>Application note: [KStars/INDI installation and reproduction guide](docs/KSTARS-INDI-REPRODUCIBLE-SETUP.md).
 Phone-hotspot operation remains unverified and depends on peer-device reachability.
 The project is independent of Celestron and third-party control-app vendors.</small>
 

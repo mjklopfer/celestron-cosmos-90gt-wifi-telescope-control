@@ -1,0 +1,39 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c588bb3..0ad8f5a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -508,6 +508,8 @@ target_link_libraries(indidriver ${Boost_LIBRARIES})
+ ENDIF()
+ install(TARGETS indidriver ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+ else()
++# COSMOS omit duplicate static library
++if(FALSE)
+ ## Static indidriver Library
+ find_package(FFTW3 REQUIRED)
+ add_library(indidriverstatic STATIC ${indidriver_C_SRC} ${indidriver_CXX_SRC} ${libstream_C_SRC} ${libstream_CXX_SRC} ${libwebcam_C_SRC} ${libwebcam_CXX_SRC} ${hidapi_SRCS} ${libdsp_C_SRC} ${fpack_C_SRC})
+@@ -522,6 +524,7 @@ IF (HAVE_WEBSOCKET)
+ target_link_libraries(indidriverstatic ${Boost_LIBRARIES})
+ ENDIF()
+ install(TARGETS indidriverstatic ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
++endif()
+ ## Dynamic indidriver Library
+ find_package(FFTW3 REQUIRED)
+ add_library(indidriver SHARED ${indidriver_C_SRC} ${indidriver_CXX_SRC} ${libstream_C_SRC} ${libstream_CXX_SRC} ${libwebcam_C_SRC} ${libwebcam_CXX_SRC} ${hidapi_SRCS} ${libdsp_C_SRC} ${fpack_C_SRC})
+@@ -555,6 +558,8 @@ ENDIF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+ ##################################################
+ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/indibase/alignment)
+ 
++# COSMOS minimal driver build: core libraries/server plus separately built AUX driver.
++if(FALSE)
+ #####################################
+ ######## AGENT GROUP ################
+ #####################################
+@@ -1960,6 +1965,8 @@ ENDIF ()
+ 
+ #################################################################################
+ 
++endif()
++
+ install( FILES drivers.xml ${CMAKE_CURRENT_SOURCE_DIR}/drivers/focuser/indi_tcfs_sk.xml DESTINATION ${DATA_INSTALL_DIR})
+ 
+ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/libindi.pc.cmake ${CMAKE_CURRENT_BINARY_DIR}/libindi.pc @ONLY)

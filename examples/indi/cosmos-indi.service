@@ -1,0 +1,8 @@
+[Unit]
+Description=Celestron AUX INDI server (manual device connection)
+
+[Service]
+Environment=LD_LIBRARY_PATH=/opt/indi-cosmos-1.9.4/lib
+ExecStart=/opt/indi-cosmos-1.9.4/bin/indiserver -v -p 7624 /opt/indi-cosmos-1.9.4/bin/indi_celestron_aux %h/.local/bin/cosmos-ccd-simulator
+Restart=on-failure
+RestartSec=3

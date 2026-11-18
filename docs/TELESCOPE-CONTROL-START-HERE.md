@@ -1,5 +1,8 @@
 # Telescope Control — Start Here
 
+For the complete custom INDI build, wrappers, service and Ekos profile, see the
+[reproduction guide](KSTARS-INDI-REPRODUCIBLE-SETUP.md).
+
 ## Start from a fresh desktop session
 
 1. Power on the telescope. Connect this computer to the network that can reach its Wi-Fi interface.

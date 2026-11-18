@@ -1129,3 +1129,12 @@ heartbeat enabled, the confirmation window is its applied interval plus three
 seconds for the reply; without heartbeat it is 60 seconds. Silence makes the
 indicator orange; a terminal bridge failure makes it red. Outgoing commands and
 echoes of this app's requests do not confirm the link.
+
+### Moving calibration profiles between computers
+
+The `source_log` field records the original calibration session location. It is
+informational only: the app does not open or create that path when loading a
+profile. A missing folder is safely ignored; measurements come from the embedded
+`samples`. New logs use `<user home>/.cosmos90gt/logs`, or the `logs` subfolder
+of `COSMOS90GT_DATA_DIR` when explicitly configured. An unavailable original log
+folder does not disable calibration or redirect logging to the old computer's path.
