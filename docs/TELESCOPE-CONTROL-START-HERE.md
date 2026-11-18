@@ -45,6 +45,7 @@ Do not rely on an idle timeout to transfer control between applications. Disconn
 
 ## Troubleshooting
 
+- “Not forwarded” in the bridge log: with no external client connected, replies to this app’s own polling remain local. Connect the Celestron AUX device in KStars/INDI; simply starting Ekos is not enough.
 - No mount connection: check that Control Bridge is ON and the INDI telescope address exactly matches its listening address, port 2000. Load saved INDI settings if it reverted to `1.2.3.4` after restart.
 - No telescope replies: check telescope power, its current IP, network connectivity, and that other controllers are disconnected.
 - If the bridge reports missing encoder replies, leave it OFF. In Diagnostics, the adapter-restart action can recover a stalled legacy module without changing saved settings. If it cannot confirm command mode, it will not restart the module; disconnect other controllers and power-cycle the telescope, then retry. Rebooting only the Pi does not restart the telescope's Wi-Fi module.

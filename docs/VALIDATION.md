@@ -459,3 +459,26 @@ user review. These latest refinements have not yet been deployed to the Pi.
 Corrected final bridge/readout run: 46 tests passed (modern Diagnostics sharing,
 bridge service and AUX decoding). Final startup smoke passed without sending
 network or hardware commands. The updated Windows GUI was relaunched for review.
+
+## Raspberry Pi deployment and KStars readback — 2026-11-18
+
+Deployed application commit 7ae366e to the existing Pi checkout, reinstalled the
+package, refreshed desktop launcher actions and the desktop start-up guide, and
+launched the GUI. The 36 deployment checks plus three focused profile/readout,
+bridge-indicator and handoff tests passed. Environment: Raspbian 10 Buster armv7l,
+Python 3.12.16, Tk 8.6, psutil 7.2.2; existing KStars 3.0.0 / INDI 1.9.4 setup
+with the legacy CCD Simulator workaround retained.
+
+After telescope network connectivity was restored, KStars/Ekos connected its
+Celestron AUX device to the bridge running on the same Pi. INDI connection state,
+external-client request logs and forwarded replies confirmed both directions of
+communication and fresh readings from both motor encoders. Tracking was OFF.
+No movement, alignment, GoTo or sustained-tracking test was performed in this
+check. This verifies current readback integration, not those untested operations.
+
+Earlier in the check, the telescope stopped returning data before KStars
+connected, then became unreachable at the network layer. The operator reported
+possible lost SSID settings; causation and flash persistence remain unverified.
+See the KStars application note for the distinction between “not forwarded” and
+a failed telescope connection. Evidence snapshots are retained on the Pi in
+its local state directory and the workstation's deployment outputs.

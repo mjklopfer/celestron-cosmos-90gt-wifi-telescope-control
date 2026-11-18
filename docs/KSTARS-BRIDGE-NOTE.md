@@ -32,3 +32,25 @@ The installed driver exposes Sync and includes the INDI alignment subsystem, but
 ## Other control applications
 
 Applications such as SkySafari, CPWI, KStars/INDI and others need their own compatible Celestron Wi-Fi connection settings. If the client accepts an explicit endpoint, use the bridge computer's listening IP and TCP 2000, not the upstream telescope address. CPWI uses its Celestron Wi-Fi connection workflow; discovery and alignment need separate end-to-end verification with this bridge. Consult its documentation if manual address entry is unavailable. These examples are neither an exhaustive list nor a universal compatibility guarantee.
+
+## Reading bridge log routing notices
+
+A telescope reply marked **not forwarded** was received by this program but was
+not relayed to an external control client. For example, when bridge position
+polling is enabled before KStars connects its Celestron AUX device, the bridge
+itself requests the readings and records the replies locally. This does not
+mean the reply was unsolicited or that forwarding failed. Check the Connection
+property of Celestron AUX, not just whether KStars has connected to INDI.
+
+Once the mount device connects, the route includes **External control app** in
+both directions. Verify fresh position replies for both axes; the driver's
+Online/Connected status and displayed coordinates alone do not establish live
+feedback. After a power cycle, zero encoder counts are raw startup references,
+not celestial alignment.
+
+An observed failed session lost telescope network reachability before KStars
+connected. Recommissioning/reconnecting the adapter restored communication.
+The operator reported possible loss of saved SSID settings, but this has not
+been independently confirmed and its cause is unknown. The checked bridge
+session did not issue WiFly SSID/password/save commands. Do not infer loss of
+configuration from a failed ping alone.
