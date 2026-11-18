@@ -90,7 +90,7 @@ they do not show the telescope's aligned sky-pointing azimuth/elevation or the
 coordinates of a celestial object. Position age indicates how recently feedback arrived. Jog readouts
 show before/after counts, measured angular change and the stop check.
 
-**Idle release**, under **Direct motor connection — next connection**, offers Never,
+**Idle release**, under **Direct motor connection settings**, offers Never,
 10/20/30 seconds or 1/2/5 minutes. The default
 is 30 seconds without movement activity. This automatic connection release
 prevents an unused direct session from occupying the adapter indefinitely so another
@@ -770,7 +770,7 @@ through app switches has not been verified.
 
 ### Direct motor connection: keep-alive and idle release
 
-Before clicking **Connect Motors**, use **Direct motor connection — next connection**:
+Before clicking **Connect Motors**, use **Direct motor connection settings**:
 
 - **Keep connection alive** defaults ON, reading both encoders every 1 second
   while idle. Enter 1–300 seconds; larger values reduce idle traffic. This uses
@@ -792,3 +792,13 @@ or bypasses movement feedback safety checks.
 Before a direct jog, the worker reads **both encoders** even if keep-alive is OFF
 or the idle readback is stale. If either reply is missing, no movement command is
 sent. Idle polling interval changes therefore do not bypass this safety check.
+
+The entire Direct motor connection settings section dims together while unavailable,
+including its heading, labels and explanation. When editable, all fields remain
+available: the interval can be prepared even with keep-alive unchecked, but is used
+only when that checkbox is checked. Click Connect Motors to apply the displayed
+settings; Enter is not required. To change an active direct connection, Disconnect,
+edit, then Connect Motors again. Bridge controls remain separate.
+
+The section subtitle is **Applied on next connection**: the settings take effect
+when Connect Motors opens a new direct connection, not immediately while editing.

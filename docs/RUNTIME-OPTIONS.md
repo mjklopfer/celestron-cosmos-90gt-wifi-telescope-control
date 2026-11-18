@@ -210,3 +210,10 @@ The bridge's separate controls and scheduler are unaffected.
 Before a direct jog, the worker reads **both encoders** even if keep-alive is OFF
 or the idle readback is stale. If either reply is missing, no movement command is
 sent. Idle polling interval changes therefore do not bypass this safety check.
+
+The entire Direct motor connection settings section dims together while unavailable,
+including its heading, labels and explanation. When editable, all fields remain
+available: the interval can be prepared even with keep-alive unchecked, but is used
+only when that checkbox is checked. Click Connect Motors to apply the displayed
+settings; Enter is not required. To change an active direct connection, Disconnect,
+edit, then Connect Motors again. Bridge controls remain separate.

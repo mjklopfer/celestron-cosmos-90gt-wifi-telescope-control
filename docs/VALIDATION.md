@@ -264,3 +264,15 @@ another device on the shared LAN, with correct local-only localhost semantics.
 Long-session direct keep-alive and on-hardware pre-movement behavior remain to be
 verified. Automated passes do not establish transport reliability or fix the
 previously recorded overnight missing replies/remote reset.
+
+
+## Direct connection section wording and disabled appearance — November 18
+
+Renamed the section Direct motor connection settings, with Applied on next
+connection as a separate subtitle and explicit Connect Motors instructions.
+The frame, heading, labels, explanation and inputs now disable/dim together during
+bridge operation or an active direct connection. When editable, the interval stays
+editable even if keep-alive is unchecked, allowing presetting; it is only used when
+keep-alive is enabled. Seven bridge GUI regression tests passed, including full
+section disable/restore and selection preservation. Lint and whitespace pass.
+The already-running app is not interrupted; this UI adjustment requires a restart.

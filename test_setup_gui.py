@@ -629,13 +629,17 @@ class BridgeGuiTests(unittest.TestCase):
             self.assertEqual(str(app.motor_heartbeat_box.cget('state')), 'disabled')
             self.assertEqual(str(app.motor_heartbeat_box_interval.cget('state')), 'disabled')
             self.assertIn('Not used during bridge', app.motor_connection_help.get())
+            self.assertTrue(app.direct_policy_title.instate(['disabled']))
+            self.assertTrue(all(w.instate(['disabled']) for w in app.direct_policy_frame.winfo_children()))
         app.bridge = None
         app.update_controls()
         self.assertEqual(app.idle_release.get(), 'Never')
         self.assertEqual(str(app.idle_release_box.cget('state')), 'readonly')
+        self.assertFalse(app.direct_policy_title.instate(['disabled']))
+        self.assertIn('click Connect Motors to apply', app.motor_connection_help.get())
         app.motor_heartbeat.set(False)
         app.update_controls()
-        self.assertEqual(str(app.motor_heartbeat_box_interval.cget('state')), 'disabled')
+        self.assertEqual(str(app.motor_heartbeat_box_interval.cget('state')), 'normal')
 
     def test_bridge_poll_controls_live_on_bridge_and_validate_before_connect(self):
         app = self.app

@@ -473,22 +473,24 @@ class SetupApp(ttk.Frame):
         ttk.Radiobutton(pad, text='Hold to move', variable=self.drive_mode, value='hold', command=self.stop_motors).grid(row=6, column=0, columnspan=2, sticky='w', pady=(8, 0))
         ttk.Radiobutton(pad, text='Timed jog', variable=self.drive_mode, value='jog', command=self.stop_motors).grid(row=6, column=2, sticky='w', pady=(8, 0))
 
-        policy = ttk.LabelFrame(pad, text='Direct motor connection — next connection', padding=4)
+        self.direct_policy_title = ttk.Label(pad, text='Direct motor connection settings')
+        policy = self.direct_policy_frame = ttk.LabelFrame(pad, labelwidget=self.direct_policy_title, padding=4)
         policy.grid(row=7, column=0, columnspan=3, sticky='ew', pady=5)
-        ttk.Label(policy, text='Idle release').grid(row=0, column=0, sticky='w')
+        ttk.Label(policy, text='Applied on next connection').grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 4))
+        ttk.Label(policy, text='Idle release').grid(row=1, column=0, sticky='w')
         self.idle_release_box = ttk.Combobox(policy, textvariable=self.idle_release,
             values=('10 seconds', '20 seconds', '30 seconds', '1 minute', '2 minutes', '5 minutes', 'Never'), state='readonly', width=12)
-        self.idle_release_box.grid(row=0, column=1, sticky='w')
+        self.idle_release_box.grid(row=1, column=1, sticky='w')
         self.idle_release_box.bind('<<ComboboxSelected>>', lambda event: self.update_controls())
         self.motor_heartbeat_box = ttk.Checkbutton(policy, text='Keep connection alive',
             variable=self.motor_heartbeat, command=self.update_controls)
-        self.motor_heartbeat_box.grid(row=1, column=0, sticky='w')
+        self.motor_heartbeat_box.grid(row=2, column=0, sticky='w')
         self.motor_heartbeat_box_interval = ttk.Spinbox(policy, from_=1, to=300,
             textvariable=self.motor_heartbeat_interval, width=7)
-        self.motor_heartbeat_box_interval.grid(row=1, column=1, sticky='w')
-        ttk.Label(policy, text='seconds (1–300)').grid(row=2, column=1, sticky='w')
+        self.motor_heartbeat_box_interval.grid(row=2, column=1, sticky='w')
+        ttk.Label(policy, text='seconds (1–300)').grid(row=3, column=1, sticky='w')
         ttk.Label(policy, textvariable=self.motor_connection_help, wraplength=310).grid(
-            row=3, column=0, columnspan=2, sticky='w', pady=3)
+            row=4, column=0, columnspan=2, sticky='w', pady=3)
 
         readout = ttk.LabelFrame(tab, text='Motor values', padding=8)
         readout.grid(row=1, column=1, sticky='nsew', pady=(12, 0))
@@ -1723,16 +1725,23 @@ class SetupApp(ttk.Frame):
         self.bridge_jog_switch.configure(state='normal' if self.bridge else 'disabled')
         self.motor_settings_button.configure(state='disabled' if self.bridge else 'normal')
         direct_policy_locked = self.bridge is not None or self.motor is not None or self.busy
+        for widget in self.direct_policy_frame.winfo_children():
+            widget.state(['disabled'] if direct_policy_locked else ['!disabled'])
+            if isinstance(widget, ttk.Label):
+                widget.configure(foreground=self.muted_text if direct_policy_locked else self.normal_text)
+        self.direct_policy_title.state(['disabled'] if direct_policy_locked else ['!disabled'])
+        self.direct_policy_title.configure(foreground=self.muted_text if direct_policy_locked else self.normal_text)
+        self.direct_policy_frame.state(['disabled'] if direct_policy_locked else ['!disabled'])
         self.idle_release_box.configure(state='disabled' if direct_policy_locked else 'readonly')
         self.motor_heartbeat_box.configure(state='disabled' if direct_policy_locked else 'normal')
-        self.motor_heartbeat_box_interval.configure(state='disabled' if direct_policy_locked or not self.motor_heartbeat.get() else 'normal')
+        self.motor_heartbeat_box_interval.configure(state='disabled' if direct_policy_locked else 'normal')
         self.motor_connection_help.set(
             'Not used during bridge operation, including local bridge jogging. Use Control Bridge for bridge polling.'
             if self.bridge is not None else
-            ('Disconnect to change these settings for the next direct connection. ' if self.motor is not None else '') +
+            ('Click Disconnect, edit these settings, then click Connect Motors to apply them. ' if self.motor is not None else 'Choose settings here, then click Connect Motors to apply them. No Apply button or Enter key is needed. ') +
             'Default: release after 30 seconds without movement activity. Keep-alive reads positions while idle; it does not reset this timer. Never retains the connection until Disconnect or a fault. '
             + ('Caution: beyond 30 seconds or Never with keep-alive ON can keep the adapter occupied and lock out other control apps. Disconnect before switching apps. ' if self.motor_heartbeat.get() and self.idle_release.get() in ('1 minute', '2 minutes', '5 minutes', 'Never', 'Off') else '')
-            + 'Keep-alive OFF stops idle reads; movement feedback checks remain active.')
+            + 'The interval is used only when Keep connection alive is checked. Movement feedback checks remain active.')
         bridge_allowed = self.connection_mode.get() == 'infrastructure' or self.bridge_dual.get()
         if self.bridge is not None:
             notice = 'Control Bridge is running. Switch it OFF to stop and release the connection.'
