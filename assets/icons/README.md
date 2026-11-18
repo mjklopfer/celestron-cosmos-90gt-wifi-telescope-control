@@ -22,3 +22,6 @@ packaging can use the ICNS; no new macOS app bundle is supplied by this change.
 
 The SVG and PNG were visually reviewed; ICO/ICNS decoding was checked. Native
 Windows/macOS shortcut appearance for these new assets remains a separate check.
+
+See [desktop icons and shortcut support](../../docs/DESKTOP-ICONS-AND-SHORTCUTS.md)
+for implemented Linux support and the remaining Windows/macOS launcher work.

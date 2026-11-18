@@ -264,3 +264,11 @@ and return to Disconnected if it fails. Do not replay prior movement. Verify Sto
 priority, exclusive endpoint ownership, failed reconnect and cancellation before
 release. This is a future revision, not implemented; the current top-level UI is an indicator only.
 For a direct motor session, reset with Disconnect then Connect Motors; for the bridge, use Restart Bridge Connection.
+
+## Cross-platform desktop launchers
+
+See [desktop icons and shortcut support](DESKTOP-ICONS-AND-SHORTCUTS.md).
+Shared SVG/PNG/ICO/ICNS assets and the Linux installer are published. Complete
+Windows and macOS shortcut/app-launcher recipes and native appearance checks
+remain pending. Reuse the current icon and Celestron Telescope Network Control
+name; keep this work separate from the already addressed macOS GUI rendering.

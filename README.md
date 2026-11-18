@@ -10,6 +10,7 @@ modern Celestron control applications communicate with legacy SkyQLink hardware.
 
 [User guide](docs/USER-GUIDE.md) · [Runtime options](docs/RUNTIME-OPTIONS.md) ·
 [Raspberry Pi desktop setup](docs/RASPBERRY-PI-DESKTOP.md) ·
+[Desktop icons and shortcut support](docs/DESKTOP-ICONS-AND-SHORTCUTS.md) ·
 [Version 1.1 changes](docs/RELEASE-1.1.md) · [Validation](docs/VALIDATION.md)
 
 [![Python checks](https://github.com/mjklopfer/celestron-telescope-network-control/actions/workflows/checks.yml/badge.svg)](https://github.com/mjklopfer/celestron-telescope-network-control/actions/workflows/checks.yml)
