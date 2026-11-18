@@ -222,3 +222,10 @@ There was no SkySafari client during that capture. The longest inter-reading gap
 was about 60 seconds; some gaps also affected all emitted events. Investigate
 host scheduling/blocking alongside Wi-Fi/adapter behavior. This is not a clean
 endurance pass or evidence that keep-alive fixes the underlying cause.
+
+
+Follow-up from the 2h23m stationary direct session: compare 2/5/10-second idle-read
+intervals under controlled host/network conditions, measuring per-request timeouts,
+recovery episodes/durations and disconnects. Preserve Stop and movement lockouts.
+57 successful recoveries are evidence of tolerance, not a reason to weaken checks
+or certify uninterrupted tracking. No automatic default change is justified yet.

@@ -708,3 +708,10 @@ not the telescope's address. For another device, select this computer's adapter
 on that shared LAN. For local-only use, explicitly bind the bridge to `127.0.0.1`
 and use that address in the local control application. Localhost on another device
 cannot reach this computer. See [connection instructions](docs/USER-GUIDE.md#control-bridge).
+
+
+The Control Bridge tab always carries a status marker: **green** after startup
+checks succeed, **red** when OFF, starting, stopping or faulted. It remains visible
+while another tab is selected. The Motor control tab retains its **yellow** marker
+while operating through the bridge. Green indicates bridge readiness, not proof
+of alignment, tracking accuracy or uninterrupted motor feedback.

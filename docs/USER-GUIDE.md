@@ -802,3 +802,10 @@ edit, then Connect Motors again. Bridge controls remain separate.
 
 The section subtitle is **Applied on next connection**: the settings take effect
 when Connect Motors opens a new direct connection, not immediately while editing.
+
+
+The Control Bridge tab always carries a status marker: **green** after startup
+checks succeed, **red** when OFF, starting, stopping or faulted. It remains visible
+while another tab is selected. The Motor control tab retains its **yellow** marker
+while operating through the bridge. Green indicates bridge readiness, not proof
+of alignment, tracking accuracy or uninterrupted motor feedback.

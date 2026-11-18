@@ -567,12 +567,15 @@ class BridgeGuiTests(unittest.TestCase):
                 self.callback({'event': 'bridge_off', 'log_directory': '/tmp/simulated-bridge'})
         app = self.app
         app.bridge_factory = FakeBridge
+        self.assertIn(str(app.bridge_off_mark), str(app.tabs.tab(app.bridge_tab, 'image')))
         app.preset(True)
         app.bridge_enabled.set(True)
         app.toggle_bridge()
         self.drain_ui()
         self.assertEqual(app.tabs.tab(app.motor_tab, 'state'), 'normal')
         self.assertFalse(app.bridge_jog_requested.get())
+        self.assertIn(str(app.bridge_on_mark), str(app.tabs.tab(app.bridge_tab, 'image')))
+        self.assertIn(str(app.bridge_tab_mark), str(app.tabs.tab(app.motor_tab, 'image')))
         self.assertEqual(str(app.motor_settings_button.cget('state')), 'disabled')
         for tab in (app.diagnostic_tab, app.provision_tab):
             self.assertEqual(app.tabs.tab(tab, 'state'), 'disabled')
@@ -585,6 +588,7 @@ class BridgeGuiTests(unittest.TestCase):
         app.toggle_bridge()
         self.drain_ui()
         self.assertIsNone(app.bridge)
+        self.assertIn(str(app.bridge_off_mark), str(app.tabs.tab(app.bridge_tab, 'image')))
         for tab in (app.motor_tab, app.diagnostic_tab, app.provision_tab):
             self.assertEqual(app.tabs.tab(tab, 'state'), 'normal')
 

@@ -152,6 +152,7 @@ class SetupApp(ttk.Frame):
         self.recovery = recovery
         self.bridge_factory = bridge_factory
         self.bridge = None
+        self.bridge_is_ready = False
         self.bridge_enabled = tk.BooleanVar(value=False)
         self.bridge_status = tk.StringVar(value='Control Bridge is OFF. Follow the setup steps below before switching it ON.')
         self.bridge_bind = tk.StringVar()
@@ -553,6 +554,11 @@ class SetupApp(ttk.Frame):
         self.bridge_jog_box.grid_remove()
         self.bridge_tab_mark = tk.PhotoImage(master=self.root, width=12, height=12)
         self.bridge_tab_mark.put('#e5a329', to=(0, 0, 12, 12))
+        self.bridge_on_mark = tk.PhotoImage(master=self.root, width=12, height=12)
+        self.bridge_on_mark.put('#218739', to=(0, 0, 12, 12))
+        self.bridge_off_mark = tk.PhotoImage(master=self.root, width=12, height=12)
+        self.bridge_off_mark.put('#bb3434', to=(0, 0, 12, 12))
+        self.tabs.tab(self.bridge_tab, image=self.bridge_off_mark, compound='left')
 
     def apply_bridge_background_reads(self):
         try:
@@ -1434,6 +1440,8 @@ class SetupApp(ttk.Frame):
     def toggle_bridge(self):
         """Validate shared-network settings, then start or stop the exclusive relay."""
         if not self.bridge_enabled.get():
+            self.bridge_is_ready = False
+            self.update_controls()
             if self.bridge:
                 self.bridge.stop()
                 self.bridge_status.set('Turning Control Bridge OFF — sending Stop to both motors and waiting briefly for replies…')
@@ -1455,6 +1463,7 @@ class SetupApp(ttk.Frame):
             return
         try:
             self.bridge_last_error = None
+            self.bridge_is_ready = False
             self.bridge = self.bridge_factory(self.host.get(), self.port.get(), self.events.put,
                                                bind_host=self.bridge_bind.get().strip(),
                                                allow_direct_upstream=self.bridge_dual.get(),
@@ -1504,9 +1513,12 @@ class SetupApp(ttk.Frame):
             self.log_directory = event['log_directory']
             self.logs_button.configure(state='normal')
         message = event.get('message')
+        if kind in ('bridge_error', 'bridge_off', 'bridge_starting'):
+            self.bridge_is_ready = False
         if kind == 'bridge_error' and self.bridge_last_error is None:
             self.bridge_last_error = message
         if kind == 'bridge_ready':
+            self.bridge_is_ready = True
             self.motor_status.set('Bridge connected — local jogging OFF')
         if kind == 'bridge_ready' and event.get('bind_host'):
             self.bridge_listener = (event['bind_host'], event['listen_port'], event['management_port'])
@@ -1716,6 +1728,7 @@ class SetupApp(ttk.Frame):
         locked = self.busy or self.motor is not None or self.bridge is not None
         for tab in (self.diagnostic_tab, self.provision_tab):
             self.tabs.tab(tab, state='disabled' if self.bridge is not None else 'normal')
+        self.tabs.tab(self.bridge_tab, image=self.bridge_on_mark if self.bridge_is_ready and self.bridge is not None else self.bridge_off_mark, compound='left')
         self.tabs.tab(self.motor_tab, state='normal', image=self.bridge_tab_mark if self.bridge else '', compound='left',
                       text='Motor control — bridge' if self.bridge else 'Motor control')
         if self.bridge:

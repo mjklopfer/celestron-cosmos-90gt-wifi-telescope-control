@@ -276,3 +276,32 @@ editable even if keep-alive is unchecked, allowing presetting; it is only used w
 keep-alive is enabled. Seven bridge GUI regression tests passed, including full
 section disable/restore and selection preservation. Lint and whitespace pass.
 The already-running app is not interrupted; this UI adjustment requires a restart.
+
+
+## Direct Never / two-second keep-alive observation — November 18
+
+Reviewed the direct session from 07:53:50 to 10:17:08 PST (about 2h23m). Policy was
+Never idle release with keep-alive ON at two seconds. It logged 8,085 position
+readings, 85 per-request timeouts and 57 feedback-retry episodes; all 57 had a
+feedback-restored event. The report contained no fatal errors, and both motor Stop
+replies were received during cleanup. These counts distinguish individual query
+timeouts from recovery episodes. No jog events were recorded in this session.
+
+This supports recovery tolerance during stationary direct polling, not uninterrupted
+feedback or reliable tracking during motion. Keep the current movement lockout,
+Stop and bounded-recovery logic. Never disables intentional idle release only;
+transport and feedback faults can still close the connection. Do not infer that
+keep-alive prevents failures or change timeout defaults from this single run.
+A controlled 2-second versus 5/10-second interval comparison is a follow-up, not a
+completed result. Another direct session began around 10:17 with the same policy.
+
+Persistent Control Bridge tab markers added: red when not ready, green after
+bridge_ready; cleared on shutdown request, error and bridge_off. Existing yellow
+Motor control marker retained. Focused GUI regression covers initial red, ready
+green, simultaneous yellow motor indicator and red after shutdown.
+
+Seven focused bridge GUI tests passed after adding the persistent initial red
+marker. Ruff, whitespace checks and wheel/source distribution build passed.
+The updated Windows GUI was relaunched and its red Control Bridge marker visually
+confirmed from Motor control, together with the renamed settings title/subtitle.
+Left disconnected, bridge OFF, for user testing; no physical motion commanded.
