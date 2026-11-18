@@ -326,3 +326,26 @@ Ruff, whitespace checks, and the wheel/source distribution build passed. The
 existing running GUI was not interrupted; restart it to expose the new identity.
 Custom management-port auto-discovery, authenticated identity, and the future
 physical ESP32 control mode remain outside this change. See PROXY-DISCOVERY.md.
+
+
+## Bridge-local jog feedback recovery — November 18
+
+The reported symptom was a local-jog safety lock surviving resumed encoder replies,
+while later Stop messages hid its cause. Bridge-local jogging now auto-unlocks only
+after both axes provide fresh (under one-second-old) replies throughout a one-second
+recovery window, with newer samples on both axes. It discards the interrupted jog.
+The applied feedback timeout is adjustable from 1–10 seconds, default 2. Direct
+Motor control, external forwarding, and background polling intervals are unchanged.
+
+A red Restart local jogging button is enabled only with local jogging ON and bridge
+ready. It uses the worker's OFF transition, waits one second, then re-enables and
+clears cached feedback. Explicit OFF cancels that scheduled restart. The control
+never replays old motion. Generic Stop messages preserve the feedback-lock reason.
+
+All 47 bridge and bridge-GUI tests passed, including timeout validation/effect,
+one-axis recovery rejection, automatic recovery without motor movement, timed
+restart/cancellation, lock messaging, and GUI enable/disable/color behavior. Ruff,
+whitespace and wheel/source builds passed. The updated Windows GUI was relaunched
+and visually confirmed open with Motor control disconnected and Control Bridge OFF.
+No live telescope movement was performed for this change. Live feedback recovery
+with this adapter and SkySafari remains to be tested by the user.

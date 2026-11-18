@@ -724,3 +724,15 @@ connection. Selecting it leaves the hardware target unchanged; use the proxy
 address in your control application. Unidentified AUX endpoints remain labeled
 hardware-or-proxy unknown. See the [proxy identity protocol](docs/PROXY-DISCOVERY.md)
 for fields, compatibility limits and future ESP32 integration considerations.
+
+
+### Bridge-local jog feedback recovery
+
+The Motor control tab's yellow bridge-jog panel has a **Local jog feedback timeout**
+(default 2 seconds, range 1–10; click **Apply timeout**) and a red **Restart local
+jogging** button while jogging is enabled. Missing feedback stops the local jog;
+fresh readings from both axes sustained for one second automatically unlock the
+buttons without resuming movement. Restart switches local jogging OFF for one
+second, then ON and waits for fresh feedback. It does not restart Control Bridge.
+These settings do not affect direct Motor control or bridge polling intervals.
+See [local bridge jogging](docs/USER-GUIDE.md#local-jogging-while-control-bridge-is-on).

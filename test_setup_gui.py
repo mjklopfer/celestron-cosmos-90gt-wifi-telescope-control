@@ -618,6 +618,31 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertIn('3b0420102400a8 (Move positive request/echo: STOP)', app.bridge_console.get('1.0', 'end'))
         app.bridge = None
 
+    def test_bridge_restart_button_and_timeout_controls(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.update_controls()
+        self.assertEqual(str(app.bridge_reset_button['state']), 'disabled')
+        app.bridge = Mock(local_fault=True)
+        app.bridge_is_ready = True
+        app.bridge_jog_active = True
+        app.bridge_jog_requested.set(True)
+        app.update_controls()
+        self.assertEqual(str(app.bridge_reset_button['state']), 'normal')
+        self.assertEqual(app.bridge_reset_button['background'], '#b52b2b')
+        app.reset_bridge_jog()
+        app.bridge.restart_local_jog.assert_called_once()
+        self.assertEqual(str(app.bridge_reset_button['state']), 'disabled')
+        app.bridge_feedback_timeout.set('5')
+        app.apply_bridge_feedback_timeout()
+        app.bridge.configure_local_feedback.assert_called_once_with(5.0)
+        self.assertEqual(app.bridge_feedback_applied, 5)
+        app.bridge_feedback_timeout.set('nan')
+        app.apply_bridge_feedback_timeout()
+        self.assertEqual(app.bridge_feedback_applied, 5)
+        self.assertIn('not applied', app.bridge_jog_note.get())
+        app.bridge = None
+
     def test_direct_idle_and_keep_alive_locked_for_all_bridge_jog_states(self):
         from unittest.mock import Mock
         app = self.app

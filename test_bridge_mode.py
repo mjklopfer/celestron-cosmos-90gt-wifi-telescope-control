@@ -389,7 +389,7 @@ class BridgeTests(unittest.TestCase):
             self.await_frame(packet)
             self.assertEqual(self.frames.count(packet), 1)
 
-    def test_feedback_loss_locks_local_motion_until_toggle(self):
+    def test_feedback_loss_locks_local_motion_while_feedback_missing(self):
         self.enable_local()
         self.drop_positions = 100
         # Start with feedback old enough to expire during this bounded jog.
@@ -399,7 +399,7 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(self.wait('bridge_local_motion')['moving'])
         stopped = self.wait('bridge_local_motion')
         self.assertFalse(stopped['moving'])
-        self.assertIn('feedback lost', stopped['message'])
+        self.assertIn('feedback exceeded', stopped['message'])
         self.assertTrue(self.bridge.local_fault)
         with self.assertRaises(RuntimeError):
             self.bridge.jog(16, 1, 2, .1)
@@ -544,3 +544,78 @@ class UnifiedReadTests(BackgroundReadTests):
         b.background_read_tick(__import__('time').monotonic())
         self.assertEqual(b.upstream.sendall.call_count, 2)
         self.assertEqual(b.upstream.sendall.call_args_list[1].args[0], motor_packet(17, 1))
+
+
+class LocalJogRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import Mock
+        self.b = Bridge('192.0.2.231', bind_host='127.0.0.1')
+        self.b.upstream = Mock()
+        self.b.ready.set()
+        self.b.local_enabled = self.b.local_requested = True
+
+    def test_timeout_validation_and_effect(self):
+        b = self.b
+        for value in (0, 11, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                b.configure_local_feedback(value)
+        b.configure_local_feedback(5)
+        b.local_feedback = {16: 97, 17: 97}
+        b.local_deadline = 110
+        b.local_tick(100)
+        self.assertFalse(b.local_fault)
+        b.local_tick(102.1)
+        self.assertTrue(b.local_fault)
+        self.assertIsNone(b.local_deadline)
+
+    def test_auto_recovery_requires_both_axes_and_never_replays_motion(self):
+        b = self.b
+        b.local_fault = True
+        b.local_feedback = {16: 100, 17: 95}
+        b.local_tick(100)
+        self.assertIsNone(b.local_recovery_since)
+        b.local_feedback = {16: 100, 17: 100}
+        b.local_tick(100)
+        b.local_feedback = {16: 100.6, 17: 100.6}
+        b.local_tick(100.6)
+        self.assertTrue(b.local_fault)
+        b.local_feedback = {16: 101.1, 17: 101.1}
+        b.local_pending = (16, 1, 9, 1, 101.1, b.local_generation)
+        b.local_tick(101.1)
+        self.assertFalse(b.local_fault)
+        self.assertIsNone(b.local_deadline)
+        self.assertIsNone(b.local_pending)
+        b.upstream.sendall.assert_not_called()
+
+    def test_restart_waits_one_second_and_clears_old_feedback(self):
+        b = self.b
+        b.local_feedback = {16: 100, 17: 100}
+        b.local_fault = True
+        b.restart_local_jog()
+        b.local_tick(100)
+        self.assertFalse(b.local_enabled)
+        b.local_tick(100.9)
+        self.assertFalse(b.local_enabled)
+        b.local_tick(101)
+        self.assertTrue(b.local_enabled)
+        self.assertFalse(b.local_fault)
+        self.assertEqual(b.local_feedback, {})
+        self.assertIsNone(b.local_deadline)
+
+    def test_explicit_off_cancels_pending_restart(self):
+        b = self.b
+        b.restart_local_jog()
+        b.local_tick(100)
+        b.set_local_jog(False)
+        b.local_tick(102)
+        self.assertFalse(b.local_enabled)
+
+    def test_stop_message_preserves_feedback_lock_reason(self):
+        b = self.b
+        b.local_fault = True
+        b.stop_local_jog()
+        b.local_tick(100)
+        events = []
+        while not b.event_queue.empty():
+            events.append(b.event_queue.get())
+        self.assertTrue(any('locked after missing motor feedback' in e[1].get('message', '') for e in events))

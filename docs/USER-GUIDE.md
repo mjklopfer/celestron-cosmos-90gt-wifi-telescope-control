@@ -275,9 +275,30 @@ old local jog or pretends an external command succeeded.
 
 Turn the local-jog switch OFF when finished; this attempts Stop and leaves the
 external application connected. Switch Control Bridge OFF to close the telescope
-connection. Lost feedback locks local jogging; inspect the telescope before
-switching local jogging OFF and ON again. Network failure can prevent Stop from
-reaching the mount. Live coexistence with SkySafari remains pending validation.
+connection. Missing feedback during a jog attempts Stop and temporarily locks the
+jog buttons. The bridge can remain connected and forward external commands.
+
+**Local jog feedback timeout (seconds)** is in the yellow bridge-jogging panel.
+Default **2 seconds**, allowed **1–10**; click **Apply timeout** to apply immediately.
+Longer values delay Stop after missing feedback. This changes only the bridge-local
+jog watchdog, not direct Motor control, polling intervals, or the two-second limit
+on a single jog. The applied value lasts for this GUI session.
+
+When both axes provide readings less than one second old consistently across a
+one-second window, local jog buttons unlock automatically. Both axes must provide
+new samples during that window. **Previous motion is cancelled, never resumed.**
+Press a direction again to move. Receipt freshness cannot establish the age of a
+position measurement inside the adapter if it buffers replies.
+
+**Restart local jogging** is red and enabled while bridge local jogging is ON;
+it is grey while OFF or the bridge is not ready. Click it to switch local jogging
+OFF for one second, then ON automatically. This attempts Stop and clears cached
+feedback; fresh readings from both axes are required before moving. It does not
+restart the bridge or reconnect the external application. Switching local jogging
+OFF manually cancels a pending restart. Network failure can prevent Stop from
+reaching the mount; verify physical rest if communication fails. Automatic recovery
+and restart are covered by automated tests; live SkySafari coexistence remains
+pending validation.
 
 ### Direct/ad hoc: why Control Bridge is disabled
 

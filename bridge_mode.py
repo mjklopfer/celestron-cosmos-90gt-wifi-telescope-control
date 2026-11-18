@@ -70,6 +70,10 @@ class Bridge:
         self.local_deadline = None
         self.local_feedback = {}
         self.local_fault = False
+        self.local_feedback_timeout = 2.0
+        self.local_reenable_at = None
+        self.local_recovery_since = None
+        self.local_recovery_counts = {}
         self.local_generation = 0
         self.heartbeat_enabled = False
         self.heartbeat_interval = 5.0
@@ -160,10 +164,34 @@ class Bridge:
         if not self.ready.is_set():
             raise RuntimeError('Wait until Control Bridge is ready.')
         with self.local_lock:
+            self.local_reenable_at = None
             self.local_requested = bool(enabled)
             self.local_pending = None
             self.local_stop_requested = True
             self.local_generation += 1
+
+    def configure_local_feedback(self, seconds):
+        """Bridge-local motion watchdog only; does not change polling or direct mode."""
+        seconds = float(seconds)
+        if not math.isfinite(seconds) or not 1 <= seconds <= 10:
+            raise ValueError('Bridge jog feedback timeout must be 1–10 seconds.')
+        with self.local_lock:
+            self.local_feedback_timeout = seconds
+        self.emit('bridge_local_policy', message=f'Bridge jog feedback timeout applied: {seconds:g} seconds.')
+
+    def restart_local_jog(self):
+        """User-requested OFF for one second, then ON; never restart movement."""
+        if not self.ready.is_set() or self.stopping.is_set():
+            raise RuntimeError('Restart unavailable: Control Bridge is not ready.')
+        with self.local_lock:
+            if not self.local_requested or not self.local_enabled:
+                raise RuntimeError('Enable local jogging before restarting it.')
+            self.local_requested = False
+            self.local_pending = None
+            self.local_stop_requested = True
+            self.local_generation += 1
+            # Worker starts the delay after processing the OFF transition.
+            self.local_reenable_at = math.inf
 
     def jog(self, axis, direction, rate, seconds):
         """Queue one expiring jog. No repeats, buffered sequences or hold renewal."""
@@ -191,32 +219,61 @@ class Bridge:
     def local_tick(self, now):
         """Only the relay worker calls this; bounded motion never blocks relay IO."""
         with self.local_lock:
+            if self.local_reenable_at is not None and now >= self.local_reenable_at:
+                self.local_reenable_at = None
+                if self.ready.is_set() and not self.stopping.is_set():
+                    self.local_requested = True
             desired = self.local_requested
             stop = self.local_stop_requested
             self.local_stop_requested = False
             pending = self.local_pending
             self.local_pending = None
             generation = self.local_generation
+            feedback_timeout = self.local_feedback_timeout
         transition = desired != self.local_enabled
         if transition or stop or (self.local_deadline is not None and now >= self.local_deadline):
             self.send_stops()
             self.local_deadline = None
-            self.emit('bridge_local_motion', moving=False, message='Local motion stopped. External commands continue through the bridge.')
+            self.emit('bridge_local_motion', moving=False, message=('Local jogging locked after missing motor feedback. Waiting for fresh readings from both axes; bridge relay remains active.' if self.local_fault else 'Local jog stopped. Bridge relay remains active; external control commands are still forwarded.'))
         if transition:
             self.local_enabled = desired
+            with self.local_lock:
+                if not desired and self.local_reenable_at == math.inf:
+                    self.local_reenable_at = now + 1.0
             self.local_fault = False
             # Preserve fragmented external frames across toggle changes. Only
             # local requests are cancelled; external commands still pass in order.
             self.local_feedback.clear()
+            self.local_recovery_since = None
             self.emit('bridge_local_mode', enabled=desired,
                       message='Local jogging enabled. External commands have priority and can interrupt a jog. Hold is limited to 2 seconds.' if desired else
                       'Local jogging disabled. Pending local commands discarded; external commands continue.')
-        fresh = all(now - self.local_feedback.get(axis, -math.inf) < 2 for axis in AXES)
+        fresh = all(now - self.local_feedback.get(axis, -math.inf) < feedback_timeout for axis in AXES)
         if self.local_enabled and self.local_deadline is not None and not fresh:
             self.send_stops()
             self.local_deadline = None
             self.local_fault = True
-            self.emit('bridge_local_motion', moving=False, message='Encoder feedback lost: Stop attempted. Local jogging locked. Release and re-enable only after checking the telescope.')
+            self.local_recovery_since = None
+            pending = None
+            self.emit('bridge_local_motion', moving=False, message=f'Motor feedback exceeded {feedback_timeout:g} seconds: Stop attempted; local jogging locked. Waiting for fresh readings from both axes. Bridge relay remains active.')
+        if self.local_fault:
+            # Recovered feedback unlocks future button presses, never an old jog.
+            # Require new samples on BOTH axes across a stable one-second window.
+            pending = None
+            recovering = self.ready.is_set() and not self.stopping.is_set() and all(now - self.local_feedback.get(a, -math.inf) < 1 for a in AXES)
+            if not recovering:
+                self.local_recovery_since = None
+            elif self.local_recovery_since is None:
+                self.local_recovery_since = now
+                self.local_recovery_counts = dict(self.local_feedback)
+            stable = (recovering and self.local_recovery_since is not None
+                      and now - self.local_recovery_since >= 1
+                      and all(self.local_feedback[a] > self.local_recovery_counts.get(a, -math.inf) for a in AXES))
+            if stable:
+                self.local_fault = False
+                self.local_deadline = None
+                self.local_recovery_since = None
+                self.emit('bridge_local_recovered', moving=False, message='Motor feedback restored. Local jog buttons available; press a direction to move. Previous movement was cancelled.')
         if pending and self.local_enabled and not self.local_fault and not stop and not transition:
             axis, direction, rate, seconds, queued, queued_generation = pending
             if fresh and now - queued < .5 and generation == queued_generation:

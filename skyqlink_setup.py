@@ -549,6 +549,18 @@ class SetupApp(ttk.Frame):
         self.bridge_jog_switch = BridgeRocker(self.bridge_jog_box, variable=self.bridge_jog_requested,
                                              command=self.toggle_bridge_jog, compact=True)
         self.bridge_jog_switch.pack(anchor='w')
+        self.bridge_feedback_timeout = tk.StringVar(value='2')
+        self.bridge_feedback_applied = 2.0
+        policy = ttk.Frame(self.bridge_jog_box)
+        policy.pack(anchor='w', fill='x', pady=4)
+        ttk.Label(policy, text='Local jog feedback timeout (seconds):').pack(side='left')
+        ttk.Spinbox(policy, from_=1, to=10, increment=.5, width=5,
+                    textvariable=self.bridge_feedback_timeout).pack(side='left', padx=4)
+        ttk.Button(policy, text='Apply timeout', command=self.apply_bridge_feedback_timeout).pack(side='left')
+        self.bridge_reset_button = tk.Button(policy, text='Restart local jogging', command=self.reset_bridge_jog, state='disabled', disabledforeground='#777777')
+        self.bridge_reset_button.pack(side='left', padx=8)
+        tk.Label(self.bridge_jog_box, background='#fff0c2', foreground='#513800', wraplength=800, justify='left',
+                 text='Default: 2 seconds; allowed: 1–10. Click Apply timeout to use the value now. Longer values delay Stop after missing feedback. This does not change the polling rate or direct Motor control. After a feedback fault, buttons unlock automatically after both axes report fresh positions consistently for one second; stopped motion never resumes. Restart local jogging switches jogging OFF for one second, then ON. It does not restart the bridge or resume movement; fresh positions are required before moving.').pack(anchor='w')
         tk.Label(self.bridge_jog_box, textvariable=self.bridge_jog_note, background='#fff0c2',
                  foreground='#513800', wraplength=800, justify='left').pack(anchor='w')
         self.bridge_jog_box.grid_remove()
@@ -576,6 +588,31 @@ class SetupApp(ttk.Frame):
                 (f'position recording ON, {monitor_interval:g}s sample interval' if self.bridge_monitor.get() else 'position recording OFF') + '.')
         except (ValueError, TypeError) as error:
             self.bridge_background_status.set(f'Not applied: {error}. Use heartbeat 1–300s and recording 0.2–300s, then click Apply intervals.')
+
+    def apply_bridge_feedback_timeout(self):
+        try:
+            value = float(self.bridge_feedback_timeout.get())
+            if not math.isfinite(value) or not 1 <= value <= 10:
+                raise ValueError('Enter 1–10 seconds.')
+            if self.bridge:
+                self.bridge.configure_local_feedback(value)
+            self.bridge_feedback_applied = value
+            self.bridge_feedback_timeout.set(f'{value:g}')
+            self.bridge_jog_note.set(f'Bridge local-jog feedback timeout applied: {value:g} seconds.')
+        except (ValueError, TypeError) as error:
+            self.bridge_jog_note.set(f'Timeout not applied: {error}')
+
+    def reset_bridge_jog(self):
+        if not self.bridge:
+            return
+        try:
+            self.bridge.restart_local_jog()
+            self.bridge_jog_ready = False
+            self.bridge_jog_requested.set(False)
+            self.bridge_jog_note.set('Restarting local jogging: OFF for one second, then ON. Previous movement will not resume.')
+        except RuntimeError as error:
+            self.bridge_jog_note.set(str(error))
+        self.update_controls()
 
     def toggle_bridge_jog(self):
         if self.bridge is None:
@@ -1479,6 +1516,8 @@ class SetupApp(ttk.Frame):
             self.bridge_status.set('Starting bridge — checking telescope communication…')
             self.bridge_jog_note.set('Local jogging OFF. External app controls motion. Enable here only with clear travel; external commands have priority.')
             self.tabs.select(self.bridge_tab)
+            if self.bridge_feedback_applied != 2.0:
+                self.bridge.configure_local_feedback(self.bridge_feedback_applied)
             self.bridge.start()
         except Exception as error:
             self.bridge = None
@@ -1497,17 +1536,19 @@ class SetupApp(ttk.Frame):
             self.clear_local_references()
             self.bridge_jog_note.set(event['message'])
             self.motor_status.set('Bridge connected — local jogging ' + ('ON; waiting for feedback' if event['enabled'] else 'OFF'))
-        elif kind == 'bridge_local_motion':
+        elif kind in ('bridge_local_motion', 'bridge_local_recovered'):
             self.jogging = event['moving']
             if not self.jogging:
                 self.held = False
             self.bridge_jog_note.set(event['message'])
+            if kind == 'bridge_local_recovered':
+                self.motor_status.set('Bridge connected — local jogging ready; previous movement cancelled')
             if getattr(self.bridge, 'local_fault', False):
                 self.bridge_jog_ready = False
                 self.motor_status.set('Bridge connected — local jogging locked after feedback loss')
         if kind == 'bridge_values':
             self.handle_motor_event({**event, 'event': 'motor_values'})
-            self.bridge_jog_ready = self.bridge_jog_active and not getattr(self.bridge, 'local_fault', False) and all(time.monotonic() - self.last_positions.get(a, 0) < 2 for a in AXES)
+            self.bridge_jog_ready = self.bridge_jog_active and not getattr(self.bridge, 'local_fault', False) and all(time.monotonic() - self.last_positions.get(a, 0) < self.bridge_feedback_applied for a in AXES)
             self.update_controls()
             return
         if event.get('log_directory'):
@@ -1745,6 +1786,11 @@ class SetupApp(ttk.Frame):
         else:
             self.bridge_jog_box.grid_remove()
         self.bridge_jog_switch.configure(state='normal' if self.bridge else 'disabled')
+        reset_available = (self.bridge is not None and self.bridge_is_ready and self.bridge_jog_active
+                           and self.bridge_jog_requested.get())
+        self.bridge_reset_button.configure(state='normal' if reset_available else 'disabled',
+                                           background='#b52b2b' if reset_available else '#dddddd',
+                                           foreground='white' if reset_available else '#777777')
         self.motor_settings_button.configure(state='disabled' if self.bridge else 'normal')
         direct_policy_locked = self.bridge is not None or self.motor is not None or self.busy
         for widget in self.direct_policy_frame.winfo_children():
