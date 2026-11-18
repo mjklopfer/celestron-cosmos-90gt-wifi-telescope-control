@@ -1,0 +1,5 @@
+# Keep Linux reproduction adjuncts directly usable from Windows checkouts.
+examples/indi/cosmos-ccd-simulator text eol=lf
+examples/indi/launch-cosmos-kstars text eol=lf
+examples/indi/*.service text eol=lf
+examples/indi/*.patch text eol=lf
