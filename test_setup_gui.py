@@ -618,6 +618,36 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertIn('3b0420102400a8 (Move positive request/echo: STOP)', app.bridge_console.get('1.0', 'end'))
         app.bridge = None
 
+    def test_bridge_polling_summary_uses_applied_values_and_stale_margin(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.bridge = Mock(local_fault=False)
+        app.bridge_is_ready = True
+        app.bridge_polling_applied = (True, 15.0, False, 1.0)
+        app.bridge_heartbeat_interval.set('99')  # Unapplied edit must not appear.
+        app.update_controls()
+        self.assertIn('15s', app.bridge_polling_source.get())
+        self.assertNotIn('99s', app.bridge_polling_source.get())
+        self.assertEqual(app.encoder_stale_after(), 18)
+        self.assertEqual(app.motor_bridge_polling_label.winfo_manager(), '')
+        app.bridge_jog_active = True
+        app.update_controls()
+        self.assertIn('Local-jog feedback polling is active', app.bridge_polling_source.get())
+        self.assertIn('Heartbeat waits', app.bridge_polling_source.get())
+        self.assertIn('Control Bridge', app.motor_bridge_polling_text.get())
+        self.assertEqual(app.motor_bridge_polling_label.winfo_manager(), 'grid')
+        self.assertEqual(app.encoder_stale_after(), 10)
+        self.assertEqual(app.bridge_polling_applied, (True, 15.0, False, 1.0))
+        app.bridge_jog_active = False
+        app.bridge_polling_applied = (False, 5.0, True, 20.0)
+        app.update_controls()
+        self.assertEqual(app.encoder_stale_after(), 23)
+        app.bridge_polling_applied = (False, 5.0, False, 1.0)
+        app.update_controls()
+        self.assertIn('No bridge-generated periodic', app.bridge_polling_source.get())
+        self.assertEqual(app.encoder_stale_after(), 10)
+        app.bridge = None
+
     def test_bridge_restart_button_and_timeout_controls(self):
         from unittest.mock import Mock, patch
         app = self.app

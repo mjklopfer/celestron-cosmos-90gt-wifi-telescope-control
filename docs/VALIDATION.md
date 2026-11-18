@@ -349,3 +349,19 @@ whitespace and wheel/source builds passed. The updated Windows GUI was relaunche
 and visually confirmed open with Motor control disconnected and Control Bridge OFF.
 No live telescope movement was performed for this change. Live feedback recovery
 with this adapter and SkySafari remains to be tested by the user.
+
+
+## Bridge polling-source readout and encoder display age — November 18
+
+Added a Current polling source readout in Control Bridge and an applied-settings
+summary beside the disabled direct-connection controls when bridge jogging is ON.
+The summary preserves configured options, identifies required local-jog polling,
+and does not misrepresent unapplied interval edits. There is still one scheduler;
+this change adds no polling requests and does not change motion safety thresholds.
+Encoder display STALE now uses max(10 seconds, active request interval + 3 seconds).
+
+Fourteen bridge/release GUI tests passed, covering source transitions, retained
+settings, conditional summary visibility, unapplied edits, and stale thresholds
+(10-second floor, 15-second heartbeat -> 18 seconds, 20-second polling -> 23).
+Ruff, whitespace checks and source/wheel builds passed. Live hardware stability
+and cross-platform visual appearance remain separate from these automated results.

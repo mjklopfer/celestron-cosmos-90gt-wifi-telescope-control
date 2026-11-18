@@ -873,3 +873,30 @@ connection. Selecting it leaves the hardware target unchanged; use the proxy
 address in your control application. Unidentified AUX endpoints remain labeled
 hardware-or-proxy unknown. See the [proxy identity protocol](PROXY-DISCOVERY.md)
 for fields, compatibility limits and future ESP32 integration considerations.
+
+
+### Seeing which bridge polling settings are active
+
+Control Bridge shows **Current polling source** beside its heartbeat/position
+controls. One scheduler reuses incoming readings and suppresses duplicate queries.
+Local jogging requires a 0.4-second feedback target even when both optional boxes
+are unchecked. Heartbeat waits while other traffic supplies activity, then supplies
+quiet-period requests as configured. Turning local jogging OFF preserves the
+selected heartbeat and position-polling settings; with both unchecked there are
+no periodic bridge-generated position queries. Actual replies may arrive later
+than the target interval because of communication delays or pending requests.
+
+While bridge jogging is ON, a shaded summary beside **Direct motor connection
+settings** on Motor control shows applied heartbeat ON/OFF and quiet interval,
+position polling ON/OFF and interval, and the local-jog feedback target. Change
+these settings in **Control Bridge**. Direct connection controls remain disabled;
+the summary is readable. Unapplied interval edits do not change the readout.
+
+The encoder-age display marks readings **STALE** after the longer of **10 seconds**
+or **the active polling interval plus 3 seconds**. It uses the shortest configured
+active request interval (local feedback, position polling or heartbeat), or the
+active direct connection's heartbeat interval; without polling, it uses 10 seconds.
+Examples: 1-second polling means 10 seconds; 15-second polling means 18 seconds.
+This is a display freshness threshold, not the local-jog motion safety timeout.
+External app traffic can keep a connection active without requesting positions;
+an old encoder value can therefore correctly become STALE on a live connection.

@@ -736,3 +736,11 @@ buttons without resuming movement. Restart switches local jogging OFF for one
 second, then ON and waits for fresh feedback. It does not restart Control Bridge.
 These settings do not affect direct Motor control or bridge polling intervals.
 See [local bridge jogging](docs/USER-GUIDE.md#local-jogging-while-control-bridge-is-on).
+
+
+Control Bridge's **Current polling source** readout explains which requests are
+active without changing the selected settings. Motor control repeats the applied
+heartbeat/polling values beside its direct-connection settings while bridge jogging
+is ON. Encoder display freshness uses `max(10 seconds, active polling interval +
+3 seconds)`; this does not relax the separate local-jog safety timeout. See the
+[user guide](docs/USER-GUIDE.md#seeing-which-bridge-polling-settings-are-active).
