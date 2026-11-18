@@ -2,6 +2,7 @@
 
 Priority Stop, expiring holds and bounded jogs limit commanded movement. A failed
 transport can prevent Stop delivery; successful writes alone do not prove motion."""
+import math
 import queue
 import socket
 import threading
@@ -53,10 +54,16 @@ def version(data):
 
 class MotorController:
     def __init__(self, host, port, callback, socket_factory=socket.create_connection,
-                 recorder_factory=Recorder, route_check=check_direct_route, idle_release=30):
+                 recorder_factory=Recorder, route_check=check_direct_route, idle_release=30,
+                 heartbeat_enabled=True, heartbeat_interval=1.0):
         """Validate the destination and create command queues, watchdog and telemetry state."""
-        if idle_release not in (0, 10, 20, 30):
-            raise ValueError('Idle release must be Off, 10, 20, or 30 seconds')
+        if idle_release not in (0, 10, 20, 30, 60, 120, 300):
+            raise ValueError('Idle release must be Never (0), 10, 20, 30, 60, 120, or 300 seconds')
+        heartbeat_interval = float(heartbeat_interval)
+        if not math.isfinite(heartbeat_interval) or not 1 <= heartbeat_interval <= 300:
+            raise ValueError('Direct motor keep-alive interval must be 1–300 seconds')
+        self.heartbeat_enabled = bool(heartbeat_enabled)
+        self.heartbeat_interval = heartbeat_interval
         self.idle_release = idle_release
         self.last_control_activity = time.monotonic()
         self.host, self.port = validate_endpoint(host, port)
@@ -101,8 +108,8 @@ class MotorController:
             raise RuntimeError('Connect to the motors first')
         if axis not in AXES or direction not in (-1, 1) or not isinstance(rate, int) or not 1 <= rate <= 9:
             raise ValueError('Select an axis, direction, and speed 1–9')
-        if any(time.monotonic() - self.position_times.get(a, 0) > 3 for a in AXES):
-            raise RuntimeError('Fresh encoder feedback from both axes is required before movement')
+        # Cached idle samples may be stale when keep-alive is OFF/slow. The
+        # worker obtains both encoders immediately before any motion command.
         if not .1 <= seconds <= 2:
             raise ValueError('Jog duration must be 0.1–2 seconds')
         if self.command_pending.is_set() or self.jog_in_progress.is_set() or self.stopping.is_set():
@@ -267,11 +274,11 @@ class MotorController:
         held = self.holding
         # Match the successful standalone test: sample immediately before motion,
         # not from an earlier idle poll or the connection origin.
-        before = self.read_positions(attempts=2, axes=(axis,))
+        before = self.read_positions(attempts=2)
         if self.disconnecting.is_set() or not self.command_pending.is_set():
             return
-        if axis not in before:
-            raise ConnectionError('No fresh starting encoder position; movement was not sent')
+        if len(before) != len(AXES):
+            raise ConnectionError('Fresh encoder replies from both axes are required; movement was not sent')
         entry = {'axis': axis, 'direction': direction, 'rate': rate, 'requested_seconds': seconds, 'hold': held,
                  'start_encoder': before[axis]}
         self.report['jogs'].append(entry)
@@ -383,7 +390,9 @@ class MotorController:
             self.connected.set()
             self.emit('motor_connected', host=self.host, port=self.port)
             self.last_control_activity = time.monotonic()
-            next_poll = 0
+            self.emit('motor_connection_policy', idle_release=self.idle_release,
+                      heartbeat_enabled=self.heartbeat_enabled, heartbeat_interval=self.heartbeat_interval)
+            next_poll = time.monotonic() + self.heartbeat_interval
             while not self.disconnecting.is_set():
                 self.handle_stop()
                 if (self.idle_release and not self.command_pending.is_set()
@@ -404,8 +413,8 @@ class MotorController:
                     finally:
                         self.jog_in_progress.clear()
                         self.last_control_activity = time.monotonic()
-                    next_poll = time.monotonic() + 1
-                elif time.monotonic() >= next_poll:
+                    next_poll = time.monotonic() + self.heartbeat_interval
+                elif self.heartbeat_enabled and time.monotonic() >= next_poll:
                     if len(self.read_positions()) != len(AXES):
                         if self.disconnecting.is_set():
                             break
@@ -475,7 +484,7 @@ class MotorController:
                             raise ConnectionError('Motor feedback timeout. Connection released. Reconnect to continue moving.')
                         self.connected.set()
                         self.emit('motor_feedback_restored', message='Both encoder replies restored; movement enabled.')
-                    next_poll = time.monotonic() + 1
+                    next_poll = time.monotonic() + self.heartbeat_interval
                 self.disconnecting.wait(.02)
         except Exception as e:
             self.report['errors'].append(str(e))

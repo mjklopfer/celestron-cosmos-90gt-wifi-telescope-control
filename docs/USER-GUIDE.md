@@ -90,9 +90,11 @@ they do not show the telescope's aligned sky-pointing azimuth/elevation or the
 coordinates of a celestial object. Position age indicates how recently feedback arrived. Jog readouts
 show before/after counts, measured angular change and the stop check.
 
-**Idle release (next connection)** offers Off, 10, 20 or 30 seconds. The default
-is 30 seconds without movement activity; it releases the connection so another
-application can use it. Reconnect to move again. This is application policy,
+**Idle release**, under **Direct motor connection — next connection**, offers Never,
+10/20/30 seconds or 1/2/5 minutes. The default
+is 30 seconds without movement activity. This automatic connection release
+prevents an unused direct session from occupying the adapter indefinitely so another
+application can connect. Keep-alive traffic does not reset it. Reconnect to move again. This is application policy,
 not a proven timer inside the telescope. Missing feedback is a different fault:
 movement is disabled during recovery, Stop is attempted, and persistent failure
 closes the connection. Do not treat delayed position data as current.
@@ -211,17 +213,36 @@ There are two different addresses:
 | Telescope Wi-Fi interface IP address, at the top | The SkyQLink module that this computer connects to |
 | This computer’s IP on the control-device network | The local adapter address on the network used by your astronomy app; not a MAC address or the telescope’s IP |
 
-For a common network, leave the bridge address blank to select it automatically,
-or choose this computer's relevant adapter in **Local System Network Interfaces**.
-**Refresh Adapter IPs** refreshes that list; it does not change network settings.
-Turn the bridge ON, then use the displayed control app connection address and
-port 2000 in a compatible application. In the tested SkySafari configuration,
-select Celestron WiFi and Access Point mode (the external app's spelling).
+First connect this computer to the telescope network and enter/discover the
+Telescope Wi-Fi Interface IP address at the top of the window. Then choose where
+your control application runs (e.g., SkySafari, CPWI, KStars/INDI, etc.):
+
+- **On this computer:** no other computer is needed. Use the bridge address shown
+  after startup. For local-only access, type `127.0.0.1` into the bridge IP box
+  before starting, then configure the control app with `127.0.0.1` and port 2000.
+  A bridge bound only to its LAN address does not also listen on localhost.
+- **On another computer, tablet or phone:** join that device and this computer to
+  the same shared LAN segment. In Local System Network Interfaces select this
+  computer's adapter on that LAN, or enter its IPv4 address in the bridge IP box.
+  Do not enter the other device's IP. The network must permit communication
+  between devices. With two interfaces, this is the control-device LAN; the
+  telescope-facing link is separate. This program relays telescope traffic,
+  not general network bridging or Internet sharing.
+
+Switch **Control Bridge ON in this program on this computer**. Wait for Bridge ON
+and its address/port readback. No bridge needs to run on the other device. Configure
+your control application's compatible Celestron Wi-Fi/AUX network connection with
+that displayed bridge address and TCP port (normally 2000), not the telescope's IP.
+In the tested SkySafari configuration, select Celestron WiFi and Access Point mode;
+other applications have their own driver/settings menus. `localhost` always refers
+to the device running the control application, so never use it from another device
+to reach this computer. **Refresh Adapter IPs** only refreshes the adapter list.
+
 The bridge also provides discovery on UDP 55555 and limited management on TCP
 3000. Allow local-network firewall access; opening a local port does not prove
 that another device can reach it.
 
-### Local jogging while Control Bridge is ON (experimental)
+### Local jogging while Control Bridge is ON
 
 The Motor control tab remains available with an amber marker and a warning panel.
 Local jogging starts **OFF**. With clear travel and the external app no longer
@@ -745,3 +766,29 @@ heartbeat cannot keep a socket open after the phone closes it. The bridge curren
 attempts Stop on client disconnect and waits for a new connection; reconnecting
 does not replay old motion commands or establish alignment. Long-duration tracking
 through app switches has not been verified.
+
+
+### Direct motor connection: keep-alive and idle release
+
+Before clicking **Connect Motors**, use **Direct motor connection — next connection**:
+
+- **Keep connection alive** defaults ON, reading both encoders every 1 second
+  while idle. Enter 1–300 seconds; larger values reduce idle traffic. This uses
+  the existing motor polling loop, not a second heartbeat. Uncheck it to stop
+  idle reads; startup and movement feedback checks still run. Idle readings will
+  age, and connection faults may only be detected on the next operation.
+- **Idle release** defaults to **30 seconds** without movement activity. Choose
+  10/20/30 seconds, 1/2/5 minutes, or **Never**. Keep-alive does not extend this timer.
+  Never keeps the connection until you click Disconnect or a fault releases it.
+  Beyond 30 seconds or Never with keep-alive can keep the adapter occupied and
+  lock out other control apps. Disconnect before switching to another app.
+
+These settings apply on the next direct connection. They are greyed out while
+connected and whenever Control Bridge is active, even with local bridge jogging
+ON. Their saved selections return when the connection is released. Configure bridge
+polling on Control Bridge instead. No setting guarantees a persistent Wi-Fi link
+or bypasses movement feedback safety checks.
+
+Before a direct jog, the worker reads **both encoders** even if keep-alive is OFF
+or the idle readback is stale. If either reply is missing, no movement command is
+sent. Idle polling interval changes therefore do not bypass this safety check.

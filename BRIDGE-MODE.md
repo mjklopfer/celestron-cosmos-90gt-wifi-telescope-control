@@ -5,7 +5,10 @@ for setup, networking requirements, firewall permissions and limitations.
 
 The bridge has two endpoints: a telescope destination and a computer listening
 address reachable by the control app. In two-interface mode the listening IP is
-required and must be on the phone's network, not the telescope-facing network.
+required. For another control device, use this computer’s adapter on the shared
+control-device LAN, not the telescope-facing network. For a control application
+on this same computer, use the displayed bound address; localhost works only
+when the bridge is explicitly bound to 127.0.0.1.
 
 Verified configurations include one infrastructure LAN and Ethernet plus direct
 SkyQLink Wi-Fi. SkySafari is a tested control application, not the exclusive client.

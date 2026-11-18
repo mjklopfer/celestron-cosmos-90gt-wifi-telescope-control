@@ -199,3 +199,26 @@ position requests suppress injected duplicates; normal external traffic is never
 rate-limited. Live SkySafari stability/lag comparison remains pending. AUX has no
 transaction IDs: identical replies cannot prove which overlapping request caused
 them. Do not present observed command/reply timings as isolated bridge latency.
+
+
+### Direct-session ownership and local/remote bridge guidance (2026-11-18)
+
+Expose the existing direct motor idle encoder polling as optional keep-alive,
+default ON at one second, configurable 1–300 seconds. It is not a second polling
+loop and never renews the movement-idle timer. Default idle release remains 30
+seconds; longer options and Never are available with an adapter-ownership warning.
+Disable these settings during active direct sessions and all bridge operation,
+including local bridge jogging; preserve selections for the next direct session.
+Required movement feedback and Stop paths remain independent.
+
+Bridge setup now distinguishes a control application on the same computer from
+another device on the shared LAN. Point both to this computer's displayed bridge
+address, not the telescope; localhost is local-only and requires an explicit
+loopback bind. The bridge relays telescope traffic, not general LAN routing.
+
+Overnight capture review: the stationary recording ran approximately 4h25m with
+27,475 encoder samples but 602 missing-reply warnings, then a remote TCP reset.
+There was no SkySafari client during that capture. The longest inter-reading gap
+was about 60 seconds; some gaps also affected all emitted events. Investigate
+host scheduling/blocking alongside Wi-Fi/adapter behavior. This is not a clean
+endurance pass or evidence that keep-alive fixes the underlying cause.

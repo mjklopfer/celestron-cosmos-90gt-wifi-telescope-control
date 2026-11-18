@@ -124,6 +124,32 @@ class MotorServiceTests(unittest.TestCase):
         self.assertFalse(self.controller.connected.is_set())
         self.assertFalse(any(f[4] in (0x24, 0x25) and f[5] for _, f in self.adapter.sent))
 
+    def test_keep_alive_off_stops_idle_reads_but_does_not_disable_connection(self):
+        self.assertTrue(self.controller.connected.wait(2))
+        self.controller.heartbeat_enabled = False
+        time.sleep(.1)
+        before = len(self.adapter.sent)
+        time.sleep(1.2)
+        self.assertEqual(len(self.adapter.sent), before)
+        self.assertTrue(self.controller.connected.is_set())
+
+    def test_never_release_ignores_elapsed_idle_time(self):
+        self.assertTrue(self.controller.connected.wait(2))
+        self.controller.idle_release = 0
+        self.controller.last_control_activity = time.monotonic() - 600
+        time.sleep(.2)
+        self.assertTrue(self.controller.connected.is_set())
+        self.assertTrue(self.controller.thread.is_alive())
+
+    def test_direct_policy_validation(self):
+        for seconds in (0, 10, 20, 30, 60, 120, 300):
+            c = MotorController('192.0.2.231', 2000, lambda e: None,
+                                idle_release=seconds, heartbeat_interval=5)
+            self.assertEqual(c.heartbeat_interval, 5)
+        for seconds in (0, -1, 301, float('nan')):
+            with self.assertRaises(ValueError):
+                MotorController('192.0.2.231', 2000, lambda e: None, heartbeat_interval=seconds)
+
     def test_idle_release_is_explicit_and_not_feedback_failure(self):
         self.controller.idle_release = 10
         self.controller.last_control_activity = time.monotonic() - 11
@@ -156,6 +182,32 @@ class MotorServiceTests(unittest.TestCase):
         self.wait_event('motor_jog_finished')
         self.assertLess(time.monotonic() - requested, .6)
         self.assertEqual(sum(f[4] in (0x24, 0x25) and f[5] > 0 for _, f in self.adapter.sent), 1)
+
+    def test_keep_alive_off_jog_refreshes_both_stale_axes_before_motion(self):
+        self.assertTrue(self.controller.connected.wait(2))
+        self.controller.heartbeat_enabled = False
+        self.controller.position_times = {16: 0, 17: 0}
+        before = len(self.adapter.sent)
+        self.controller.jog(16, 1, 2, .1)
+        self.wait_event('motor_motion_result')
+        sent = [f for _, f in self.adapter.sent[before:]]
+        start = next(i for i, f in enumerate(sent) if f[4] in (0x24, 0x25) and f[5])
+        self.assertEqual({f[3] for f in sent[:start] if f[4] == 1}, {16, 17})
+
+    def test_stale_jog_missing_other_axis_sends_no_movement(self):
+        self.assertTrue(self.controller.connected.wait(2))
+        self.controller.heartbeat_enabled = False
+        self.controller.position_times = {16: 0, 17: 0}
+        original = self.adapter.sendall
+        def missing_other_axis(frame):
+            if frame[3:5] == bytes((17, 1)):
+                self.adapter.sent.append((time.monotonic(), frame))
+                return
+            original(frame)
+        self.adapter.sendall = missing_other_axis
+        self.controller.jog(16, 1, 2, .1)
+        self.wait_event('motor_error', timeout=6)
+        self.assertFalse(any(f[4] in (0x24, 0x25) and f[5] for _, f in self.adapter.sent))
 
     def test_jog_uses_new_baseline_instead_of_cached_idle_position(self):
         self.adapter.positions[0x10] = 100000

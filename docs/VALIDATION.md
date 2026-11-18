@@ -232,3 +232,35 @@ bridge running with one-second recording ON, heartbeat OFF and local jogging OFF
 Still pending: SkySafari foreground/background comparison, measured relay latency,
 long-duration stability, subsecond hardware load and independent external AUX
 motion capture. These checks do not establish all-platform hardware compatibility.
+
+
+## Direct keep-alive, automatic connection release and bridge instructions — November 18
+
+Direct Motor control now exposes existing idle encoder polling as Keep connection
+alive (default ON, one second; 1–300 seconds). Idle release defaults to 30 seconds
+and additionally offers 1/2/5 minutes and Never. Keep-alive never renews the idle
+release timer. Controls are disabled during direct sessions and all bridge
+operation, including bridge jogging; selections are preserved. The warning
+explains adapter ownership without asserting a fixed 30-second firmware lockup.
+
+Turning idle reads OFF or making them slow exposed a cached-position prerequisite
+that would reject otherwise valid jogs. The final worker now obtains both encoders
+before issuing movement and refuses motion if either reply is absent. Movement
+feedback-loss and Stop safeguards remain. No physical movement was performed for
+this change; motion tests use the in-memory adapter.
+
+Full regression before this final pre-movement refinement: 177 tests, 176 passed,
+one macOS-only skip, no failures/errors. After refinement: all 23 motor tests
+passed, including stale-read refresh of both axes before motion and missing-other-
+axis rejection with no movement command. Seven bridge GUI tests also passed,
+including disabled controls for both bridge jogging states and retained selections.
+Ruff/whitespace checks passed and wheel/source distributions rebuilt successfully.
+
+The updated Windows GUI was relaunched and visually reviewed. It is left open,
+direct motors disconnected and bridge OFF, for user review. The local bridge
+jogging experimental label was removed; specific subsecond/tracking limitations
+remain documented. Instructions now cover control software on this computer or
+another device on the shared LAN, with correct local-only localhost semantics.
+Long-session direct keep-alive and on-hardware pre-movement behavior remain to be
+verified. Automated passes do not establish transport reliability or fix the
+previously recorded overnight missing replies/remote reset.

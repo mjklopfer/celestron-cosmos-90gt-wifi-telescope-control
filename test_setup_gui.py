@@ -81,7 +81,7 @@ class GuiTests(unittest.TestCase):
         self.motors = []
         owner = self
         class FakeMotor:
-            def __init__(self, host, port, callback, *, idle_release=30):
+            def __init__(self, host, port, callback, *, idle_release=30, heartbeat_enabled=True, heartbeat_interval=1.0):
                 self.idle_release = idle_release
                 self.callback = callback
                 self.host, self.port = host, port
@@ -613,6 +613,29 @@ class BridgeGuiTests(unittest.TestCase):
         app.handle_bridge_event({'event': 'bridge_packet', 'direction': 'client', 'hex': '3b0420102400a8', 'interpretation': 'Move positive request/echo: STOP'})
         self.assertIn('3b0420102400a8 (Move positive request/echo: STOP)', app.bridge_console.get('1.0', 'end'))
         app.bridge = None
+
+    def test_direct_idle_and_keep_alive_locked_for_all_bridge_jog_states(self):
+        from unittest.mock import Mock
+        app = self.app
+        app.idle_release.set('Never')
+        app.update_controls()
+        self.assertIn('lock out', app.motor_connection_help.get())
+        app.bridge = Mock()
+        for jogging in (False, True):
+            app.bridge_jog_requested.set(jogging)
+            app.bridge_jog_ready = jogging
+            app.update_controls()
+            self.assertEqual(str(app.idle_release_box.cget('state')), 'disabled')
+            self.assertEqual(str(app.motor_heartbeat_box.cget('state')), 'disabled')
+            self.assertEqual(str(app.motor_heartbeat_box_interval.cget('state')), 'disabled')
+            self.assertIn('Not used during bridge', app.motor_connection_help.get())
+        app.bridge = None
+        app.update_controls()
+        self.assertEqual(app.idle_release.get(), 'Never')
+        self.assertEqual(str(app.idle_release_box.cget('state')), 'readonly')
+        app.motor_heartbeat.set(False)
+        app.update_controls()
+        self.assertEqual(str(app.motor_heartbeat_box_interval.cget('state')), 'disabled')
 
     def test_bridge_poll_controls_live_on_bridge_and_validate_before_connect(self):
         app = self.app

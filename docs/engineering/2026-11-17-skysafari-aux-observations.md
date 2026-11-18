@@ -234,3 +234,22 @@ phone-app lifecycle behavior, but does not isolate SkySafari from iOS as the cau
 It does not establish a universal fixed idle timeout. Keep-alive cannot prevent
 an app from closing its socket. The bridge attempts Stop on client disconnect;
 tracking continuity and alignment must be checked after reconnection.
+
+
+## Overnight stationary recording reviewed November 18
+
+The unified-scheduler session ran from 00:56 to 05:21 PST on November 18 (about
+4h25m). Position recording was enabled at one second; keep-alive was turned OFF
+after the short initial test and local jogging remained OFF. No control client
+connected during the capture. Both axes remained at unchanged recorded counts.
+There were 27,475 position readings and 602 missing-reply warnings (364 azimuth,
+238 elevation). The longest gap between encoder readings was about 59.74 seconds.
+The largest gap across all events was about 50.11 seconds, so host scheduling,
+blocking calls and transport behavior all remain candidates; no cause is proven.
+
+The last valid readings arrived around 05:20:32 PST. At 05:21:01 the upstream
+connection reported Windows error 10054 (remote connection reset). Stop delivery
+was unconfirmed after that failure. The report recorded zero dropped telemetry
+events. A subsequent session around 07:05 successfully read both motors again.
+This establishes that missing replies and resets can happen without SkySafari;
+it does not establish why the adapter reset or guarantee unattended stability.

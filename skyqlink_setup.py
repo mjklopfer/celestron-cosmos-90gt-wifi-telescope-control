@@ -191,6 +191,9 @@ class SetupApp(ttk.Frame):
         self.position_references = {}
         self.reference_inputs = {axis: tk.StringVar(value="0") for axis in AXES}
         self.idle_release = tk.StringVar(value='30 seconds')
+        self.motor_heartbeat = tk.BooleanVar(value=True)
+        self.motor_heartbeat_interval = tk.StringVar(value='1')
+        self.motor_connection_help = tk.StringVar()
         self.speed = tk.StringVar(value='6')
         self.duration = tk.StringVar(value='0.5')
         self.motor_status = tk.StringVar(value='Disconnected')
@@ -470,8 +473,22 @@ class SetupApp(ttk.Frame):
         ttk.Radiobutton(pad, text='Hold to move', variable=self.drive_mode, value='hold', command=self.stop_motors).grid(row=6, column=0, columnspan=2, sticky='w', pady=(8, 0))
         ttk.Radiobutton(pad, text='Timed jog', variable=self.drive_mode, value='jog', command=self.stop_motors).grid(row=6, column=2, sticky='w', pady=(8, 0))
 
-        ttk.Label(pad, text='Idle release (next connection)').grid(row=7, column=0, sticky='w')
-        ttk.Combobox(pad, textvariable=self.idle_release, values=('Off', '10 seconds', '20 seconds', '30 seconds'), state='readonly', width=12).grid(row=7, column=1, columnspan=2, sticky='w')
+        policy = ttk.LabelFrame(pad, text='Direct motor connection — next connection', padding=4)
+        policy.grid(row=7, column=0, columnspan=3, sticky='ew', pady=5)
+        ttk.Label(policy, text='Idle release').grid(row=0, column=0, sticky='w')
+        self.idle_release_box = ttk.Combobox(policy, textvariable=self.idle_release,
+            values=('10 seconds', '20 seconds', '30 seconds', '1 minute', '2 minutes', '5 minutes', 'Never'), state='readonly', width=12)
+        self.idle_release_box.grid(row=0, column=1, sticky='w')
+        self.idle_release_box.bind('<<ComboboxSelected>>', lambda event: self.update_controls())
+        self.motor_heartbeat_box = ttk.Checkbutton(policy, text='Keep connection alive',
+            variable=self.motor_heartbeat, command=self.update_controls)
+        self.motor_heartbeat_box.grid(row=1, column=0, sticky='w')
+        self.motor_heartbeat_box_interval = ttk.Spinbox(policy, from_=1, to=300,
+            textvariable=self.motor_heartbeat_interval, width=7)
+        self.motor_heartbeat_box_interval.grid(row=1, column=1, sticky='w')
+        ttk.Label(policy, text='seconds (1–300)').grid(row=2, column=1, sticky='w')
+        ttk.Label(policy, textvariable=self.motor_connection_help, wraplength=310).grid(
+            row=3, column=0, columnspan=2, sticky='w', pady=3)
 
         readout = ttk.LabelFrame(tab, text='Motor values', padding=8)
         readout.grid(row=1, column=1, sticky='nsew', pady=(12, 0))
@@ -524,7 +541,7 @@ class SetupApp(ttk.Frame):
         self.bridge_jog_note = tk.StringVar(value='Bridge jogging is available only while Control Bridge is ON.')
         self.bridge_jog_box = tk.Frame(tab, background='#fff0c2', padx=8, pady=6)
         self.bridge_jog_box.grid(row=0, columnspan=2, sticky='ew')
-        tk.Label(self.bridge_jog_box, text='Enable local jogging through bridge (experimental)',
+        tk.Label(self.bridge_jog_box, text='Enable local jogging through bridge',
                  background='#fff0c2', foreground='#513800', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
         self.bridge_jog_switch = BridgeRocker(self.bridge_jog_box, variable=self.bridge_jog_requested,
                                              command=self.toggle_bridge_jog, compact=True)
@@ -1237,13 +1254,15 @@ class SetupApp(ttk.Frame):
         self.interface_refresh_button.pack(anchor='w', pady=4)
         self.copy_button(inventory, lambda: self.table_output(self.interface_table), 'Copy network adapter table').pack(anchor='w')
         ttk.Label(inventory, textvariable=self.bridge_endpoint, wraplength=800).pack(anchor='w')
-        ttk.Label(tab, text='Connect an astronomy app through this computer:\n'
-                  '1. Connect this computer, the telescope and the device running your astronomy app to the same access-point network. For separate networks, use Two Interface Mode as explained above.\n'
-                  '2. Enter or discover the telescope’s IP address at the top of this window. In Local System Network Interfaces, select this computer’s adapter on the astronomy app’s network.\n'
-                  '3. Switch Control Bridge ON. Wait for the connection details to appear above.\n'
-                  '4. In your astronomy app, select Celestron WiFi and Access Point mode. If it asks for an address and port, enter this computer’s displayed IPv4 address and TCP port, not the telescope’s address.\n'
-                  'While Control Bridge is ON, Diagnostics and Wi-Fi provisioning are disabled. Motor control remains available for optional local jogging; external commands have priority. Switching it OFF sends Stop to both motors and closes the connection; check the Transfer log for replies. The connected astronomy app can move the telescope.\n'
-                  'SkySafari has been tested in documented configurations. Other apps and long-duration operation remain unverified; only selected modern-adapter features are supported.',
+        ttk.Label(tab, text='Connect your control application on this computer or another device:\n'
+                  '1. Connect this computer to the telescope’s network. At the top of this window, enter or discover the Telescope Wi-Fi Interface IP address. For a telescope on a separate direct/ad hoc link, follow Two Interface Mode above.\n'
+                  '2. Choose where your control application runs (e.g., SkySafari, CPWI, KStars/INDI, etc.):\n'
+                  '   • On THIS computer: use the bridge address displayed after startup. No second computer is needed. For local-only access, enter 127.0.0.1 in the bridge IP box before startup, then use 127.0.0.1 in your control application.\n'
+                  '   • On ANOTHER computer, tablet or phone: connect that device and this computer to the same shared LAN segment. Select this computer’s adapter on that LAN in Local System Network Interfaces, or type that adapter’s IPv4 address in the bridge IP box. Do not enter the other device’s IP. The network must allow devices to communicate.\n'
+                  '3. Switch Control Bridge ON here, in this window. Wait for Bridge ON and the address/port readback. This computer now relays between the control application and the telescope; no bridge needs to run on the other device.\n'
+                  '4. In your control application, select its compatible Celestron Wi-Fi/AUX network connection and enter the displayed bridge IP address and TCP port (normally 2000). Do not use the telescope’s IP for this bridge connection. Use localhost only when this bridge listens on 127.0.0.1 AND the control application runs on this same computer. The tested SkySafari configuration uses Celestron WiFi and Access Point mode; other applications use their own connection menus.\n'
+                  'While Control Bridge is ON, Diagnostics and Wi-Fi provisioning are disabled. Motor control remains available for optional local jogging; external commands have priority. Switching it OFF attempts Stop on both motors and closes the connection; check the Transfer log for replies. The connected control application can move the telescope.\n'
+                  'This application relays telescope traffic, not general LAN traffic or Internet sharing. Compatibility and long-duration operation depend on the control application and network; see the documented validation results.',
                   wraplength=820).grid(row=7, sticky='w', pady=8)
         self.bridge_firewall_label = ttk.Label(tab, foreground='#b36b00', wraplength=820,
                   text='FIREWALL / LOCAL NETWORK: allow this Python application incoming TCP 2000 and 3000 '
@@ -1703,6 +1722,17 @@ class SetupApp(ttk.Frame):
             self.bridge_jog_box.grid_remove()
         self.bridge_jog_switch.configure(state='normal' if self.bridge else 'disabled')
         self.motor_settings_button.configure(state='disabled' if self.bridge else 'normal')
+        direct_policy_locked = self.bridge is not None or self.motor is not None or self.busy
+        self.idle_release_box.configure(state='disabled' if direct_policy_locked else 'readonly')
+        self.motor_heartbeat_box.configure(state='disabled' if direct_policy_locked else 'normal')
+        self.motor_heartbeat_box_interval.configure(state='disabled' if direct_policy_locked or not self.motor_heartbeat.get() else 'normal')
+        self.motor_connection_help.set(
+            'Not used during bridge operation, including local bridge jogging. Use Control Bridge for bridge polling.'
+            if self.bridge is not None else
+            ('Disconnect to change these settings for the next direct connection. ' if self.motor is not None else '') +
+            'Default: release after 30 seconds without movement activity. Keep-alive reads positions while idle; it does not reset this timer. Never retains the connection until Disconnect or a fault. '
+            + ('Caution: beyond 30 seconds or Never with keep-alive ON can keep the adapter occupied and lock out other control apps. Disconnect before switching apps. ' if self.motor_heartbeat.get() and self.idle_release.get() in ('1 minute', '2 minutes', '5 minutes', 'Never', 'Off') else '')
+            + 'Keep-alive OFF stops idle reads; movement feedback checks remain active.')
         bridge_allowed = self.connection_mode.get() == 'infrastructure' or self.bridge_dual.get()
         if self.bridge is not None:
             notice = 'Control Bridge is running. Switch it OFF to stop and release the connection.'
@@ -1713,7 +1743,7 @@ class SetupApp(ttk.Frame):
         elif self.bridge_dual.get():
             notice = 'Two Interface Mode: select this computer’s IPv4 address on the astronomy app’s network, then switch Control Bridge ON.'
         else:
-            notice = 'Connect the telescope, this computer and the astronomy app to the same access-point network, then switch Control Bridge ON.'
+            notice = 'Connect this computer to the telescope network, then switch Control Bridge ON here. Your control app can run here or on another device on the shared LAN; see the steps below.'
         self.bridge_requirement.set(notice)
         self.bridge_switch.configure(state='normal' if self.bridge is not None or (not locked and bridge_allowed) else 'disabled')
         self.bridge_bind_entry.configure(state='disabled' if locked else 'normal')
@@ -1745,8 +1775,9 @@ class SetupApp(ttk.Frame):
             return
         try:
             host, port = validate_endpoint(self.host.get(), self.port.get())
-            idle = {'Off': 0, '10 seconds': 10, '20 seconds': 20, '30 seconds': 30}[self.idle_release.get()]
-            self.motor = self.motor_factory(host, port, self.events.put, idle_release=idle)
+            idle = {'Off': 0, 'Never': 0, '10 seconds': 10, '20 seconds': 20, '30 seconds': 30, '1 minute': 60, '2 minutes': 120, '5 minutes': 300}[self.idle_release.get()]
+            self.motor = self.motor_factory(host, port, self.events.put, idle_release=idle,
+                heartbeat_enabled=self.motor_heartbeat.get(), heartbeat_interval=float(self.motor_heartbeat_interval.get()))
             self.connect_request_active = True
             self.connect_recovery_attempted = recover_attempted
             self.last_motor_error = None

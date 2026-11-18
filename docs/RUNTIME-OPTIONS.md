@@ -42,7 +42,7 @@ There is currently **no** GUI `--noapi`, `--api`, `--bridge`, `--keymap`, `--pro
 | Two Interface Mode checkbox | Check for a direct SkyQLink upstream bridged to another network; select/enter this system's address facing the control software. Leave unchecked for an ordinary shared infrastructure network. | Not Internet sharing, an OS router, or automatic interface configuration. |
 | Keyboard control OFF/ON | Enable the JSON profile's displayed letter map while Motor control has focus outside text fields. Starts OFF. Uppercase labels match keycaps; Shift/Caps Lock are not needed. | Missing/invalid keymap disables it. Esc remains a fixed Stop key in the active main window. Does not act as global system hotkeys. |
 | Hold to move / Timed jog | Hold and release a direction button/key, or request the selected bounded jog duration. | These request real movement after connection. Keep physical clearance; time estimates are not alignment. |
-| Idle release | Off, 10, 20 or 30 seconds; default 30, applied on the next motor connection. Releases after no movement activity. | Does not automatically start a bridge or hand over to KStars. It applies to the direct motor connection, not bridge jogging, and is distinct from lost-feedback handling and adapter TCP timeouts. |
+| Idle release | Never, 10/20/30 seconds or 1/2/5 minutes; default 30 seconds, applied on the next direct motor connection. Disabled while connected or while the bridge runs. Releases after no movement activity. | Does not automatically start a bridge or hand over to KStars. It applies to the direct motor connection, not bridge jogging, and is distinct from lost-feedback handling and adapter TCP timeouts. |
 | Recover a stalled adapter on Connect | Optional one-time identified legacy WiFly restart when motor feedback is missing; disconnect other clients first. | Not a routine connect requirement. Unsaved module settings can be lost; it does not fix every transport failure. |
 | Deep Diagnostics Read checkbox | Opt into the additional allowlisted reads after the warning. | Reads can occupy/interrupt the legacy link; not an unrestricted register scan and not safe to run concurrently with another controller. |
 | Show password | Show only the password entered in the editable box. | Does not recover the telescope's saved password; credential fields are redacted from provisioning logs. |
@@ -184,3 +184,29 @@ position poll or missed-poll inactivity shutdown. Both default OFF. Local joggin
 uses the same scheduler for required 0.4-second feedback, reusing incoming replies
 and pending external reads. This safety interval is not user-adjustable; disable
 local jogging when using only an external app. Startup motor verification remains.
+
+
+### Direct Motor control keep-alive and idle release
+
+Set these under Motor control before Connect Motors. Keep connection alive defaults
+ON at 1 second, exposing the existing idle encoder polling rather than adding a
+second loop; accepted intervals are 1–300 seconds. Unchecking it stops optional
+idle reads, not startup, before-jog or active-motion feedback checks. Position
+readbacks may become stale while idle and transport failure may not be detected
+until the next operation. The interval is not a new GUI command-line switch.
+
+Idle release defaults to 30 seconds without movement activity. Choices are 10, 20,
+30 seconds, 1/2/5 minutes and Never (backend `idle_release=0`). Keep-alive does not
+renew this timer. Never retains the connection until Disconnect or a fault; it
+cannot prevent transport failure. Values above 30 seconds or Never with keep-alive
+can keep the adapter occupied, preventing other apps from connecting. Disconnect
+before changing controllers. This is an interface-ownership caution, not evidence
+of a universal 30-second firmware lockup threshold.
+
+Both controls are disabled during direct connection and all bridge operation,
+including local bridge jogging. Values are preserved for the next direct session.
+The bridge's separate controls and scheduler are unaffected.
+
+Before a direct jog, the worker reads **both encoders** even if keep-alive is OFF
+or the idle readback is stale. If either reply is missing, no movement command is
+sent. Idle polling interval changes therefore do not bypass this safety check.

@@ -326,7 +326,7 @@ move the telescope slider or connect the computer to a different Wi-Fi network.
    the telescope’s aligned sky-pointing azimuth/elevation or an object’s coordinates. Use the scope/app's alignment procedure for sky pointing.
 2. **Control Bridge:** relays native AUX traffic to a compatible phone/desktop control app.
    Defaults OFF. While ON, Diagnostics and Wi-Fi provisioning are disabled.
-   Motor control offers optional experimental local jogging through the bridge,
+   Motor control offers optional local jogging through the bridge,
    with external-command priority; readbacks/logs remain visible. The controlling application can command real telescope motion.
 3. **Diagnostics:** displays actual adapter query data, replies, timeouts and
    controller details. A responding RN-171 can be listed even when motors do not
@@ -675,8 +675,8 @@ Application note: [KStars/INDI connection and manual eyepiece alignment](docs/KS
 Bridge logs now show known AUX interpretations beside raw hex; unknowns remain
 unknown. See the [user-guide appendix](docs/USER-GUIDE.md#technical-appendix-interpreting-external-application-traffic)
 for captured SkySafari command findings, including commands without GUI controls.
-[Local jogging through the bridge](docs/USER-GUIDE.md#local-jogging-while-control-bridge-is-on-experimental)
-is OFF by default and experimental; supervised live coexistence testing is pending.
+[Local jogging through the bridge](docs/USER-GUIDE.md#local-jogging-while-control-bridge-is-on)
+is OFF by default; supervised live coexistence testing remains pending.
 
 
 Control Bridge does not disconnect control or management clients because they are
@@ -691,3 +691,20 @@ and [CLI reference](docs/RUNTIME-OPTIONS.md#optional-bridge-background-reads-cli
 
 **Export bridge recording…** saves Wi-Fi packets, measured encoder positions, or
 both as CSV/JSON for offline analysis. See the [export instructions](docs/USER-GUIDE.md#export-packets-measured-positions-or-both).
+
+
+Direct Motor control now exposes its existing idle position reads as **Keep
+connection alive** (ON at 1 second by default; adjustable 1–300 seconds). **Idle
+release** remains 30 seconds by default, with longer options and Never. Keep-alive
+does not reset idle release. Both settings are disabled while connected or during
+any bridge operation; see the [direct connection guide](docs/USER-GUIDE.md#direct-motor-connection-keep-alive-and-idle-release)
+for ownership warnings and movement-safety behavior.
+
+
+Control Bridge supports a control application on **this same computer** or on
+**another device on the shared LAN segment**. Switch the bridge ON in this program;
+configure the control application with the bridge's displayed address and port,
+not the telescope's address. For another device, select this computer's adapter
+on that shared LAN. For local-only use, explicitly bind the bridge to `127.0.0.1`
+and use that address in the local control application. Localhost on another device
+cannot reach this computer. See [connection instructions](docs/USER-GUIDE.md#control-bridge).
