@@ -229,3 +229,14 @@ intervals under controlled host/network conditions, measuring per-request timeou
 recovery episodes/durations and disconnects. Preserve Stop and movement lockouts.
 57 successful recoveries are evidence of tolerance, not a reason to weaken checks
 or certify uninterrupted tracking. No automatic default change is justified yet.
+
+
+### Software-proxy identity before future ESP32 mode selection
+
+Implemented schema-1 role identification on bridge management (`version`, then
+`get cosmos.proxy`) plus explicit UDP metadata. Discovery labels recognized
+software proxies and avoids their motor socket; GUI selection does not treat a
+proxy as a WiFly provisioning target. See PROXY-DISCOVERY.md. Future ESP32 support
+must advertise a distinct physical-adapter role and capabilities, never reuse
+the software_proxy identity. Capability-based mode selection and physical ESP32
+validation remain future work. Unknown or missing identity never proves hardware.

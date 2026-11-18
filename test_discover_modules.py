@@ -19,6 +19,11 @@ class Recorder:
 
 
 class ModuleDiscoveryTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch('discover_modules.identify_proxy', return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_identifies_aux_by_valid_replies_without_mac_or_ssid(self):
         adapter = Adapter()
         result = identify('192.168.1.99', socket_factory=lambda address, timeout: adapter)
@@ -146,6 +151,59 @@ class ModuleDiscoveryTests(unittest.TestCase):
             report = scan_modules(timeout=0)
         probe.assert_not_called()
         self.assertTrue(report['timed_out'])
+
+
+
+
+class ProxyDiscoveryTests(unittest.TestCase):
+    def socket(self, version='COSMOSBridge-AMW007-0.1.0.0, Python proxy', identity=None):
+        import json
+        from unittest.mock import Mock
+        sock = Mock()
+        identity = identity if identity is not None else {
+            'schema': 1, 'product': 'cosmos90gt-control', 'role': 'software_proxy',
+            'physical_module': False, 'data_port': 2000, 'management_port': 3000}
+        sock.recv.side_effect = [(version + '\r\n> ').encode(), (json.dumps(identity) + '\r\n> ').encode()]
+        return sock
+
+    def test_proxy_does_not_open_motor_port(self):
+        from unittest.mock import Mock
+        sock = self.socket()
+        factory = Mock(return_value=sock)
+        result = identify('192.0.2.22', socket_factory=factory)
+        factory.assert_called_once_with(('192.0.2.22', 3000), .35)
+        self.assertEqual(result['endpoint_kind'], 'software_proxy')
+        self.assertFalse(result['motors_verified'])
+        self.assertFalse(result['adapter_verified'])
+        self.assertEqual([c.args[0] for c in sock.sendall.call_args_list],
+                         [b'version\n', b'get cosmos.proxy\n'])
+        sock.close.assert_called_once()
+
+    def test_nonproxy_never_receives_private_query(self):
+        from discover_modules import identify_proxy
+        sock = self.socket(version='AMW007 hardware')
+        self.assertIsNone(identify_proxy('192.0.2.22', socket_factory=lambda *args: sock))
+        sock.sendall.assert_called_once_with(b'version\n')
+
+    def test_legacy_proxy_remains_proxy_without_structured_reply(self):
+        from discover_modules import identify_proxy
+        sock = self.socket()
+        sock.recv.side_effect = [b'COSMOSBridge-AMW007-old\r\n> ', b'ERR Unsupported\r\n> ']
+        result = identify_proxy('192.0.2.22', socket_factory=lambda *args: sock)
+        self.assertEqual(result['endpoint_kind'], 'software_proxy')
+        self.assertNotIn('proxy_identity', result)
+
+    def test_physical_match_does_not_hide_software_proxy(self):
+        lans = [('eth', '192.168.1.1', ipaddress.ip_network('192.168.1.0/29'))]
+        physical = {'ip': '192.168.1.2', 'verified': True}
+        proxy = {'ip': '192.168.1.3', 'endpoint_kind': 'software_proxy', 'verified': True}
+        with patch('discover_modules.connected_lans', return_value=lans), \
+             patch('discover_modules.neighbor_entries', return_value=[{'ip':'192.168.1.2','mac':'00:06:66:01:02:03'}]), \
+             patch('discover_modules.Recorder', Recorder), \
+             patch('discover_modules.identify', return_value=physical), \
+             patch('discover_modules.identify_proxy', side_effect=lambda host, port: proxy if host == '192.168.1.3' else None):
+            result = scan_modules(mode='infrastructure')
+        self.assertEqual({m['ip'] for m in result['matches']}, {'192.168.1.2', '192.168.1.3'})
 
 
 if __name__ == '__main__':

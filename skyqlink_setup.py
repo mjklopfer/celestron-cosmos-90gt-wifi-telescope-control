@@ -1209,7 +1209,7 @@ class SetupApp(ttk.Frame):
         """Create bridge controls, interface selection and relay status readbacks."""
         tab = self.bridge_tab
         tab.columnconfigure(0, weight=1)
-        ttk.Label(tab, text='This feature allows your local computer to create a proxy link between the SkyQLink telescope and control software that uses modern Celestron Wi-Fi connectivity/protocol. It relays telescope commands and replies for one controlling application at a time. Alignment and tracking calculations remain the responsibility of the control software.', wraplength=820).grid(row=0, sticky='w', pady=(0, 8))
+        ttk.Label(tab, text='This computer runs a SOFTWARE PROXY when Control Bridge is ON; it is not a physical Celestron Wi-Fi module. This feature allows your local computer to create a proxy link between the SkyQLink telescope and control software that uses modern Celestron Wi-Fi connectivity/protocol. It relays telescope commands and replies for one controlling application at a time. Alignment and tracking calculations remain the responsibility of the control software.', wraplength=820).grid(row=0, sticky='w', pady=(0, 8))
         self.bridge_switch = BridgeRocker(tab, variable=self.bridge_enabled, command=self.toggle_bridge)
         self.bridge_switch.grid(row=1, sticky='nw')
         self.bridge_requirement = tk.StringVar()
@@ -1702,6 +1702,9 @@ class SetupApp(ttk.Frame):
         index = self.module_box.current()
         if 0 <= index < len(self.discovered):
             match = self.discovered[index]
+            if match.get('endpoint_kind') == 'software_proxy':
+                self.status.set(f"Software proxy at {match['ip']}:{match.get('port', 2000)} — not a physical module. Use this address in your control app. Telescope address unchanged; do not provision or bridge this proxy as hardware.")
+                return
             self.connection_mode.set('direct' if match['ip'] == '1.2.3.4' else 'infrastructure')
             self.update_mode_help()
             self.host.set(match['ip'])
@@ -2207,18 +2210,22 @@ class SetupApp(ttk.Frame):
                     elif matches:
                         self.discovered = matches
                         self.module_box.configure(values=[f'{m["ip"]}:{m.get("port", 2000)} — {m.get("module_type", "Celestron AUX")}' for m in matches])
-                        self.module_box.current(0)
-                        match = matches[0]
-                        self.connection_mode.set('direct' if match['ip'] == '1.2.3.4' else 'infrastructure')
-                        self.update_mode_help()
-                        self.host.set(match['ip'])
-                        if match['ip'] != '1.2.3.4':
-                            self.last_infrastructure_host = match['ip']
-                        self.port.set(str(match.get('port', 2000)))
-                        text = f'{len(matches)} verified module(s). Selected {match["ip"]}:{match.get("port", 2000)} — {match.get("module_type", "Celestron AUX")}.'
-                        if match.get('module_version'):
-                            text += f' Firmware {match["module_version"]}.'
-                        text += ' Adapter identified; connection closed after discovery.'
+                        index = next((i for i, m in enumerate(matches) if m.get('endpoint_kind') != 'software_proxy'), 0)
+                        self.module_box.current(index)
+                        match = matches[index]
+                        if match.get('endpoint_kind') == 'software_proxy':
+                            text = f"Found software proxy at {match['ip']}:{match.get('port', 2000)} — not a physical module. Telescope address unchanged. Use the proxy address in your control app; hardware provisioning is not available through it."
+                        else:
+                            self.connection_mode.set('direct' if match['ip'] == '1.2.3.4' else 'infrastructure')
+                            self.update_mode_help()
+                            self.host.set(match['ip'])
+                            if match['ip'] != '1.2.3.4':
+                                self.last_infrastructure_host = match['ip']
+                            self.port.set(str(match.get('port', 2000)))
+                            text = f'{len(matches)} identified endpoint(s). Selected {match["ip"]}:{match.get("port", 2000)} — {match.get("module_type", "Celestron AUX")}.'
+                            if match.get('module_version'):
+                                text += f' Firmware {match["module_version"]}.'
+                            text += ' Discovery connection closed; see verification details below.'
                         for found in matches:
                             self.append(f'DISCOVERY DETAILS {found["ip"]}:{found.get("port", 2000)} — '
                                         + found.get('verification_note', 'Module verified'))
@@ -2230,7 +2237,7 @@ class SetupApp(ttk.Frame):
                     self.status.set(text)
                     found = bool(matches) and not report.get('error')
                     self.scan_indicator.configure(
-                        text=('● Module found' if found else '● Scan timed out' if report.get('timed_out') else
+                        text=('● Endpoint found' if found else '● Scan timed out' if report.get('timed_out') else
                               '● Scan failed' if report.get('error') else '● No module verified')
                              + f' — {report.get("elapsed_seconds", 0):g}s',
                         foreground='#18743b' if found else '#b22b2b')

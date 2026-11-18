@@ -715,3 +715,12 @@ checks succeed, **red** when OFF, starting, stopping or faulted. It remains visi
 while another tab is selected. The Motor control tab retains its **yellow** marker
 while operating through the bridge. Green indicates bridge readiness, not proof
 of alignment, tracking accuracy or uninterrupted motor feedback.
+
+
+Discovery distinguishes this program's **software proxy** from physical WiFly
+hardware. A recognized proxy is labeled **COSMOS software proxy — not a physical
+module** and identified on its management port without opening its motor-control
+connection. Selecting it leaves the hardware target unchanged; use the proxy
+address in your control application. Unidentified AUX endpoints remain labeled
+hardware-or-proxy unknown. See the [proxy identity protocol](docs/PROXY-DISCOVERY.md)
+for fields, compatibility limits and future ESP32 integration considerations.

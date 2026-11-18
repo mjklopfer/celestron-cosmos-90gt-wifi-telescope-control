@@ -305,3 +305,24 @@ marker. Ruff, whitespace checks and wheel/source distribution build passed.
 The updated Windows GUI was relaunched and its red Control Bridge marker visually
 confirmed from Motor control, together with the renamed settings title/subtitle.
 Left disconnected, bridge OFF, for user testing; no physical motion commanded.
+
+
+## Software proxy identity and discovery — November 18
+
+Added a read-only management identity and UDP discovery metadata that distinguish
+this computer's software proxy from a physical WiFly adapter or an unclassified
+AUX endpoint. Discovery verifies the version family before sending the private
+identity query and does not open the motor port for recognized proxies. Selecting
+a proxy does not replace the GUI hardware/provisioning target.
+
+All 60 tests passed across test_bridge_mode, test_discover_modules,
+test_setup_gui.BridgeGuiTests and test_setup_gui.ReleaseGuidanceTests. The loopback
+test keeps a simulated control client connected while discovering the proxy,
+verifies no upstream commands or Stop are injected, then verifies the client's
+next motor-position query still receives its reply. This is automated fake-mount
+validation, not a live telescope or SkySafari compatibility test.
+
+Ruff, whitespace checks, and the wheel/source distribution build passed. The
+existing running GUI was not interrupted; restart it to expose the new identity.
+Custom management-port auto-discovery, authenticated identity, and the future
+physical ESP32 control mode remain outside this change. See PROXY-DISCOVERY.md.

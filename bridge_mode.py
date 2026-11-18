@@ -384,6 +384,14 @@ class Bridge:
             self.send_stops()
             self.emit('bridge_client', message=f'App client disconnected ({reason}); Stop attempted. Waiting for a new client.')
 
+    def proxy_identity(self):
+        """Read-only software identity; never forwarded to AUX or WiFly."""
+        return {'schema': 1, 'product': 'cosmos90gt-control', 'role': 'software_proxy',
+                'physical_module': False, 'instance_id': self.mac,
+                'version': IDENTITY, 'data_port': self.listen_port,
+                'management_port': self.management_port,
+                'ready': self.ready.is_set() and not self.stopping.is_set()}
+
     def management_reply(self, command):
         # This is a proxy, never a WiFly provisioning or firmware-update gateway.
         """Answer supported read-only proxy commands; reject configuration writes."""
@@ -391,6 +399,8 @@ class Bridge:
                   'wlan.static.ip': self.bind_host, 'softap.ssid': 'COSMOS-Bridge'}
         if command == 'version':
             return IDENTITY
+        if command == 'get cosmos.proxy':
+            return json.dumps(self.proxy_identity())
         if command == 'get all':
             return '\r\n'.join(f'{key}: {value}' for key, value in values.items())
         if command.startswith('get ') and command[4:] in values:
@@ -454,7 +464,7 @@ class Bridge:
             while not self.stopping.is_set():
                 now = time.monotonic()
                 if self.udp and self.client is None and now >= next_advert:
-                    packet = json.dumps({'mac': self.mac, 'version': IDENTITY}).encode()
+                    packet = json.dumps({'mac': self.mac, 'version': IDENTITY, 'cosmos_proxy': self.proxy_identity()}).encode()
                     try:
                         self.udp.sendto(packet, ('255.255.255.255', 55555))
                     except OSError as error:

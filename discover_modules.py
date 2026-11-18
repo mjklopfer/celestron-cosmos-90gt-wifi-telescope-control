@@ -4,6 +4,7 @@ Scans attached supported networks; vendor prefixes are hints, not identity check
 Discovery sends no motor movement or configuration-write commands."""
 import concurrent.futures
 import ipaddress
+import json
 import re
 import socket
 import threading
@@ -34,12 +35,67 @@ class SafeRecorder:
             self.recorder.record(kind, **fields)
 
 
+def identify_proxy(host, port=2000, socket_factory=socket.create_connection, management_port=3000):
+    """Identify our proxy on management only; never claim its motor connection.
+
+    Send standard read-only version first. The private get command is sent only
+    after our exact version-family prefix is received. Missing identity is NOT
+    proof of physical hardware. Legacy COSMOSBridge versions still classify as
+    proxies even if they do not support the structured endpoint.
+    """
+    sock = None
+    try:
+        sock = socket_factory((host, management_port), .35)
+        sock.settimeout(.35)
+        def read(command):
+            sock.sendall(command.encode('ascii') + b'\n')
+            data = bytearray()
+            deadline = time.monotonic() + .7
+            while len(data) < 8192 and time.monotonic() < deadline:
+                chunk = sock.recv(min(4096, 8192 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
+                if b'\n> ' in data:
+                    break
+            return data.decode('utf-8', 'replace').strip().rstrip('>').strip()
+        text = read('version')
+        if not text.startswith('COSMOSBridge-AMW007-'):
+            return None
+        result = {'ip': host, 'port': port, 'verified': True,
+                  'proxy_verified': True, 'endpoint_kind': 'software_proxy',
+                  'adapter_verified': False, 'motors_verified': False,
+                  'module_type': 'COSMOS software proxy — not a physical module',
+                  'module_version': text, 'management_port': management_port,
+                  'motor_versions': {}, 'verification_note':
+                  'Software proxy identity verified on management port only; motor port was not opened.'}
+        try:
+            identity = json.loads(read('get cosmos.proxy'))
+            if (identity.get('schema') == 1 and identity.get('product') == 'cosmos90gt-control'
+                    and identity.get('role') == 'software_proxy' and identity.get('physical_module') is False
+                    and type(identity.get('data_port')) is int and 1 <= identity['data_port'] <= 65535):
+                result['proxy_identity'] = identity
+                result['port'] = identity['data_port']
+        except (OSError, ValueError, AttributeError):
+            pass  # The version already establishes a legacy software proxy.
+        return result
+    except OSError:
+        return None
+    finally:
+        if sock is not None:
+            sock.close()
+
+
 def identify(host, port=2000, recorder=None, socket_factory=socket.create_connection, rn171_hint=False, connect_timeout=.35):
     """Read both motor versions, optionally the Wi-Fi node and WiFly firmware. No settings/motion."""
     class NullRecorder:
         def record(self, *args, **kwargs):
             pass
     recorder = recorder or NullRecorder()
+    proxy = identify_proxy(host, port, socket_factory=socket_factory)
+    if proxy:
+        recorder.record('verified_proxy', **proxy)
+        return proxy
     lease = EndpointLease(host, port)
     try:
         lease.acquire()
@@ -86,7 +142,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
                 break
         result = {'ip': host, 'port': port, 'verified': False,
                   'motors_verified': False, 'adapter_verified': False,
-                  'module_type': 'Celestron AUX Wi-Fi bridge', 'motor_versions': {}}
+                  'module_type': 'Unclassified Celestron AUX endpoint (hardware or proxy)', 'endpoint_kind': 'unclassified_aux', 'motor_versions': {}}
         identity_attempted = False
 
         def identify_wifly():
@@ -102,7 +158,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
                                   'WiFly ' + match.group(3), module_version=match.group(1),
                                   module_build_date=match.group(2), identity_reply=text)
                     if match.group(3) == 'RN-171':
-                        result.update(adapter_verified=True, verified=True)
+                        result.update(adapter_verified=True, verified=True, endpoint_kind='physical_wifly')
             except Exception as error:
                 result['module_version_note'] = str(error)
             finally:
@@ -148,7 +204,7 @@ def scan_modules(port=2000, callback=lambda event: None, timeout=60, mode=None):
     recorder = Recorder('discover-modules')
     safe = SafeRecorder(recorder)
     report = {'port': port, 'matches': [], 'networks_checked': [],
-              'method': 'RN-171 vendor-prefix hints first, then TCP firmware identification; no exact MAC or SSID requirement',
+              'method': 'Management-port proxy identity, RN-171 vendor-prefix hints and TCP firmware identification; no exact MAC or SSID requirement',
               'settings_changed': False, 'motor_commands_sent': False, 'mode': mode or 'all'}
     try:
         lans = connected_lans()
@@ -215,6 +271,22 @@ def scan_modules(port=2000, callback=lambda event: None, timeout=60, mode=None):
             if not found:
                 callback({'event': 'scan_progress', 'message': f'Checking the remaining LAN addresses on TCP {port}…'})
                 found = [item for item in executor.map(probe, [h for h in hosts if h not in cached and h not in preferred]) if item]
+        # Existing discovery prioritizes physical adapters and may finish early.
+        # Also check remaining infrastructure hosts for software proxies using
+        # management only, so a physical match cannot hide a running proxy.
+        if found and mode != 'direct':
+            seen = {m['ip'] for m in found}
+            def proxy_only(address):
+                if time.monotonic() >= deadline:
+                    report['timed_out'] = True
+                    return None
+                match = identify_proxy(address, port)
+                if match:
+                    match['interface'] = hosts[address]
+                    safe.record('verified_proxy', **match)
+                return match
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+                found.extend(m for m in executor.map(proxy_only, [h for h in hosts if h not in seen and h != '1.2.3.4']) if m)
         report['matches'] = found
         report['candidate_errors'] = failures
         if not found and mode == 'direct':

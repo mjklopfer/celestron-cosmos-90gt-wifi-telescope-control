@@ -645,6 +645,17 @@ class BridgeGuiTests(unittest.TestCase):
         app.update_controls()
         self.assertEqual(str(app.motor_heartbeat_box_interval.cget('state')), 'normal')
 
+    def test_selecting_proxy_does_not_replace_hardware_target(self):
+        app = self.app
+        host = app.host.get()
+        app.discovered = [{'ip':'192.0.2.33', 'port':2000, 'endpoint_kind':'software_proxy'}]
+        app.module_box.configure(values=['COSMOS software proxy'])
+        app.module_box.current(0)
+        app.select_module()
+        self.assertEqual(app.host.get(), host)
+        self.assertIn('not a physical module', app.status.get())
+        self.assertIn('address unchanged', app.status.get())
+
     def test_bridge_poll_controls_live_on_bridge_and_validate_before_connect(self):
         app = self.app
         groups = [w for w in app.bridge_tab.winfo_children()

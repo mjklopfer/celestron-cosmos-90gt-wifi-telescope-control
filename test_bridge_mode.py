@@ -97,6 +97,22 @@ class BridgeTests(unittest.TestCase):
     def connect(self, port):
         return socket.create_connection(('127.0.0.1', port), 2)
 
+    def test_management_discovery_does_not_interrupt_connected_controller(self):
+        from discover_modules import identify_proxy
+        with self.connect(self.bridge.listen_port) as client:
+            self.wait('bridge_client')
+            before = len(self.frames)
+            result = identify_proxy('127.0.0.1', self.bridge.listen_port,
+                                    management_port=self.bridge.management_port)
+            self.assertEqual(result['endpoint_kind'], 'software_proxy')
+            self.assertEqual(result['port'], self.bridge.listen_port)
+            self.assertTrue(result['proxy_identity']['ready'])
+            self.assertEqual(len(self.frames), before)
+            packet = motor_packet(16, 1)
+            client.sendall(packet)
+            self.await_frame(packet)
+            self.assertTrue(self.bridge.thread.is_alive())
+
     def test_forwarding_split_packets_encoder_readback_and_no_competing_poll(self):
         with self.connect(self.bridge.listen_port) as client:
             client.settimeout(2)
@@ -411,6 +427,18 @@ class BridgeConfigurationTests(unittest.TestCase):
                 Bridge('1.2.3.4', **options)
         bridge = Bridge('1.2.3.4', allow_direct_upstream=True, bind_host='192.168.1.30')
         self.assertEqual(bridge.bind_host, '192.168.1.30')
+
+    def test_structured_proxy_identity_is_read_only_and_reports_ports(self):
+        bridge = Bridge('192.0.2.231', bind_host='127.0.0.1', listen_port=1234, management_port=1235)
+        identity = json.loads(bridge.management_reply('get cosmos.proxy'))
+        self.assertEqual(identity['role'], 'software_proxy')
+        self.assertIs(identity['physical_module'], False)
+        self.assertEqual(identity['data_port'], 1234)
+        self.assertEqual(identity['management_port'], 1235)
+        self.assertFalse(identity['ready'])
+        bridge.ready.set()
+        self.assertTrue(json.loads(bridge.management_reply('get cosmos.proxy'))['ready'])
+        self.assertIsNone(bridge.upstream)
 
     def test_advertisement_identity_and_management_are_distinct_from_real_firmware(self):
         from bridge_mode import IDENTITY
