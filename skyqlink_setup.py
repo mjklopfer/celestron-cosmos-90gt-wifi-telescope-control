@@ -1451,7 +1451,7 @@ class SetupApp(ttk.Frame):
             return
         if self.busy or self.motor is not None:
             self.bridge_enabled.set(False)
-            self.bridge_status.set('Wait for the current operation to finish. If Motor control is connected, click Disconnect on that tab before switching Control Bridge ON.')
+            self.bridge_status.set('Control Bridge cannot start yet. On Motor control, click Disconnect if connected. Check that all requested diagnostics, discovery, recovery, and settings operations have finished. Then switch Control Bridge ON.')
             return
         if self.connection_mode.get() != 'infrastructure' and not self.bridge_dual.get():
             self.bridge_enabled.set(False)
@@ -1759,7 +1759,7 @@ class SetupApp(ttk.Frame):
         if self.bridge is not None:
             notice = 'Control Bridge is running. Switch it OFF to stop and release the connection.'
         elif self.busy or self.motor is not None:
-            notice = 'Control Bridge cannot start during another operation. Wait for it to finish, or click Disconnect on Motor control.'
+            notice = 'Control Bridge cannot start yet. On Motor control, click Disconnect if connected. Check that all requested diagnostics, discovery, recovery, and settings operations have finished. Then switch Control Bridge ON.'
         elif not bridge_allowed:
             notice = 'Control Bridge is disabled: Direct/ad hoc requires Two Interface Mode. Enable it below and select the second adapter’s IPv4 address.'
         elif self.bridge_dual.get():

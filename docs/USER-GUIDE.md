@@ -229,6 +229,9 @@ your control application runs (e.g., SkySafari, CPWI, KStars/INDI, etc.):
   telescope-facing link is separate. This program relays telescope traffic,
   not general network bridging or Internet sharing.
 
+Before starting, click **Disconnect** on Motor control if connected. Check that
+all requested diagnostics, discovery, recovery and settings operations have finished.
+
 Switch **Control Bridge ON in this program on this computer**. Wait for Bridge ON
 and its address/port readback. No bridge needs to run on the other device. Configure
 your control application's compatible Celestron Wi-Fi/AUX network connection with
