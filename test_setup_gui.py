@@ -614,6 +614,20 @@ class BridgeGuiTests(unittest.TestCase):
         self.assertIn('3b0420102400a8 (Move positive request/echo: STOP)', app.bridge_console.get('1.0', 'end'))
         app.bridge = None
 
+    def test_bridge_poll_controls_live_on_bridge_and_validate_before_connect(self):
+        app = self.app
+        groups = [w for w in app.bridge_tab.winfo_children()
+                  if w.winfo_class() == 'TLabelframe' and 'motor-position polling' in w.cget('text')]
+        self.assertEqual(len(groups), 1)
+        app.bridge_heartbeat.set(True)
+        app.bridge_monitor.set(True)
+        app.bridge_monitor_interval.set('5')
+        app.apply_bridge_background_reads()
+        self.assertIn('5s sample interval', app.bridge_background_status.get())
+        app.bridge_monitor_interval.set('nan')
+        app.apply_bridge_background_reads()
+        self.assertIn('Not applied', app.bridge_background_status.get())
+
     def test_bridge_requires_infrastructure_and_shows_firewall_ports(self):
         app = self.app
         app.bridge_enabled.set(True)

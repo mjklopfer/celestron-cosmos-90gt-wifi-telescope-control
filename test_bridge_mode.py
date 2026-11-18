@@ -184,23 +184,36 @@ class BridgeTests(unittest.TestCase):
             finally:
                 release.set()
 
-    def test_single_idle_timeout_keeps_bridge_alive_and_recovers(self):
-        self.drop_positions = 1
-        event = self.wait('bridge_status', timeout=5)
-        self.assertIn('reply delayed', event['message'])
+    def test_position_recording_captures_external_motion_without_jogging(self):
+        with self.connect(self.bridge.listen_port):
+            self.wait('bridge_client')
+            self.positions = {16: 234567, 17: 765432}
+            before = len(self.frames)
+            self.bridge.configure_background_reads(False, 5, True, .2)
+            seen = set()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and len(seen) < 2:
+                event = self.wait('bridge_values')
+                if event['encoder'] == self.positions[event['axis']]:
+                    seen.add(event['axis'])
+            self.assertEqual(seen, {16, 17})
+            self.assertFalse(self.bridge.local_enabled)
+            self.assertTrue(all(f[4] == 1 for f in self.frames[before:]))
+
+    def test_missing_optional_samples_keep_bridge_alive_and_recover(self):
+        self.drop_positions = 2
+        self.bridge.configure_background_reads(False, 5, True, .2)
+        event = self.wait('bridge_background_read', timeout=5)
+        while 'sample missing' not in event['message']:
+            event = self.wait('bridge_background_read', timeout=5)
         self.wait('bridge_values', timeout=5)
         self.assertTrue(self.bridge.thread.is_alive())
 
-    def test_repeated_idle_timeouts_still_fail_closed(self):
-        self.drop_positions = 100
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            event = self.events.get(timeout=4)
-            if event['event'] == 'bridge_error':
-                self.assertIn('three consecutive polls', event['message'])
-                break
-        else:
-            self.fail('Repeated missing replies did not stop bridge')
+    def test_no_hidden_idle_polls_when_both_options_off(self):
+        before = len(self.frames)
+        time.sleep(1.3)
+        self.assertEqual(len(self.frames), before)
+        self.assertTrue(self.bridge.thread.is_alive())
 
     def test_endpoint_exclusion_off_stops_and_releases(self):
         other = EndpointLease('192.0.2.231', 2000)
@@ -353,7 +366,9 @@ class BridgeTests(unittest.TestCase):
             packet = motor_packet(16, 0x25, b'\x03')
             client.sendall(packet[:3])
             time.sleep(.1)
-            self.enable_local()
+            # Partial app frames suppress injected queries, including jog reads.
+            self.bridge.set_local_jog(True)
+            self.wait('bridge_local_mode')
             client.sendall(packet[3:])
             self.await_frame(packet)
             self.assertEqual(self.frames.count(packet), 1)
@@ -404,3 +419,100 @@ class BridgeConfigurationTests(unittest.TestCase):
         self.assertTrue(bridge.mac.startswith('02:'))
         self.assertIn('ERR', bridge.management_reply('save'))
         self.assertIn('ERR', bridge.management_reply('reset'))
+
+
+class BackgroundReadTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import Mock
+        self.bridge = Bridge('192.0.2.231', bind_host='127.0.0.1')
+        self.bridge.upstream = Mock()
+        self.bridge.client = object()
+        self.bridge.last_client_activity = 100
+        self.bridge.last_background_query = 100
+
+    def test_disabled_default_and_quiet_interval_suppression(self):
+        b = self.bridge
+        b.background_read_tick(110)
+        b.upstream.sendall.assert_not_called()
+        b.configure_background_reads(True, 5)
+        b.background_read_tick(104.9)
+        b.upstream.sendall.assert_not_called()
+        b.background_read_tick(105)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+        b.last_client_activity = 106
+        b.background_pending.clear()
+        b.background_read_tick(110)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+        b.background_read_tick(111)
+        self.assertEqual(b.upstream.sendall.call_count, 4)
+        b.configure_background_reads(False, 5)
+        b.background_read_tick(120)
+        self.assertEqual(b.upstream.sendall.call_count, 4)
+
+    def test_recording_reuses_fresh_samples_and_never_duplicates_pending_reads(self):
+        b = self.bridge
+        b.configure_background_reads(False, 5, True, 1)
+        b.local_feedback = {16: 101, 17: 101}
+        b.background_read_tick(101)
+        b.upstream.sendall.assert_not_called()
+        b.background_read_tick(102.1)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+        b.background_read_tick(103.2)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+        body = bytes((6, 16, 32, 1, 0, 0, 1))
+        b.observe(b'\x3b' + body + bytes((-sum(body) & 255,)), 'mount')
+        self.assertNotIn(16, b.background_pending)
+        self.assertIn(17, b.background_pending)
+
+    def test_invalid_intervals_and_partial_frames(self):
+        b = self.bridge
+        for value in (0, -1, 301, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                b.configure_background_reads(True, value)
+        b.configure_background_reads(True, 1)
+        b.client_parser.feed(b'\x3b\x03')
+        b.background_read_tick(110)
+        b.upstream.sendall.assert_not_called()
+
+
+class UnifiedReadTests(BackgroundReadTests):
+    def test_no_client_uses_same_optional_controls(self):
+        b = self.bridge
+        b.client = None
+        b.background_read_tick(110)
+        b.upstream.sendall.assert_not_called()
+        b.configure_background_reads(False, 5, True, 10)
+        b.local_feedback = {16: 100, 17: 100}
+        b.background_read_tick(109)
+        b.upstream.sendall.assert_not_called()
+        b.background_read_tick(110)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+
+    def test_jog_feedback_reuses_external_samples_and_pending_requests(self):
+        b = self.bridge
+        b.local_enabled = True
+        b.local_feedback = {16: 110, 17: 110}
+        b.background_read_tick(110.3)
+        b.upstream.sendall.assert_not_called()
+        b.background_pending[16] = 112
+        b.background_read_tick(110.5)
+        b.upstream.sendall.assert_called_once_with(motor_packet(17, 1))
+        b.background_read_tick(111)
+        self.assertEqual(b.upstream.sendall.call_count, 1)
+
+    def test_mount_traffic_satisfies_heartbeat(self):
+        b = self.bridge
+        b.configure_background_reads(True, 5)
+        b.last_mount_activity = 108
+        b.background_read_tick(112)
+        b.upstream.sendall.assert_not_called()
+        b.background_read_tick(113)
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+
+    def test_external_request_prevents_background_duplicate(self):
+        b = self.bridge
+        b.configure_background_reads(False, 5, True, 1)
+        b.forward_client(motor_packet(16, 1))
+        b.background_read_tick(__import__('time').monotonic())
+        self.assertEqual(b.upstream.sendall.call_count, 2)
+        self.assertEqual(b.upstream.sendall.call_args_list[1].args[0], motor_packet(17, 1))

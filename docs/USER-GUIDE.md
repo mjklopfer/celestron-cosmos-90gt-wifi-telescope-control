@@ -630,5 +630,112 @@ aligned celestial coordinates without a valid alignment model.
 If the worker backlog reaches 8192 queued events, high-volume packet/readback
 telemetry may be omitted to keep relay traffic moving. An explicit warning and
 final dropped-event count identify incomplete recordings; lifecycle/safety events
-are retained. A motion-track export tool is planned, not yet implemented. Keep
+are retained. CSV/JSON recording export is available; plotting and trajectory replay are not implemented. Keep
 original logs and distinguish gaps, clock changes, resets and reconnections.
+
+
+### Record motor positions and optional idle heartbeat
+
+Open **Control Bridge → Connection keep-alive and motor-position polling**.
+These two options share one scheduler and one telescope connection:
+
+- **Poll and record motor positions**: OFF by default. Check it, enter the number
+  of seconds between motor-position reads, then click **Apply intervals**. The
+  default is 1 second; 5 means one sample about every five seconds, and 0.2 means
+  up to five per second. The accepted range is 0.2–300 seconds. Smaller intervals
+  add traffic; start with 1–10 seconds. Incoming position replies are reused;
+  requests are added only for axes whose samples are missing. This records motion
+  caused by external AUX controllers even when their commands do not cross Wi-Fi.
+- **Keep connection alive (heartbeat)**: OFF by default. Check it and set the
+  quiet interval (1–300 seconds, default 5), then click **Apply intervals**.
+  Communication in either direction or a scheduled position read resets the quiet
+  timer. This does not send duplicate requests alongside position recording.
+
+Both controls apply with or without a connected control application. There is no
+separate automatic one-second polling loop or three-missed-polls bridge shutdown.
+Both unchecked means no optional position queries; received replies are still
+logged. Startup still verifies both motor controllers before declaring the bridge
+ready. Discovery broadcasts are separate from motor polling.
+
+**Local jogging safety exception:** enabling local jogging in Motor control requires
+fresh encoder feedback at a 0.4-second interval, even between jogs so the buttons
+are ready. This uses the same scheduler, reuses external replies, and waits for
+pending position queries instead of injecting duplicates. It can override a slower
+recording interval. Turn local jogging OFF when using only SkySafari or another
+control app to avoid these extra safety reads. Active jogging still attempts Stop
+if feedback becomes stale; heartbeat settings cannot disable movement safeguards.
+
+Checkbox changes also apply the displayed intervals. A validation message indicates
+when a change was rejected. Settings last for this app session, not in hardware.
+Configure them before starting the bridge or adjust them while it runs. Polling
+intervals cannot change the external application's own query rate.
+
+Intervals are best-effort sample spacing, not exact hardware execution timestamps.
+Subsecond sampling is experimental on RN-171; use 1–10 seconds initially. Only one
+bridge-generated read per axis is outstanding at a time; pending external position
+requests also suppress injected reads. External commands are always forwarded. A missing reply is reported
+as a gap after two seconds rather than a fabricated position or a flood of retries.
+Replies are logged with actual observation timestamps, encoder counts and raw motor
+angles. Software cannot recover motion between samples without making assumptions.
+No successful heartbeat or position read proves physical stop, celestial alignment,
+or immunity to connection failures. Replies to injected reads are forwarded to the
+control app; compatibility with each app requires testing.
+
+
+### Export packets, measured positions or both
+
+On **Control Bridge**, click **Export bridge recording…** below the bridge log.
+Choose an `events.jsonl` file (the latest operation is prefilled), or choose the
+logs folder to include multiple sessions. Click **Refresh available range** to
+display the earliest/latest times and prefill the start/end date-time fields.
+Edit these to the desired range; values outside the displayed bounds are rejected.
+The end includes the entire selected second. There is no whole-day minimum. Then choose **Wi-Fi packets and commands**, **Measured
+motor positions**, or **Both in one timestamped file**. Select CSV or JSON and **Local time with UTC offset** or **Unix time**, then click
+**Export…** to choose the destination. This copies data; it does not move the mount
+or change/delete the source log. Exporting an active recording is a snapshot of
+already-written data; stop the recording normally first for a finalized capture.
+
+CSV uses one header row and conventional quoted fields, with UTF-8 BOM for Excel.
+The first data row has `record_type=export_metadata`; subsequent records have type
+`packet`, `position` or `status`. JSON has `metadata` and `records` fields and schema
+version 1. Both include session identifiers, original source line numbers, UTC and monotonic seconds,
+encoder counts/raw angle degrees for position records, and source/destination,
+command, payload, full hex and interpretation for packet records. `details_json`
+preserves the original event, including fields not represented in dedicated columns.
+Status/gap/reconnect notices remain in all three selections. Metadata includes a
+SHA-256 for each source snapshot and any partial-final-line warning.
+
+Use `record_type=position` to construct measured motion and `record_type=packet`
+to examine observed commands/replies. Positions do not identify which external
+controller caused a movement. Do not treat requested GoTo targets as measured
+positions, or raw encoders as aligned sky coordinates. The exporter does not
+interpolate gaps, unwrap angles, combine different clock sessions, create plots,
+or replay a trajectory; those remain separate analysis tasks.
+
+Offline command examples (no telescope connection required):
+
+```console
+python -m export_recording events.jsonl motor-positions.csv --select positions --format csv
+python -m export_recording events.jsonl wifi-packets.json --select packets --format json
+python -m export_recording events.jsonl combined.json --select both --format json
+```
+
+
+Time is explicitly labeled: local output uses `timestamp_local_iso8601` with the
+per-event UTC offset; Unix output uses `timestamp_unix_seconds_utc` (seconds since
+1970-01-01T00:00:00Z). Metadata names the selected convention. Date/time bounds in
+the GUI are shown with this computer's local offset, independent of export choice.
+Across sessions, records are ordered by UTC and retain their source session;
+monotonic times from different boot sessions are not assumed comparable.
+
+### SkySafari disconnects when switching away from the phone app
+
+In the 2026-11-18 test, the user observed that switching away from SkySafari
+closed its connection. The bridge log recorded `control app closed its TCP stream
+(EOF)` while the bridge remained running. This is consistent with app/background
+lifecycle behavior; it does not identify whether SkySafari or iOS initiates it.
+Keep SkySafari in the foreground for a controlled idle comparison. A bridge
+heartbeat cannot keep a socket open after the phone closes it. The bridge currently
+attempts Stop on client disconnect and waits for a new connection; reconnecting
+does not replay old motion commands or establish alignment. Long-duration tracking
+through app switches has not been verified.

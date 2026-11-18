@@ -677,3 +677,12 @@ is OFF by default and experimental; supervised live coexistence testing is pendi
 Control Bridge does not disconnect control or management clients because they are
 idle. Idle release applies only to the direct Motor control connection; local-jog
 duration and feedback safeguards remain separate.
+
+
+While Control Bridge runs, Motor control offers independent **Record motor positions**
+(0.2–300 seconds; default 1, subsecond experimental) and optional **Keep connection alive (heartbeat)** (1–300 seconds; default 5). Both start OFF and are configured on Control Bridge. One scheduler reuses incoming replies and handles both options, including when no control app is connected. Local jogging shares it for required safety feedback; turn local jogging OFF when using only your external app.
+See the [user guide](docs/USER-GUIDE.md#record-motor-positions-and-optional-idle-heartbeat)
+and [CLI reference](docs/RUNTIME-OPTIONS.md#optional-bridge-background-reads-cli-and-gui).
+
+**Export bridge recording…** saves Wi-Fi packets, measured encoder positions, or
+both as CSV/JSON for offline analysis. See the [export instructions](docs/USER-GUIDE.md#export-packets-measured-positions-or-both).

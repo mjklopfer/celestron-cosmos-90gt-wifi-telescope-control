@@ -135,3 +135,52 @@ Close an existing app before using a launch action; actions start a new process 
 Control Bridge does not disconnect control or management clients because they are
 idle. Idle release applies only to the direct Motor control connection; local-jog
 duration and feedback safeguards remain separate.
+
+
+### Optional bridge background reads (CLI and GUI)
+
+The separate bridge CLI accepts the following additional options. These do not
+apply to the GUI executable; its Motor control tab offers corresponding controls
+while the bridge runs.
+
+| Bridge CLI option | Default | Use and limits |
+| --- | --- | --- |
+| `--heartbeat` | Off | Send read-only encoder queries during communication silence, with or without a control client; normal traffic suppresses them. Not an inactivity cutoff or guaranteed recovery. |
+| `--heartbeat-interval SECONDS` | 5 | Accepts 1–300; both quiet threshold and minimum heartbeat spacing. Does not enable heartbeat by itself. |
+| `--record-positions` | Off | Query missing encoder samples on both axes without enabling jogging. Reuses fresh replies. |
+| `--position-interval SECONDS` | 1 | Accepts 0.2–300; subsecond experimental. Does not enable recording by itself. |
+
+Avoid enabling extra traffic solely to hide a missing-reply fault. Leave heartbeat
+OFF when evaluating transparent normal traffic. Position recording is appropriate
+for capturing external AUX-induced motion, but sampling cannot reconstruct every
+instant between replies. See the user guide for pending-query limits and no-client
+polling, local-jog polling precedence and missing-sample behavior.
+
+
+### Offline recording exporter
+
+`python -m export_recording SOURCE DESTINATION [--select packets|positions|both]
+[--format csv|json]` reads a bridge `events.jsonl` snapshot without connecting to
+hardware. SOURCE and DESTINATION are required paths. `--select` defaults to `both`;
+`--format` defaults to `csv` (not inferred from the filename). `-h`/`--help` displays
+usage. All selections retain status/gap records. Destination cannot be the source;
+a different existing destination is overwritten, so choose a new name to preserve
+previous exports. Use for data analysis, not telescope control or packet replay.
+
+
+Exporter range/time options: SOURCE may also be a logs folder containing session
+subfolders with `events.jsonl`. `--start ISO_DATETIME` is inclusive; `--end
+ISO_DATETIME` is exclusive. Both are optional (default: all available time).
+Supply UTC `Z` or an explicit offset to avoid ambiguity; a timestamp without an
+offset is interpreted in the exporting computer's local time zone. `--time-format
+local|unix` defaults to `local`, producing `timestamp_local_iso8601` with offset or
+`timestamp_unix_seconds_utc` respectively. Original `utc` and monotonic fields stay
+in both formats. The GUI uses an inclusive end second, internally adding one second
+for its exclusive boundary. No 24-hour minimum is enforced.
+
+Bridge polling consolidation: `--record-positions` and `--heartbeat` use one
+scheduler whether or not a control client is connected. There is no hidden idle
+position poll or missed-poll inactivity shutdown. Both default OFF. Local jogging
+uses the same scheduler for required 0.4-second feedback, reusing incoming replies
+and pending external reads. This safety interval is not user-adjustable; disable
+local jogging when using only an external app. Startup motor verification remains.

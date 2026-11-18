@@ -4,6 +4,7 @@
 Worker services own network operations and publish events; only the Tk thread
 updates widgets. Network-mode controls do not join Wi-Fi or move the mount switch."""
 import argparse
+import math
 import datetime as dt
 from pathlib import Path
 import queue
@@ -13,7 +14,7 @@ import json
 import csv
 import io
 import tkinter as tk
-from tkinter import ttk, messagebox, font
+from tkinter import ttk, messagebox, font, filedialog
 from tkinter.scrolledtext import ScrolledText
 from setup_backend import operate, validate_endpoint, validate_port
 from wifly_configure import make_plan, SECURITY
@@ -24,6 +25,7 @@ from diagnostics import diagnose
 from time_settings import configure_time, test_time_server, COMMON_TIME_SERVERS, UptimeEvidence
 from recover_link import recover
 from bridge_mode import Bridge
+from export_recording import export_recording, recording_bounds, parse_timestamp
 from network_info import network_interfaces, open_directory
 from ui_zoom import UiZoom, scale_argument
 from telescope_calibration import load_config, measured_rate, estimate_seconds, DEFAULT_CONFIG, profile_label, identify_profile, save_config, profile_keymap
@@ -532,6 +534,23 @@ class SetupApp(ttk.Frame):
         self.bridge_jog_box.grid_remove()
         self.bridge_tab_mark = tk.PhotoImage(master=self.root, width=12, height=12)
         self.bridge_tab_mark.put('#e5a329', to=(0, 0, 12, 12))
+
+    def apply_bridge_background_reads(self):
+        try:
+            heartbeat_interval = float(self.bridge_heartbeat_interval.get())
+            monitor_interval = float(self.bridge_monitor_interval.get())
+            if not math.isfinite(heartbeat_interval) or not 1 <= heartbeat_interval <= 300:
+                raise ValueError('Keep-alive interval must be 1–300 seconds')
+            if not math.isfinite(monitor_interval) or not .2 <= monitor_interval <= 300:
+                raise ValueError('Motor-position interval must be 0.2–300 seconds')
+            if self.bridge is not None:
+                self.bridge.configure_background_reads(self.bridge_heartbeat.get(), heartbeat_interval,
+                                                       self.bridge_monitor.get(), monitor_interval)
+            self.bridge_background_status.set(
+                ('Heartbeat ON after ' + f'{heartbeat_interval:g}s quiet' if self.bridge_heartbeat.get() else 'Heartbeat OFF') + '; ' +
+                (f'position recording ON, {monitor_interval:g}s sample interval' if self.bridge_monitor.get() else 'position recording OFF') + '.')
+        except (ValueError, TypeError) as error:
+            self.bridge_background_status.set(f'Not applied: {error}. Use heartbeat 1–300s and recording 0.2–300s, then click Apply intervals.')
 
     def toggle_bridge_jog(self):
         if self.bridge is None:
@@ -1233,7 +1252,7 @@ class SetupApp(ttk.Frame):
                   'Do not forward these ports from the Internet. A running bridge does not prove that your firewall allows the control app to connect.\n'
                   'For Two Interface Mode, allow these connections on the adapter facing the astronomy app. The app forwards telescope commands between its connections; it does not enable operating-system network bridging or Internet sharing.')
         self.bridge_firewall_label.grid(row=8, sticky='w', pady=6)
-        readout = ttk.LabelFrame(tab, text='Motor positions reported through the control application', padding=6)
+        readout = ttk.LabelFrame(tab, text='Latest motor-position replies from the telescope', padding=6)
         readout.grid(row=9, sticky='ew')
         for row, axis in enumerate(AXES):
             ttk.Label(readout, text=AXES[axis]).grid(row=row, column=0, padx=8)
@@ -1242,7 +1261,117 @@ class SetupApp(ttk.Frame):
         self.copy_button(readout, self.motor_output, 'Copy motor table').grid(row=2, columnspan=5, sticky='w', pady=3)
         self.bridge_console = ScrolledText(tab, height=8, wrap='word', state='disabled', font=('TkFixedFont', 10))
         self.bridge_console.grid(row=10, sticky='ew', pady=8)
+        ttk.Button(tab, text='Export bridge recording…', command=self.open_recording_export).grid(row=12, sticky='w', pady=6)
         self.copy_button(tab, lambda: self.bridge_status.get() + '\n' + self.bridge_endpoint.get() + '\n' + self.bridge_console.get('1.0', 'end-1c'), 'Copy bridge status and log').grid(row=11, sticky='w')
+
+        self.bridge_heartbeat = tk.BooleanVar(value=False)
+        self.bridge_heartbeat_interval = tk.StringVar(value='5')
+        self.bridge_monitor = tk.BooleanVar(value=False)
+        self.bridge_monitor_interval = tk.StringVar(value='1')
+        self.bridge_background_status = tk.StringVar(value='Heartbeat OFF; position recording OFF. Existing replies are still logged.')
+        background = ttk.LabelFrame(tab, text='Connection keep-alive and motor-position polling', padding=6)
+        background.grid(row=13, sticky='ew', pady=(8, 0))
+        ttk.Checkbutton(background, text='Keep connection alive (heartbeat)', variable=self.bridge_heartbeat,
+                        command=self.apply_bridge_background_reads).grid(row=0, column=0, sticky='w')
+        ttk.Spinbox(background, from_=1, to=300, increment=1, width=7, textvariable=self.bridge_heartbeat_interval).grid(row=0, column=1)
+        ttk.Label(background, text='seconds without communication (1–300; default 5)').grid(row=0, column=2, sticky='w')
+        ttk.Checkbutton(background, text='Poll and record motor positions', variable=self.bridge_monitor,
+                        command=self.apply_bridge_background_reads).grid(row=1, column=0, sticky='w')
+        ttk.Spinbox(background, from_=0.2, to=300, increment=0.2, width=7, textvariable=self.bridge_monitor_interval).grid(row=1, column=1)
+        ttk.Label(background, text='seconds between motor-position reads (0.2–300; default 1)').grid(row=1, column=2, sticky='w')
+        ttk.Button(background, text='Apply intervals', command=self.apply_bridge_background_reads).grid(row=2, column=0, sticky='w', pady=4)
+        ttk.Label(background, textvariable=self.bridge_background_status, wraplength=760).grid(row=3, columnspan=3, sticky='w')
+        ttk.Label(background, text='To record motion: check Poll and record motor positions, enter the interval in seconds, then click Apply intervals. 1 = about one sample per second; 5 = one every five seconds; 0.2 = up to five per second (experimental). Smaller numbers add traffic. Incoming position replies are reused; missing samples are requested.\nTo keep an otherwise quiet connection active: check Keep connection alive and set its quiet interval. Normal traffic or position polling satisfies it; a second set of requests is not sent. Both options work with or without a connected control app.\nBoth unchecked: no optional position queries; received replies are still logged. Local jogging, when enabled on Motor control, requires fresh feedback at 0.4-second intervals and shares this same scheduler. Turn local jogging OFF when using only your external control app to avoid those additional safety reads. Missing replies are logged as gaps; no idle timeout closes the bridge. These options cannot guarantee recovery from a stalled Wi-Fi adapter.', wraplength=760).grid(row=4, columnspan=3, sticky='w')
+
+    def open_recording_export(self):
+        window = tk.Toplevel(self.root)
+        window.title('Export bridge recording')
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill='both', expand=True)
+        source = tk.StringVar(value=str(Path(self.log_directory) / 'events.jsonl') if self.log_directory else '')
+        selection, output_format = tk.StringVar(value='both'), tk.StringVar(value='csv')
+        time_format = tk.StringVar(value='local')
+        first, last = tk.StringVar(), tk.StringVar()
+        status = tk.StringVar(value='Choose a recording to display its available time range.')
+        availability = tk.StringVar(value='Available range: not loaded')
+        bounds = {}
+        ttk.Label(frame, text='Source: events.jsonl file or logs folder (multiple sessions)').grid(row=0, columnspan=3, sticky='w')
+        ttk.Entry(frame, textvariable=source, width=78).grid(row=1, columnspan=3, sticky='ew')
+        def refresh():
+            chosen = source.get()
+            availability.set('Reading available timestamps…')
+            bounds.clear()
+            def worker():
+                try:
+                    result = recording_bounds(chosen)
+                except Exception as error:
+                    result = {'error': str(error)}
+                self.events.put({'event': 'recording_range_done', 'apply': apply_range, 'result': result, 'source': chosen})
+            threading.Thread(target=worker, daemon=True).start()
+        def apply_range(result, chosen):
+            if not window.winfo_exists() or chosen != source.get():
+                return
+            if result.get('error'):
+                availability.set('Available range: ' + result['error'])
+                return
+            lower = parse_timestamp(result['first']).astimezone().replace(microsecond=0)
+            upper = parse_timestamp(result['last']).astimezone().replace(microsecond=0)
+            bounds.update(first=lower, last=upper, source=chosen)
+            first.set(lower.isoformat(sep=' ', timespec='seconds'))
+            last.set(upper.isoformat(sep=' ', timespec='seconds'))
+            availability.set(f'Available: {first.get()} through {last.get()} — {result["sessions"]} session file(s). Times shown in this computer’s local zone, with UTC offsets.')
+            status.set('Prefilled with the complete available range. Choose start/end within these limits.')
+        def browse(folder=False):
+            chosen = filedialog.askdirectory(parent=window, title='Choose logs folder') if folder else filedialog.askopenfilename(parent=window, title='Choose recording', filetypes=[('JSONL log', '*.jsonl'), ('All files', '*')])
+            if chosen:
+                source.set(chosen)
+                refresh()
+        ttk.Button(frame, text='Choose file…', command=browse).grid(row=2, column=0, sticky='w')
+        ttk.Button(frame, text='Choose sessions folder…', command=lambda: browse(True)).grid(row=2, column=1, sticky='w')
+        ttk.Button(frame, text='Refresh available range', command=refresh).grid(row=2, column=2, sticky='w')
+        ttk.Label(frame, textvariable=availability, wraplength=690).grid(row=3, columnspan=3, sticky='w', pady=8)
+        ttk.Label(frame, text='Start date/time (inclusive):').grid(row=4, column=0, sticky='w')
+        ttk.Entry(frame, textvariable=first, width=35).grid(row=4, column=1, columnspan=2, sticky='w')
+        ttk.Label(frame, text='End date/time (inclusive second):').grid(row=5, column=0, sticky='w')
+        ttk.Entry(frame, textvariable=last, width=35).grid(row=5, column=1, columnspan=2, sticky='w')
+        ttk.Label(frame, text='Format: YYYY-MM-DD HH:MM:SS±HH:MM (UTC offset). Edit the prefilled values; dates outside the displayed range are rejected.', wraplength=690).grid(row=6, columnspan=3, sticky='w')
+        for row, (label, value) in enumerate((('Wi-Fi packets and commands', 'packets'), ('Measured motor positions', 'positions'), ('Both in one timestamped file', 'both')), 7):
+            ttk.Radiobutton(frame, text=label, variable=selection, value=value).grid(row=row, columnspan=3, sticky='w')
+        ttk.Label(frame, text='File format:').grid(row=10, column=0, sticky='w')
+        ttk.Combobox(frame, textvariable=output_format, values=('csv', 'json'), state='readonly', width=12).grid(row=10, column=1, sticky='w')
+        ttk.Radiobutton(frame, text='Local time with UTC offset', variable=time_format, value='local').grid(row=11, columnspan=3, sticky='w')
+        ttk.Radiobutton(frame, text='Unix time (seconds since epoch, UTC)', variable=time_format, value='unix').grid(row=12, columnspan=3, sticky='w')
+        ttk.Label(frame, text='The timestamp column explicitly names local ISO 8601 or Unix seconds UTC. Original UTC and monotonic values remain available. Active logs export written data only; refresh the range to include newer data. Encoder angles are not aligned sky coordinates.', wraplength=690).grid(row=13, columnspan=3, sticky='w', pady=8)
+        ttk.Label(frame, textvariable=status, wraplength=690).grid(row=15, columnspan=3, sticky='w')
+        def save():
+            try:
+                if bounds.get('source') != source.get():
+                    raise ValueError('Click Refresh available range for the selected source first.')
+                start, end = parse_timestamp(first.get()), parse_timestamp(last.get())
+                if not bounds['first'] <= start <= end <= bounds['last']:
+                    raise ValueError('Start and end must be ordered and within the displayed available range.')
+                end += dt.timedelta(seconds=1)
+            except (ValueError, TypeError) as error:
+                status.set(f'Not exported: {error}')
+                return
+            fmt, chosen_source, scope, clock_format = output_format.get(), source.get(), selection.get(), time_format.get()
+            destination = filedialog.asksaveasfilename(parent=window, title='Save recording export', defaultextension='.' + fmt, filetypes=[(fmt.upper(), '*.' + fmt)])
+            if not destination:
+                return
+            status.set('Exporting written log snapshot…')
+            def worker():
+                try:
+                    report = export_recording(chosen_source, destination, scope, fmt, start, end, clock_format)
+                    message = f'Saved {report["records"]} records to {destination}'
+                    if report['warnings']:
+                        message += ' — ' + '; '.join(report['warnings'])
+                except Exception as error:
+                    message = f'Export failed: {error}'
+                self.events.put({'event': 'recording_export_done', 'status_variable': status, 'message': message})
+            threading.Thread(target=worker, daemon=True).start()
+        ttk.Button(frame, text='Export…', command=save).grid(row=14, column=0, sticky='w', pady=6)
+        if source.get():
+            refresh()
 
     def refresh_network_interfaces(self):
         """Request a fresh interface inventory on a worker thread."""
@@ -1307,7 +1436,11 @@ class SetupApp(ttk.Frame):
             self.bridge_last_error = None
             self.bridge = self.bridge_factory(self.host.get(), self.port.get(), self.events.put,
                                                bind_host=self.bridge_bind.get().strip(),
-                                               allow_direct_upstream=self.bridge_dual.get())
+                                               allow_direct_upstream=self.bridge_dual.get(),
+                                               heartbeat_enabled=self.bridge_heartbeat.get(),
+                                               heartbeat_interval=self.bridge_heartbeat_interval.get(),
+                                               monitor_enabled=self.bridge_monitor.get(),
+                                               monitor_interval=self.bridge_monitor_interval.get())
             self.last_positions.clear()
             for values in self.values.values():
                 for value in values.values():
@@ -1862,7 +1995,12 @@ class SetupApp(ttk.Frame):
             while True:
                 event = self.events.get_nowait()
                 kind = event['event']
-                if kind == 'network_interfaces':
+                if kind == 'recording_range_done':
+                    event['apply'](event['result'], event['source'])
+                elif kind == 'recording_export_done':
+                    event['status_variable'].set(event['message'])
+                    self.append(event['message'])
+                elif kind == 'network_interfaces':
                     self.interface_refreshing = False
                     self.interface_refresh_button.configure(state='normal')
                     self.interface_rows = event['rows']

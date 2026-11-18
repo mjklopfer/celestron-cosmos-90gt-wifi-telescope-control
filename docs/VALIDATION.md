@@ -150,3 +150,47 @@ Windows GUI was closed normally and relaunched. Updated bridge started at
 08:20:41 UTC; both axes answered startup queries. Old raw logs/report were preserved
 locally with hashes. New SkySafari endurance and joint local-jog tests remain
 pending; no agent-commanded jog was used for this restart.
+
+
+## Independent position recording and heartbeat — 2026-11-18
+
+28 bridge/GUI tests passed before subsecond range expansion. Nine focused tests
+then passed covering background-read scheduling, interval validation, pending-query
+limits, fresh-sample reuse, GUI regressions and externally changed encoder positions
+without issuing jog commands. Ruff and whitespace checks passed. Subsecond physical
+load/endurance and simultaneous third-party AUX control remain unverified.
+
+
+Recording export: ten focused exporter/background-read/GUI tests passed. Tests cover
+selection separation, timestamps, raw data, CSV quoting, source preservation,
+partial active-file tails and rejected corrupt complete records. The preserved live
+capture exported to CSV positions and combined JSON without warnings. These are
+raw-motion/command records, not verified sky tracks or replayable trajectories.
+
+
+## Unified bridge polling and time-range export — 2026-11-18
+
+Full Windows offline suite: 173 tests run, 172 passed, one Aqua-specific macOS
+layout test skipped; no failures/errors (165.609 seconds). Focused bridge,
+export and GUI regression suite also passed. Ruff and git whitespace checks pass.
+Wheel and source distribution build successfully using Python 3.14. No new
+third-party runtime dependency is required for recording/export.
+
+Coverage includes one scheduler with/without a control client; optional reads OFF
+by default; reuse of incoming samples and pending external requests; no injected
+reads during partial client frames; missing-sample reporting without idle shutdown;
+local-jog feedback loss Stop; normal command arbitration; interval validation and
+Control Bridge GUI placement. Export tests cover session/range selection, explicit
+Unix/local timestamp fields, source hashes, raw data, quoting and active-file tails.
+
+The running older GUI was deliberately left untouched during the user's SkySafari
+test. That capture recorded client TCP EOF after about 122 seconds and 40 seconds,
+with the bridge staying alive. The user reported disconnecting when switching away
+from the phone app. This is observational evidence, not a proven iOS/SkySafari root
+cause or proof that the new scheduler fixes disconnects or lag. Local-jog feedback
+was enabled in that capture and added queries at 0.4 seconds. The new scheduler
+reduces duplicate reads but its live timing/stability remains to be verified.
+
+Pending: restart for visual user review, live foreground/background comparisons,
+measured end-to-end latency, sustained subsecond sampling, and simultaneous external
+AUX-controller tests. No physical motion was commanded by the agent in this change.

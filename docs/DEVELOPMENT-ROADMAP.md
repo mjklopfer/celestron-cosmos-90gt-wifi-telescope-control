@@ -169,8 +169,33 @@ tracking could become an edited reference trajectory, but a different launch nee
 its own trajectory and time origin; do not blindly replay packets or assume it
 follows the same path. Validate rates, acceleration, clearance and stale samples.
 
-Optional quiet-client read-only heartbeat remains a separate experiment, OFF by
-default if added: use a bounded position read after silence, suspend when normal
-traffic resumes, and avoid duplicate outstanding queries. There is no such new
-option yet. Existing no-client position polling does not prevent all observed
-missing-reply episodes. Do not add a heartbeat as a substitute for diagnosis.
+Optional read-only heartbeat is implemented, OFF by default, with GUI/CLI switches
+and configurable intervals. It shares the position-read scheduler, suspends when
+normal traffic resumes, and avoids injecting duplicate outstanding queries. The
+former fixed no-client polling and three-miss shutdown are removed. A heartbeat is
+not a substitute for diagnosing missing replies or app-initiated disconnects.
+
+Position recording is implemented independently of local jogging (0.2–300s,
+default 1s, OFF initially). Keep-alive is separately selectable but shares the scheduler (1–300s, default 5s,
+OFF initially). Live extra-query compatibility and subsecond load validation remain
+pending; trajectory plotting/replay and high-resolution timing instrumentation
+remain future work.
+
+
+Implemented subsequently: independent CSV/JSON export of packets, measured positions
+or a combined timeline, via GUI and `python -m export_recording`. Original timestamps,
+raw data and gap/status notices are retained; active-file snapshots are supported.
+Remaining analysis work: plotting, angle unwrap/reset segmentation, aligned sky
+coordinate transformation and validated trajectory playback. None is implied by
+exporting the recorded data.
+
+### Unified bridge reads (2026-11-18)
+
+Implemented one nonblocking scheduler for optional keep-alive, configurable motor
+position sampling, and required local-jog feedback. Removed fixed no-client 1 Hz
+polling and its three-miss shutdown. Moved settings to Control Bridge with explicit
+seconds-per-sample examples and the local-jog safety override. Pending external
+position requests suppress injected duplicates; normal external traffic is never
+rate-limited. Live SkySafari stability/lag comparison remains pending. AUX has no
+transaction IDs: identical replies cannot prove which overlapping request caused
+them. Do not present observed command/reply timings as isolated bridge latency.

@@ -27,7 +27,8 @@ IDENTITY = 'COSMOSBridge-AMW007-0.1.0.0, Python proxy'
 class Bridge:
     def __init__(self, host, port=2000, callback=lambda event: None, bind_host='',
                  listen_port=2000, management_port=3000, advertise=True, allow_direct_upstream=False,
-                 socket_factory=socket.create_connection):
+                 socket_factory=socket.create_connection, heartbeat_enabled=False,
+                 heartbeat_interval=5.0, monitor_enabled=False, monitor_interval=1.0):
         """Initialize Bridge state; external work starts only in the corresponding operation."""
         self.host, self.port = validate_endpoint(host, port)
         address = ipaddress.ip_address(self.host)
@@ -68,9 +69,17 @@ class Bridge:
         self.local_stop_requested = False
         self.local_deadline = None
         self.local_feedback = {}
-        self.local_poll = 0
         self.local_fault = False
         self.local_generation = 0
+        self.heartbeat_enabled = False
+        self.heartbeat_interval = 5.0
+        self.monitor_enabled = False
+        self.monitor_interval = 1.0
+        self.last_client_activity = time.monotonic()
+        self.last_mount_activity = 0.0
+        self.last_background_query = 0.0
+        self.background_pending = {}
+        self.configure_background_reads(heartbeat_enabled, heartbeat_interval, monitor_enabled, monitor_interval)
         self.origins, self.firmware = {}, {}
         # A locally administered identity identifies this proxy, not the RN-171.
         self.mac = ':'.join(f'{b:02X}' for b in b'\x02' + uuid.uuid4().bytes[:5])
@@ -199,7 +208,6 @@ class Bridge:
             # Preserve fragmented external frames across toggle changes. Only
             # local requests are cancelled; external commands still pass in order.
             self.local_feedback.clear()
-            self.local_poll = 0
             self.emit('bridge_local_mode', enabled=desired,
                       message='Local jogging enabled. External commands have priority and can interrupt a jog. Hold is limited to 2 seconds.' if desired else
                       'Local jogging disabled. Pending local commands discarded; external commands continue.')
@@ -221,10 +229,61 @@ class Bridge:
                 self.emit('bridge_local_motion', moving=True, message=f'Local jog: {AXES[axis]}, speed {rate}, maximum {seconds:g}s.')
             else:
                 self.emit('bridge_local_motion', moving=False, message='Jog discarded: feedback is stale or request expired. Wait for fresh values and try again.')
-        if self.local_enabled and now >= self.local_poll:
-            for axis in AXES:
-                self.upstream.sendall(motor_packet(axis, 1))
-            self.local_poll = now + .4
+    def configure_background_reads(self, heartbeat_enabled=False, heartbeat_interval=5.0,
+                                   monitor_enabled=False, monitor_interval=1.0):
+        """Configure optional read-only traffic; no socket writes from UI/API callers."""
+        heartbeat_interval, monitor_interval = float(heartbeat_interval), float(monitor_interval)
+        if not math.isfinite(heartbeat_interval) or not 1 <= heartbeat_interval <= 300:
+            raise ValueError('Heartbeat interval must be 1–300 seconds.')
+        if not math.isfinite(monitor_interval) or not .2 <= monitor_interval <= 300:
+            raise ValueError('Position recording interval must be 0.2–300 seconds.')
+        with self.local_lock:
+            self.heartbeat_enabled = bool(heartbeat_enabled)
+            self.heartbeat_interval = heartbeat_interval
+            self.monitor_enabled = bool(monitor_enabled)
+            self.monitor_interval = monitor_interval
+        if hasattr(self, 'report'):
+            settings = dict(heartbeat_enabled=self.heartbeat_enabled, heartbeat_interval=self.heartbeat_interval,
+                            monitor_enabled=self.monitor_enabled, monitor_interval=self.monitor_interval)
+            self.report['background_reads'] = settings
+            self.emit('bridge_background_config', **settings)
+
+    def background_read_tick(self, now):
+        """One nonblocking scheduler owns all bridge-generated encoder reads.
+
+        Reuse external replies and pending external reads before injecting anything.
+        The no-client path uses these same settings: there is no hidden 1 Hz poll
+        loop or three-missed-polls disconnect. Local jog readiness/safety requires
+        fresh feedback at 0.4 s, but uses this scheduler rather than a second timer.
+        AUX has no transaction IDs. Concurrent queries from the same source cannot
+        be paired unambiguously, so a reply satisfies the pending read for its axis.
+        Missing optional reads are logged as gaps; local_tick separately stops an
+        active jog if feedback is stale. Never infer a confirmed stop from a timeout.
+        """
+        for axis, deadline in list(self.background_pending.items()):
+            if now >= deadline:
+                del self.background_pending[axis]
+                self.emit('bridge_background_read', message=f'{AXES[axis]} position query received no reply within 2 seconds; sample missing.')
+        if self.client_parser.buffer:
+            return
+        with self.local_lock:
+            heartbeat, quiet_interval = self.heartbeat_enabled, self.heartbeat_interval
+            monitor, sample_interval = self.monitor_enabled, self.monitor_interval
+        quiet_due = heartbeat and now - max(self.last_client_activity, self.last_mount_activity,
+                                             self.last_background_query) >= quiet_interval
+        interval = min(sample_interval if monitor else math.inf,
+                       .4 if self.local_enabled else math.inf)
+        axes = [axis for axis in AXES if axis not in self.background_pending and
+                (quiet_due or now - self.local_feedback.get(axis, -math.inf) >= interval
+                 and math.isfinite(interval))]
+        if not axes:
+            return
+        for axis in axes:
+            self.upstream.sendall(motor_packet(axis, 1))
+            self.background_pending[axis] = now + 2.0
+        self.last_background_query = now
+        reason = 'Jog feedback' if self.local_enabled else ('Keep connection alive' if quiet_due else 'Position recording')
+        self.emit('bridge_background_read', message=reason + ': requested ' + ', '.join(AXES[a] for a in axes) + ' encoder positions.', axes=axes)
 
     def forward_client(self, raw):
         """External commands always pass. Potential conflicts cancel local motion first.
@@ -233,6 +292,7 @@ class Bridge:
         Unknown commands conservatively preempt a jog, but remain transparent to
         the external application. No cached command or tracking rate is replayed.
         """
+        self.last_client_activity = time.monotonic()
         frames = self.client_parser.feed(raw)
         for frame in frames:
             axis, command = frame[3:5]
@@ -254,10 +314,14 @@ class Bridge:
                               message=f'Local jog interrupted by external command 0x{command:02X} to 0x{axis:02X}. External command forwarded. Pause tracking in the external app if it repeatedly interrupts jogging.')
             self.upstream.sendall(frame)
             self.report['bytes_to_mount'] += len(frame)
+            if axis in AXES and command == 1 and len(frame) == 6:
+                self.background_pending.setdefault(axis, time.monotonic() + 2.0)
         self.observe(raw, 'client', frames=frames)
 
     def observe(self, raw, direction, frames=None):
         """Log valid AUX frames and update readbacks from controller position replies."""
+        if direction == 'mount' and raw:
+            self.last_mount_activity = time.monotonic()
         parser = self.parser if direction == 'mount' else self.client_parser
         if frames is None:
             frames = parser.feed(raw)
@@ -271,6 +335,7 @@ class Bridge:
             if frame[4] == 0xfe:
                 self.firmware[axis] = version(data)
             if frame[4] == 1 and len(data) == 3:
+                self.background_pending.pop(axis, None)
                 self.local_feedback[axis] = time.monotonic()
                 count = int.from_bytes(data, 'big')
                 self.origins.setdefault(axis, count)
@@ -314,6 +379,7 @@ class Bridge:
             self.stop_local_jog()
             self.client.close()
             self.client = None
+            self.background_pending.clear()
             self.client_parser = FrameParser()
             self.send_stops()
             self.emit('bridge_client', message=f'App client disconnected ({reason}); Stop attempted. Waiting for a new client.')
@@ -383,12 +449,10 @@ class Bridge:
                                upstream_local=self.upstream.getsockname())
             self.emit('bridge_ready', message=f'Bridge ON — Control app connects to {self.bind_host}:{self.listen_port}',
                       **{k: self.report[k] for k in ('bind_host', 'listen_port', 'management_port', 'upstream_local')})
-            missed_polls = {axis: 0 for axis in AXES}
-            next_poll = next_advert = 0
+            next_advert = 0
             manager_buffer = bytearray()
             while not self.stopping.is_set():
                 now = time.monotonic()
-                self.local_tick(now)
                 if self.udp and self.client is None and now >= next_advert:
                     packet = json.dumps({'mac': self.mac, 'version': IDENTITY}).encode()
                     try:
@@ -396,19 +460,6 @@ class Bridge:
                     except OSError as error:
                         self.emit('bridge_status', message=f'Discovery broadcast failed: {error}')
                     next_advert = now + 1
-                if self.client is None and not self.local_enabled and now >= next_poll:
-                    for axis in AXES:
-                        count = self.request(axis, 1)
-                        if self.stopping.is_set():
-                            return
-                        if count is None or len(count) != 3:
-                            missed_polls[axis] += 1
-                            if missed_polls[axis] >= 3:
-                                raise ConnectionError('Bridge lost encoder feedback after three consecutive polls. Disconnect connected control apps; restarting the telescope may be necessary before reconnecting.')
-                            self.emit('bridge_status', message=f'{AXES[axis]} encoder reply delayed; retrying ({missed_polls[axis]}/3).')
-                        else:
-                            missed_polls[axis] = 0
-                    next_poll = now + 1
                 sockets = self.listeners + [self.upstream]
                 sockets += [s for s in (self.client, self.manager) if s]
                 readable, _, _ = select.select(sockets, [], [], .05)
@@ -423,6 +474,7 @@ class Bridge:
                                 self.emit('bridge_status', message='Rejected a second motor-control client')
                             else:
                                 self.client = connection
+                                self.last_client_activity = time.monotonic()
                                 self.report['clients'].append(peer[0])
                                 self.emit('bridge_client', message=f'Client {peer[0]} connected; AUX traffic forwarding')
                         elif self.manager is not None:
@@ -472,6 +524,8 @@ class Bridge:
                         except OSError:
                             source.close()
                             self.manager = None
+                self.local_tick(time.monotonic())
+                self.background_read_tick(time.monotonic())
                 # The bridge has no client/management inactivity lease. A quiet
                 # controller may retain its connection indefinitely. Direct motor
                 # idle release and local-jog feedback/deadline guards are separate.
@@ -544,9 +598,15 @@ def main():
     parser.add_argument('--port', type=int, default=2000)
     parser.add_argument('--bind', default='', help='Computer LAN IP (default: route to telescope)')
     parser.add_argument('--two-interfaces', action='store_true', help='Allow a directly attached SkyQLink upstream; requires --bind router-LAN IP')
+    parser.add_argument('--heartbeat', action='store_true', help='Enable optional position-read heartbeat during quiet periods, with or without a control client')
+    parser.add_argument('--heartbeat-interval', type=float, default=5.0, help='Quiet interval and heartbeat spacing in seconds (1–300; default 5)')
+    parser.add_argument('--record-positions', action='store_true', help='Request missing encoder samples with or without a connected control client')
+    parser.add_argument('--position-interval', type=float, default=1.0, help='Position recording interval in seconds (0.2–300; default 1; subsecond experimental)')
     args = parser.parse_args()
     bridge = Bridge(args.host, args.port, bind_host=args.bind, allow_direct_upstream=args.two_interfaces,
-                    callback=lambda e: print(e, flush=True))
+                    callback=lambda e: print(e, flush=True), heartbeat_enabled=args.heartbeat,
+                    heartbeat_interval=args.heartbeat_interval, monitor_enabled=args.record_positions,
+                    monitor_interval=args.position_interval)
     bridge.start()
     try:
         while bridge.thread.is_alive():
