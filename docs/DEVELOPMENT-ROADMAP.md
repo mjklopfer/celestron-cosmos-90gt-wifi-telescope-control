@@ -1,6 +1,6 @@
 # Development roadmap
 
-Updated 2026-11-16. Priority: stable cross-platform control, including modest
+Updated 2026-11-18. Priority: stable cross-platform control, including modest
 Raspberry Pi systems, before additional interfaces or unattended tracking.
 
 ## Current release scope
@@ -129,7 +129,7 @@ other profiles receive no automatic fallback. Windows automated and GUI review
 results are recorded in VALIDATION.md. Hardware ESP32, direct mode, PC-clock writing
 and complete SkySafari transport capture remain deferred as documented above.
 
-Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
+Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. This was a terminology-only checkpoint; the 1.1 profile refresh below adds experimental modern provisioning.
 
 Resolved by the macOS appearance update (`775308e`, documented in `8262108`): reported formatting changes after the UI refresh. Check Aqua/custom-tab mixing, font metrics, page height and zoom with the user’s macOS/Tk version; preserve native rendering where needed. The user confirmed the corrected Mac appearance; see MACOS-APPEARANCE.md.
 
@@ -238,5 +238,17 @@ Implemented schema-1 role identification on bridge management (`version`, then
 software proxies and avoids their motor socket; GUI selection does not treat a
 proxy as a WiFly provisioning target. See PROXY-DISCOVERY.md. Future ESP32 support
 must advertise a distinct physical-adapter role and capabilities, never reuse
-the software_proxy identity. Capability-based mode selection and physical ESP32
-validation remain future work. Unknown or missing identity never proves hardware.
+the software_proxy identity. Profile selection is implemented in 1.1; physical ESP32 AUX
+validation remains future work. Unknown or missing identity never proves hardware.
+
+
+## 1.1 profile refresh checkpoint
+
+Implemented: legacy/modern/proxy GUI profiles; explicit apply gating and status
+colors; profile-specific diagnostics/polling; motor-setting capability guards;
+cord wrap/approach; bridge restart with Stop acknowledgement gate; bounded sticky
+logs and ZIP import/export; experimental modern Wi-Fi provisioning and matching
+ESP32 source. Remaining: real commercial provisioning tests, firmware build/flash
+validation, actual AUX electrical transport, time/site extension GUI/MCP parity,
+verified SkySafari default-direction mapping and new macOS visual review.
+See HOMEBREW-INTERFACES.md and INTERFACE-MODES.md for exact boundaries.

@@ -70,6 +70,7 @@ class Bridge:
         self.local_stop_requested = False
         self.local_deadline = None
         self.local_feedback = {}
+        self.latest_positions = {}
         self.local_fault = False
         self.local_feedback_timeout = 2.0
         self.local_feedback_interval = .4
@@ -85,6 +86,7 @@ class Bridge:
         self.last_mount_activity = 0.0
         self.last_background_query = 0.0
         self.background_pending = {}
+        self.position_request_context = {}
         self.configure_background_reads(heartbeat_enabled, heartbeat_interval, monitor_enabled, monitor_interval)
         self.origins, self.firmware = {}, {}
         # A locally administered identity identifies this proxy, not the RN-171.
@@ -120,6 +122,8 @@ class Bridge:
             if kind == 'bridge_packet':
                 try:
                     fields['interpretation'] = describe_aux(bytes.fromhex(fields['hex']))
+                    label = 'This control app' if fields.get('direction') == 'local' else 'External control app' if fields.get('direction') == 'client' else 'Controller (AUX 0x20)'
+                    fields['interpretation'] = fields['interpretation'].replace('Control app', label)
                 except Exception as error:
                     fields['interpretation'] = f'Interpretation unavailable: {error}'
             if self.recorder and not self.recording_failed:
@@ -154,20 +158,41 @@ class Bridge:
         local_ip = self.report.get('upstream_local', (self.bind_host, 0))[0]
         if direction == 'local':
             return dict(origin='this_program', source_ip=local_ip, destination_ip=self.host,
-                        route=f'This program ({local_ip}) → Telescope ({self.host}:{self.port})')
+                        route=f'This control app ({local_ip}) → Telescope ({self.host}:{self.port})')
         if direction == 'client':
             peer = self.client_peer[0] if self.client_peer else 'unknown'
             return dict(origin='external_client', source_ip=peer, destination_ip=self.host,
-                        route=f'External client ({peer}) → Telescope ({self.host}:{self.port}) via this program ({local_ip})')
+                        route=f'External control app ({peer}) → This control app ({local_ip}) → Telescope ({self.host}:{self.port})')
         destination = forwarded_to[0] if forwarded_to else local_ip
         return dict(origin='telescope', source_ip=self.host, destination_ip=destination,
-                    route=(f'Telescope ({self.host}:{self.port}) → External client ({destination}) via this program ({local_ip})'
-                           if forwarded_to else f'Telescope ({self.host}:{self.port}) → This program ({local_ip}); not forwarded'))
+                    route=(f'Telescope ({self.host}:{self.port}) → This control app ({local_ip}) → External control app ({destination})'
+                           if forwarded_to else f'Telescope ({self.host}:{self.port}) → This control app ({local_ip}); not forwarded'))
 
-    def send_local(self, frame):
+    def remember_position_request(self, frame, origin, requester_ip, purpose):
+        if len(frame) == 6 and frame[3] in AXES and frame[4] == 1:
+            key = (frame[3], frame[2])
+            pending = self.position_request_context.setdefault(key, [])
+            pending.append((time.monotonic(), origin, requester_ip, purpose))
+            del pending[:-8]
+
+    def position_reply_context(self, frame):
+        if len(frame) != 9 or frame[2] not in AXES or frame[4] != 1:
+            return {}
+        pending = self.position_request_context.pop((frame[2], frame[3]), [])
+        candidates = {item[1:] for item in pending if time.monotonic() - item[0] <= 10}
+        if len(candidates) == 1:
+            origin, requester_ip, purpose = candidates.pop()
+            return dict(request_origin=origin, requester_ip=requester_ip, request_purpose=purpose,
+                        request_context=f'Likely response to {purpose} requested by {origin} ({requester_ip}); inferred, AUX has no transaction IDs')
+        return dict(request_context=('Request source ambiguous: overlapping requests; AUX has no transaction IDs'
+                                     if candidates else 'Request source unknown: no recent matching request observed'))
+
+    def send_local(self, frame, purpose='Local motor-control request'):
         """Send first, then queue local-origin trace; no decoding/disk IO on relay."""
         self.upstream.sendall(frame)
-        self.emit('bridge_packet', direction='local', hex=frame.hex(), **self.packet_route('local'))
+        route = self.packet_route('local')
+        self.remember_position_request(frame, 'this control app', route['source_ip'], purpose)
+        self.emit('bridge_packet', direction='local', purpose=purpose, hex=frame.hex(), **route)
 
     def start(self):
         """Start the relay worker; construction alone never opens a telescope connection."""
@@ -318,7 +343,7 @@ class Bridge:
                 with self.local_lock:
                     if self.local_stop_requested or not self.local_requested:
                         return
-                    self.send_local(motor_packet(axis, 0x24 if direction > 0 else 0x25, bytes((rate,))))
+                    self.send_local(motor_packet(axis, 0x24 if direction > 0 else 0x25, bytes((rate,))), purpose='Local jog')
                     self.local_deadline = time.monotonic() + seconds
                 self.emit('bridge_local_motion', moving=True, message=f'Local jog: {AXES[axis]}, speed {rate}, maximum {seconds:g}s.')
             else:
@@ -373,11 +398,11 @@ class Bridge:
                  and math.isfinite(interval))]
         if not axes:
             return
+        reason = 'Local-jog safety feedback' if self.local_enabled else ('Keep connection alive / heartbeat' if quiet_due else 'Position polling / recording')
         for axis in axes:
-            self.send_local(motor_packet(axis, 1))
+            self.send_local(motor_packet(axis, 1), purpose=reason)
             self.background_pending[axis] = now + 2.0
         self.last_background_query = now
-        reason = 'Jog feedback' if self.local_enabled else ('Keep connection alive' if quiet_due else 'Position recording')
         self.emit('bridge_background_read', message=reason + ': requested ' + ', '.join(AXES[a] for a in axes) + ' encoder positions.', axes=axes)
 
     def forward_client(self, raw):
@@ -408,6 +433,7 @@ class Bridge:
                     self.emit('bridge_local_motion', moving=False,
                               message=f'Local jog interrupted by external command 0x{command:02X} to 0x{axis:02X}. External command forwarded. Pause tracking in the external app if it repeatedly interrupts jogging.')
             self.upstream.sendall(frame)
+            self.remember_position_request(frame, 'external client', self.client_peer[0] if self.client_peer else 'unknown', 'External-app position request')
             self.report['bytes_to_mount'] += len(frame)
             if axis in AXES and command == 1 and len(frame) == 6:
                 self.background_pending.setdefault(axis, time.monotonic() + 2.0)
@@ -422,7 +448,9 @@ class Bridge:
             frames = parser.feed(raw)
         for frame in frames:
             # Log checksummed AUX frames, not arbitrary ASCII/configuration data.
-            self.emit('bridge_packet', direction=direction, hex=frame.hex(), **self.packet_route(direction, forwarded_to))
+            self.emit('bridge_packet', direction=direction, hex=frame.hex(),
+                      **self.packet_route(direction, forwarded_to),
+                      **(self.position_reply_context(frame) if direction == 'mount' else {}))
             axis = frame[2]
             if direction != 'mount' or axis not in AXES or frame[3] != 0x20:
                 continue
@@ -432,6 +460,7 @@ class Bridge:
             if frame[4] == 1 and len(data) == 3:
                 self.background_pending.pop(axis, None)
                 self.local_feedback[axis] = time.monotonic()
+                self.latest_positions[axis] = {'encoder': int.from_bytes(data, 'big'), 'angle': angle(int.from_bytes(data, 'big')), 'observed_monotonic': self.local_feedback[axis]}
                 count = int.from_bytes(data, 'big')
                 self.origins.setdefault(axis, count)
                 self.emit('bridge_values', axis=axis, encoder=count, angle=angle(count),
@@ -441,7 +470,7 @@ class Bridge:
 
     def request(self, axis, command, timeout=1.2):
         """Send a controller query and wait within its reply deadline."""
-        self.send_local(motor_packet(axis, command))
+        self.send_local(motor_packet(axis, command), purpose='Bridge startup / verification')
         deadline = time.monotonic() + timeout
         while not self.stopping.is_set() and time.monotonic() < deadline:
             try:
@@ -459,7 +488,7 @@ class Bridge:
         """Attempt Stop on the requested axes and record unconfirmed delivery."""
         for axis in axes:
             try:
-                self.send_local(motor_packet(axis, 0x24, b'\x00'))
+                self.send_local(motor_packet(axis, 0x24, b'\x00'), purpose='Stop')
                 self.report['stop_attempts'].append({'axis': axis, 'sent': True})
             except Exception as error:
                 self.report['stop_attempts'].append({'axis': axis, 'sent': False, 'error': str(error)})
@@ -495,6 +524,9 @@ class Bridge:
                   'wlan.static.ip': self.bind_host, 'softap.ssid': 'COSMOS-Bridge'}
         if command == 'version':
             return IDENTITY
+        if command == 'get cosmos.telemetry':
+            return json.dumps({'read_only': True, 'source': 'cached received AUX replies; no new motor query',
+                               'positions': {str(axis): dict(value, age_seconds=max(0, time.monotonic() - value['observed_monotonic'])) for axis, value in self.latest_positions.items()}})
         if command == 'get cosmos.proxy':
             return json.dumps(self.proxy_identity())
         if command == 'get all':

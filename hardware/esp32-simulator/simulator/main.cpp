@@ -10,7 +10,7 @@
 #include "aux_simulator.h"
 #include "portal_page.h"
 
-const char *IDENTITY = "COSMOS-SIM-AMW007-0.2.2.0, ESP32 simulator";
+const char *IDENTITY = "COSMOS-SIM-AMW007-0.2.3.0, ESP32 simulator";
 const char *AP_PASSWORD = "cosmossetup"; // Bench setup hotspot; no router credentials in source.
 WebServer web(80);
 DNSServer dns;
@@ -21,6 +21,8 @@ WiFiUDP udp;
 AuxSimulator mount;
 String apName, savedSSID, savedPassword, serialLine, managementLine, formToken;
 String savedMode = "station";
+String stagedSSID, stagedPassword;
+bool stagedSSIDSet = false, stagedPasswordSet = false, stagedStation = false;
 String recoveryReason;
 bool recoveryBoot = false;
 uint8_t frame[64];
@@ -80,7 +82,7 @@ void portal() {
     "padding:12px;box-sizing:border-box;width:100%;margin:8px 0}select{font:inherit;width:100%;padding:12px}"
     ".choice{display:block;margin:14px 0}.choice input{width:auto;margin-right:12px}"
     "[hidden]{display:none!important}.scanning{color:#ffcc66}small{color:#b9c9da}</style>"
-    "<h1>COSMOS telescope simulator</h1><p>Version 0.2.2. Simulated telescope only. No physical motors are connected.</p>";
+    "<h1>COSMOS telescope simulator</h1><p>Version 0.2.3. Simulated telescope only. No physical motors are connected.</p>";
   if (recoveryReason.length()) {
     page += "<section role='alert' style='border:2px solid #ff9b87;padding:16px'>"
       "<h2>Wi-Fi connection failed</h2><p>" + html(recoveryReason) + "</p>"
@@ -169,6 +171,29 @@ void scanNetworks() {
   Serial.printf("SCAN completed count=%d\n", count);
 }
 
+// Shared portal/management persistence. NEEDS ON-DEVICE TESTING (v0.2.3).
+// No credential values are printed. One blob is the source of truth for both UIs.
+bool persistWifi(const String &mode, const String &ssid, const String &password) {
+  if (!storageOK) return false;
+  String blob = String("2\n") + mode + "\n" + ssid.length() + "\n" + ssid + password;
+  if (settings.putString("config", blob) != blob.length()) return false;
+  return !settings.isKey("recovery") || settings.remove("recovery");
+}
+
+bool validStation(const String &ssid, const String &password) {
+  if (!ssid.length() || ssid.length() > 32) return false;
+  for (size_t i=0; i<ssid.length(); ++i) if ((uint8_t)ssid[i] < 32) return false;
+  if (!password.length()) return true;
+  if (password.length() == 64) {
+    for (size_t i=0; i<password.length(); ++i) if (!isxdigit((unsigned char)password[i])) return false;
+    return true;
+  }
+  if (password.length() < 8 || password.length() > 63) return false;
+  for (size_t i=0; i<password.length(); ++i)
+    if ((uint8_t)password[i] < 32 || (uint8_t)password[i] > 126) return false;
+  return true;
+}
+
 // Validate one configuration record, persist it and schedule reboot after responding.
 void configure() {
   if (!setupAP || !storageOK || web.arg("token") != formToken) {
@@ -179,26 +204,12 @@ void configure() {
     web.send(400, "text/plain", "Select a connection mode."); return;
   }
   String ssid = web.arg("ssid"), password = web.arg("password");
-  bool valid = ssid.length() > 0 && ssid.length() <= 32 &&
-    (password.length() == 0 || (password.length() >= 8 && password.length() <= 63));
-  if (password.length() == 64) {
-    valid = ssid.length() > 0 && ssid.length() <= 32;
-    for (size_t i = 0; i < password.length(); ++i)
-      if (!isxdigit((unsigned char)password[i])) valid = false;
+  if (mode == "hotspot") { ssid = ""; password = ""; }
+  if (mode == "station" && !validStation(ssid, password)) {
+    web.send(400, "text/plain", "Check SSID and password length/security."); return;
   }
-  for (size_t i = 0; i < ssid.length(); ++i) if (!ssid[i]) valid = false;
-  for (size_t i = 0; i < password.length(); ++i) if (!password[i]) valid = false;
-  if (mode == "hotspot") { ssid = ""; password = ""; valid = true; }
-  if (!valid) {
-    web.send(400, "text/plain", "Check SSID length and Wi-Fi password (8-63 characters, 64 hex digits, or empty)."); return;
-  }
-  // One versioned blob prevents mixing an old password with a newly written SSID.
-  String blob = String("2\n") + mode + "\n" + ssid.length() + "\n" + ssid + password;
-  if (settings.putString("config", blob) != blob.length()) {
-    web.send(500, "text/plain", "Could not save settings; no reboot."); return;
-  }
-  if (settings.isKey("recovery") && !settings.remove("recovery")) {
-    web.send(500, "text/plain", "Settings written, but recovery state could not be cleared. Please save again."); return;
+  if (!persistWifi(mode, ssid, password)) {
+    web.send(500, "text/plain", "Save failed or recovery state could not be cleared; verify before retrying."); return;
   }
   String next = mode == "hotspot" ? "Join " + apName +
     " (password: cosmossetup). Open http://1.2.3.4/; use Direct Connect in SkySafari." :
@@ -256,19 +267,52 @@ void receiveByte(uint8_t byte) {
   }
 }
 
-// Handle limited read-only module-style management; no provisioning writes here.
+// Experimental AMW007-style configuration. NEEDS REAL APP/HARDWARE TESTING.
+// Staging belongs to this connection, is discarded on disconnect, and only save
+// persists. No AUX commands are generated. Never return passkeys via get all.
+String managementCommand(const String &line) {
+  if (line == "get cosmos.wifi.config") return "1";
+  if (line == "get wlan.ssid") return stagedSSIDSet ? stagedSSID : savedSSID;
+  if (line.startsWith("set ") || line == "save") {
+    if (control && control.connected()) return "ERR disconnect telescope control first";
+    if (restartAt) return "ERR restart pending";
+    if (line == "set wlan.dhcp.enabled 1") return "Set OK";
+    if (line == "set wifi.mode 1") { stagedStation = true; return "Set OK"; }
+    bool ssid = line.startsWith("set wlan.ssid ");
+    bool pass = line.startsWith("set wlan.passkey ");
+    if (ssid || pass) {
+      String value = line.substring(ssid ? 14 : 17);
+      if (!value.startsWith("\"") || !value.endsWith("\"")) return "ERR expected quoted value";
+      value = value.substring(1, value.length()-1);
+      if (value.indexOf('"') >= 0 || value.indexOf('\\') >= 0) return "ERR unsupported quoting";
+      if (ssid) { stagedSSID = value; stagedSSIDSet = true; }
+      else { stagedPassword = value; stagedPasswordSet = true; }
+      return "Set OK";
+    }
+    if (line == "save") {
+      if (!stagedSSIDSet || !stagedPasswordSet || !stagedStation) return "ERR incomplete settings";
+      if (!validStation(stagedSSID, stagedPassword)) return "ERR invalid Wi-Fi settings";
+      if (!persistWifi("station", stagedSSID, stagedPassword)) return "ERR save failed";
+      restartAt = millis() + 1000;
+      return "Success";
+    }
+  }
+  return "ERR unsupported command";
+}
+
+// Service management with bounded work so motion transport remains responsive.
 void serviceManagement() {
   WiFiClient incoming = managementServer.available();
   if (incoming) {
     if (manager && manager.connected()) incoming.stop();
-    else { manager = incoming; managementLine = ""; lastManager = millis(); }
+    else { manager = incoming; managementLine = ""; lastManager = millis(); stagedSSID = ""; stagedPassword = ""; stagedSSIDSet = stagedPasswordSet = stagedStation = false; }
   }
   int budget = 256;
   while (manager && manager.available() && budget-- > 0) {
     char c = manager.read(); lastManager = millis();
     if (c == '\n') {
       managementLine.trim();
-      String reply = "ERR simulator read-only management";
+      String reply = managementCommand(managementLine);
       if (managementLine == "version") reply = IDENTITY;
       else if (managementLine == "get wifi.mode") reply = savedMode == "hotspot" ? "2" : "1";
       else if (managementLine == "get wlan.dhcp.enabled") reply = "1";
@@ -290,7 +334,7 @@ void setup() {
   pinMode(0, INPUT_PULLUP);
   WiFi.persistent(false); WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA); WiFi.disconnect(false); WiFi.setSleep(false);
-  WiFi.setMinSecurity(WIFI_AUTH_WPA_PSK); // Permit selected legacy WPA as well as stronger Personal modes.
+  // Set security threshold after reading the saved credentials below.
   String mac = WiFi.macAddress(); mac.replace(":", "");
   apName = "Celestron-" + mac.substring(6);
   WiFi.setHostname(apName.c_str());
@@ -319,11 +363,13 @@ void setup() {
       }
     }
   }
+  // A saved password must not silently fall back to an open same-name AP.
+  WiFi.setMinSecurity(savedPassword.length() ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN);
   web.on("/", HTTP_GET, portal);
   web.on("/configure", HTTP_POST, configure);
   web.on("/scan", HTTP_GET, scanNetworks);
   web.onNotFound(portal);
-  Serial.println("BOOT COSMOS ESP32 sham telescope v0.2.2 -- no physical telescope connection");
+  Serial.println("BOOT COSMOS ESP32 sham telescope v0.2.3 -- no physical telescope connection");
   if (recoveryBoot) Serial.println("RECOVERY_BOOT staying in setup until configuration is corrected");
   if (!recoveryBoot && savedMode != "hotspot" && savedSSID.length()) {
     WiFi.begin(savedSSID.c_str(), savedPassword.c_str());

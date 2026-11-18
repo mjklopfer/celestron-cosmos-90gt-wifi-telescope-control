@@ -84,6 +84,19 @@ class MotorServiceTests(unittest.TestCase):
                 return event
         self.fail('No event ' + kind)
 
+    def test_explicit_position_read_with_periodic_polling_off(self):
+        controller = self.controller
+        controller.heartbeat_enabled = False
+        before = len(self.adapter.sent)
+        activity = controller.last_control_activity
+        self.adapter.positions[0x11] = 123456
+        controller.request_position(0x11)
+        self.wait_event('motor_manual_position_read')
+        event = self.wait_event('motor_values')
+        self.assertEqual((event['axis'], event['encoder']), (0x11, 123456))
+        self.assertEqual(controller.last_control_activity, activity)
+        self.assertTrue(all(frame[4] == 1 for _, frame in self.adapter.sent[before:]))
+
     def test_idle_delayed_reply_recovers_without_disconnect(self):
         original = self.adapter.sendall
         delayed = False

@@ -36,7 +36,7 @@ class SafeRecorder:
 
 
 def identify_proxy(host, port=2000, socket_factory=socket.create_connection, management_port=3000):
-    """Identify our proxy on management only; never claim its motor connection.
+    """Identify our proxy or known ESP32 simulator on management only; never claim its motor connection.
 
     Send standard read-only version first. The private get command is sent only
     after our exact version-family prefix is received. Missing identity is NOT
@@ -60,6 +60,12 @@ def identify_proxy(host, port=2000, socket_factory=socket.create_connection, man
                     break
             return data.decode('utf-8', 'replace').strip().rstrip('>').strip()
         text = read('version')
+        if text.startswith('COSMOS-SIM-AMW007-'):
+            return {'ip': host, 'port': port, 'verified': True, 'endpoint_kind': 'modern_simulator',
+                    'simulator_verified': True, 'adapter_verified': False, 'motors_verified': False,
+                    'module_type': 'Celestron Wi-Fi Module V2 or later — ' + text,
+                    'module_version': text, 'management_port': management_port, 'motor_versions': {},
+                    'verification_note': 'Advertised ESP32 simulator identity verified via management version; no motor connection opened. Legacy WiFly provisioning is not supported.'}
         if not text.startswith('COSMOSBridge-AMW007-'):
             return None
         result = {'ip': host, 'port': port, 'verified': True,
@@ -94,7 +100,7 @@ def identify(host, port=2000, recorder=None, socket_factory=socket.create_connec
     recorder = recorder or NullRecorder()
     proxy = identify_proxy(host, port, socket_factory=socket_factory)
     if proxy:
-        recorder.record('verified_proxy', **proxy)
+        recorder.record('verified_management_endpoint', **proxy)
         return proxy
     lease = EndpointLease(host, port)
     try:
@@ -283,7 +289,7 @@ def scan_modules(port=2000, callback=lambda event: None, timeout=60, mode=None):
                 match = identify_proxy(address, port)
                 if match:
                     match['interface'] = hosts[address]
-                    safe.record('verified_proxy', **match)
+                    safe.record('verified_management_endpoint', **match)
                 return match
             with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
                 found.extend(m for m in executor.map(proxy_only, [h for h in hosts if h not in seen and h != '1.2.3.4']) if m)

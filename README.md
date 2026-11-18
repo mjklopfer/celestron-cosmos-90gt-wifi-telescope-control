@@ -1,6 +1,8 @@
-# Celestron Cosmos 90GT Telescope Wi-Fi Control
+# Celestron Telescope Network Control
 
-**Legacy Celestron SkyQLink Wi-Fi setup, telescope control, and a SkySafari / SkyPortal bridge.**
+**Telescope control over Wi-Fi (WiFi), using direct/ad hoc or infrastructure networks, with specialized V1 WiFly / SkyQLink RN-171 support for the Celestron COSMOS 90GT.**
+
+[Interface modes and current review limits](docs/INTERFACE-MODES.md): legacy V1 control and bridge, modern Celestron direct control, and read-only computer-proxy diagnostics. Modern-module hardware compatibility is not yet universally verified.
 
 **Tested platforms: Windows 11, macOS, and Raspberry Pi OS (Raspbian)** —
 see [testing scope](#platform-testing-status) for the checks completed on each.
@@ -9,6 +11,8 @@ for different screen sizes. Enable it with `cosmos90gt --zoom-controls`;
 see [display sizing](#smaller-screens-and-optional-zoom-including-raspberry-pi).
 
 **Raspberry Pi desktop setup:** [Raspbian build, Buster fixes, versions and desktop launcher](docs/RASPBERRY-PI-DESKTOP.md).
+
+**Version 1.1:** [Changes and verification limits](docs/RELEASE-1.1.md).
 
 **User guide:** [Setup, controls, keyboard shortcuts, diagnostics, bridge, logs and configuration](docs/USER-GUIDE.md).
 Motor control now includes an explicit **Keyboard control** OFF/ON switch,
@@ -20,9 +24,9 @@ motion options, measures timed jogs into a telescope configuration; see the
 Optional [MCP automation](docs/MCP-CONTROL.md) and an experimental
 [tracking design](docs/TRACKING-DESIGN.md) are documented separately; native
 streaming is not yet hardware-verified. [Future backend architecture](docs/ARCHITECTURE-PLAN.md)
-records planned legacy/modern Celestron Wi-Fi support.
+records the implemented profiles and remaining ESP32/AUX hardware work.
 
-[![Python checks](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml/badge.svg)](https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/actions/workflows/checks.yml)
+[![Python checks](https://github.com/mjklopfer/celestron-telescope-network-control/actions/workflows/checks.yml/badge.svg)](https://github.com/mjklopfer/celestron-telescope-network-control/actions/workflows/checks.yml)
 
 Have a **Celestron Cosmos 90GT Wi-Fi telescope** with the original **SkyQLink /
 WiFly RN-171** module? This Python desktop application lets you configure its
@@ -48,10 +52,14 @@ written RN171), rather than an ESP32 or ESP8266. The inspected telescope reports
 currently checks for that RN-171 / `2.40-CEL` combination before writing settings.
 The ESP32 simulator included in this repository is a separate hardware project.
 
-The target hardware is the original WiFly **Wi-Fi** interface, not a Bluetooth
-(BT) adapter. Direct hardware support for later-generation Celestron modules is
-not established. Bridge mode instead presents selected later-generation-style
-behavior to control applications while communicating with the original module.
+The tested physical baseline is the original WiFly **Wi-Fi** interface. The modern
+Celestron profile now provides direct AUX motor control and diagnostics without
+a bridge; simulator checks do not establish universal commercial compatibility.
+The controller-proxy profile is diagnostics-only. Bridge mode remains specific
+to legacy SkyQLink connections.
+
+The repository is now **celestron-telescope-network-control**. Existing checkout folders,
+`cosmos90gt` commands and saved configurations retain their names for compatibility.
 
 ## Legacy interface example: Control Bridge enabled
 
@@ -66,7 +74,7 @@ network addresses when configuring the application.
 
 ## Supported telescope and Wi-Fi hardware
 
-This project targets the **Celestron COSMOS 90GT Wi-Fi telescope (model 22094)**
+The verified legacy hardware baseline is the **Celestron COSMOS 90GT Wi-Fi telescope (model 22094)**
 and its **first-generation / Gen 1 / Version 1 Celestron SkyQLink Wi-Fi module**.
 The original radio is the **Roving Networks WiFly RN-171 (RN171)**, with
 Celestron-specific **2.40-CEL** firmware. Related names and functions used in
@@ -203,7 +211,7 @@ The [complete runtime-option reference](docs/RUNTIME-OPTIONS.md) lists every GUI
 Download this repository using Git (or use GitHub's **Code → Download ZIP**):
 
 ```sh
-git clone https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control.git
+git clone https://github.com/mjklopfer/celestron-telescope-network-control.git celestron-cosmos-90gt-wifi-telescope-control
 cd celestron-cosmos-90gt-wifi-telescope-control
 ```
 
@@ -674,7 +682,7 @@ Wi-Fi provisioning uses **Infrastructure / Router Wi-Fi Settings** for new value
 
 For the original SkyQLink RN-171, use the physical slider **LEFT** for Direct/ad hoc: connect this computer to SkyQLink-xx and read at `1.2.3.4:2000`. Use **RIGHT** for Infrastructure: connect this computer to the telescope’s current network and discover its assigned IP. Power OFF before moving the slider, then power ON. The app’s mode selector does not move the switch or join Wi-Fi. Readback describes stored settings, not a sensed physical switch position.
 
-Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
+Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Use model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Modern provisioning has a separate experimental TCP 3000 form; see the interface-mode guide for firmware requirements and validation limits.
 
 For direct/infrastructure addresses and the roles of TCP 2000, TCP 3000, UDP 55555 discovery and UDP 123 time synchronization, see the **Note — Wi-Fi addresses and ports** on Wi-Fi provisioning and the [user guide port reference](docs/USER-GUIDE.md#wi-fi-address-and-port-reference).
 
@@ -798,3 +806,9 @@ not proof of which request caused a reply: AUX has no transaction IDs, and echoe
 can resemble requests. Origin/route fields are included in new CSV/JSON exports;
 older recordings without those fields retain blank values. IP metadata stays in
 local logs unless the user exports or shares it.
+
+Modern-module Wi-Fi provisioning now has an experimental desktop form and matching ESP32 source implementation; see [setup and validation limits](docs/INTERFACE-MODES.md#modern-module-wi-fi-configuration-experimental-2026-11-18). Hardware validation is pending.
+
+### Finding the telescope address
+
+Use **View Local Network Interfaces** in the Telescope connection section to see this computer’s adapters, IPv4 addresses, subnets and status in every communications profile. These are computer addresses; do not copy them into **Telescope Wi-Fi interface IP address**. Click **Discover SkyQLink / Celestron Modules**, select the telescope found, then **Apply Module & Profile**. Discovery searches attached active private IPv4 /24 or narrower networks automatically; Direct mode checks the known 1.2.3.4 endpoint on the attached direct network. For unsupported subnet sizes or an undiscovered telescope, look up its assigned address in your router’s device list and enter that telescope address manually. Adapter inspection does not change network settings or select a scan interface.

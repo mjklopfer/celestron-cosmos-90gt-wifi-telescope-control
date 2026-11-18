@@ -41,11 +41,21 @@ def parse_backlash(text, delta=False):
 def setting_packet(axis, command, value):
     if axis not in AXES:
         raise ValueError('Select a motor axis')
-    if command == 4:
+    if command in (4, 0x3A):
+        if command == 0x3A and axis != 0x10:
+            raise ValueError("Cord wrap applies only to azimuth")
         low, high = (0, 360) if axis == 0x10 else (-90, 90)
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError(f'{AXES[axis]} angle must be between {low} and {high} degrees')
         data = (round((value % 360) * (1 << 24) / 360) % (1 << 24)).to_bytes(3, 'big')
+    elif command == 0xFD:
+        if type(value) is not int or value not in (0, 1):
+            raise ValueError('GoTo approach must be 0 (positive) or 1 (negative)')
+        data = bytes((value,))
+    elif command in (0x38, 0x39):
+        if axis != 0x10 or value is not None:
+            raise ValueError('Cord-wrap enable/disable takes no data and applies only to azimuth')
+        data = b''
     elif command in (0x10, 0x11):
         if type(value) is not int or not 0 <= value <= 99:
             raise ValueError('Backlash must be an integer from 0 to 99')
@@ -57,7 +67,9 @@ def setting_packet(axis, command, value):
 
 
 @exclusive_endpoint
-def motor_settings(host, port, axis, *, changes=None, expected_backlash=None, callback=lambda e: None):
+def motor_settings(host, port, axis, *, changes=None, expected_backlash=None, interface_mode="legacy", include_extended=False, callback=lambda e: None):
+    if interface_mode not in ("legacy", "modern"):
+        raise ValueError("Motor settings require a physical-module mode; proxies are read-only")
     host, port = validate_endpoint(host, port)
     if axis not in AXES:
         raise ValueError('Select a motor axis')
@@ -74,7 +86,21 @@ def motor_settings(host, port, axis, *, changes=None, expected_backlash=None, ca
     try:
         check_direct_route(host)
         probe = AuxProbe(host, port, recorder)
-        probe.receive(.6)
+        if interface_mode == "legacy":
+            probe.receive(.6)
+        if interface_mode == "modern" and any(c in (0x10, 0x11) for c in changes):
+            # Require readable compensation values before attempting an optional write.
+            read(axis, 0x40, 1)
+            read(axis, 0x41, 1)
+        # Optional writes require a valid capability read even if a GUI cache says
+        # supported. The same motor AUX endpoints apply through both Wi-Fi families.
+        for command in changes:
+            if command == 0xFD and read(axis, 0xFC, 1)[0] not in (0, 1):
+                raise ValueError('Unrecognized GoTo approach encoding; no write sent')
+            if command in (0x38, 0x39, 0x3A):
+                if read(axis, 0x3B, 1)[0] not in (0, 255):
+                    raise ValueError('Unrecognized cord-wrap encoding; no write sent')
+                read(axis, 0x3C, 3)
         if packets:
             first = {a: int.from_bytes(read(a, 1, 3), 'big') for a in AXES}
             time.sleep(.3)
@@ -95,20 +121,45 @@ def motor_settings(host, port, axis, *, changes=None, expected_backlash=None, ca
             ack = probe.receive(1.2, axis, command)
             if ack is None:
                 raise RuntimeError('Write acknowledgement missing; setting may have changed. Read before retrying.')
-            query = {4: 1, 0x10: 0x40, 0x11: 0x41}[command]
-            raw = read(axis, query, 3 if command == 4 else 1)
-            wanted = packet[5:-1]
+            query = {4: 1, 0x10: 0x40, 0x11: 0x41, 0xFD: 0xFC, 0x38: 0x3B, 0x39: 0x3B, 0x3A: 0x3C}[command]
+            raw = read(axis, query, 3 if command in (4, 0x3A) else 1)
+            wanted = b'\xff' if command == 0x38 else b'\x00' if command == 0x39 else packet[5:-1]
             if raw != wanted:
                 raise RuntimeError('Setting readback mismatch; partial changes may remain')
             entry['verified'] = True
         raw_position = read(axis, 1, 3)
-        pos = read(axis, 0x40, 1)[0]
-        neg = read(axis, 0x41, 1)[0]
-        if pos > 99 or neg > 99:
+        def optional_backlash(command):
+            try:
+                return read(axis, command, 1)[0]
+            except ConnectionError:
+                if interface_mode == 'legacy':
+                    raise
+                return None
+        pos = optional_backlash(0x40)
+        neg = optional_backlash(0x41)
+        if any(v is not None and v > 99 for v in (pos, neg)):
             raise ValueError('Unrecognized backlash encoding')
         report['values'] = {'encoder': int.from_bytes(raw_position, 'big'),
                             'degrees': angle(int.from_bytes(raw_position, 'big')),
                             'positive_backlash': pos, 'negative_backlash': neg}
+        if include_extended:
+            values = report['values']
+            for key, command, size, allowed in (
+                    ('approach', 0xFC, 1, (0, 1)),
+                    ('cordwrap_enabled', 0x3B, 1, (0, 255)),
+                    ('cordwrap_position', 0x3C, 3, None)):
+                values[key] = None
+                if key.startswith('cordwrap') and axis != 0x10:
+                    continue
+                try:
+                    raw = read(axis, command, size)
+                    value = int.from_bytes(raw, 'big')
+                    if allowed is not None and value not in allowed:
+                        raise ValueError('Unrecognized encoding')
+                    values[key] = value
+                except (ConnectionError, ValueError) as error:
+                    report.setdefault('unavailable', {})[key] = str(error)
+
     except Exception as error:
         report['error'] = str(error)
     finally:

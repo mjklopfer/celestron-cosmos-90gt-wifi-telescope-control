@@ -401,3 +401,25 @@ and direct-motor checks also passed during development. Ruff, whitespace and fin
 source/wheel build passed. The Communications Log heading is included in the build.
 No new physical commands were sent for verification, and the running GUI was not
 restarted by this change. New log behavior requires restarting the GUI.
+
+## Version 1.1 release checks — November 18, 2026
+
+Windows 11, Python 3.14.4: the full offline suite passed 242 tests with one
+Aqua-only layout check skipped. After the local-reference manual-read changes,
+the affected motor and GUI suite passed 90 tests. Focused final checks passed
+for both-profile reference application/clearing, reading with periodic polling
+off, profile selection gating, removal of duplicate Diagnostics settings, and
+the connection switch including stale-feedback indication. Ruff, whitespace,
+Tk startup smoke test and source/wheel packaging passed.
+
+The GUI test harness now drains pending events rather than assuming a fixed
+150 ms covers all bounded rendering batches. This fixes test timing races without
+relaxing motion checks. Local-reference manual reads use the motor worker, not
+Tk socket access; they neither move the mount nor reset the idle-release timer.
+
+Windows visual review was completed for the connection/profile/network panel.
+Final connection-state refinements were verified by offline GUI tests. No new
+physical telescope movement, settings write or credential upload was performed.
+Commercial provisioning, ESP32 0.2.3 compilation/flash, physical ESP32 AUX
+transport and fresh macOS visual validation remain unverified. Pi deployment
+results will be recorded after installation of this committed release.

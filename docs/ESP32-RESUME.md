@@ -145,3 +145,11 @@ hardware state. Confirm which boards were actually acquired. Complete electrical
 review and bench tests before telescope attachment. Preserve legacy behavior, keep
 new features visibly experimental until tested, and update this record with exact
 results rather than treating planned items as completed.
+
+
+### HomeBrew and alternative interfaces — research checkpoint
+
+See [alternative interface findings and ESP32 implementation plan](HOMEBREW-INTERFACES.md).
+Our ESP32 remains a Celestron-compatible module project with optional extensions.
+HomeBrew location support is an unverified, opt-in developer prototype; GUI/MCP
+integration and physical device validation remain pending.

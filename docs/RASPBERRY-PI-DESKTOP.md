@@ -136,7 +136,7 @@ For a fresh checkout:
 
 ```sh
 cd ~
-git clone https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control.git
+git clone https://github.com/mjklopfer/celestron-telescope-network-control.git celestron-cosmos-90gt-wifi-telescope-control
 cd celestron-cosmos-90gt-wifi-telescope-control
 ```
 
@@ -270,6 +270,6 @@ After installing the app in its virtual environment, run from the checkout:
 
 Use `.venv/bin/python` instead if that is your environment name. This Linux installer takes no options and opens no telescope connection. It derives paths locally; rerun it if you move the checkout or environment. It installs a launcher for the source installation, not a standalone binary.
 
-The preferred shortcut name is **Celestron Cosmos 90GT WiFi Control**, with WiFi on the telescope icon. Default launch uses zoom controls at 80%. Right-click choices select 80% with zoom controls, 100% with zoom controls, or 100% without the zoom menu. Close the existing app first; each action starts a new process. Standard Desktop Actions and PCManFM custom actions are installed; `SelectionCount==1` is intentional. Menu support depends on the desktop. Existing launchers are backed up under the user's state directory. Launch logs go to `cosmos90gt/desktop.log` under that state directory.
+The preferred shortcut name is **Celestron Telescope Network Control**, with WiFi on the telescope icon. Default launch uses zoom controls at 80%. Right-click choices select 80% with zoom controls, 100% with zoom controls, or 100% without the zoom menu. Close the existing app first; each action starts a new process. Standard Desktop Actions and PCManFM custom actions are installed; `SelectionCount==1` is intentional. Menu support depends on the desktop. Existing launchers are backed up under the user's state directory. Launch logs go to `cosmos90gt/desktop.log` under that state directory.
 
 Copy `docs/TELESCOPE-CONTROL-START-HERE.md` into your desktop folder as `Telescope-Control-Start-Here.txt`. See the [runtime reference](RUNTIME-OPTIONS.md), [icon formats](../assets/icons/README.md), and [KStars versions/workarounds](engineering/2026-11-16-pi-kstars-validation.md). INDI/KStars are optional companions, not prerequisites for this app's own motor control.

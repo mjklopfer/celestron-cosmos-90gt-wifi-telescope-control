@@ -55,7 +55,7 @@ def version(data):
 class MotorController:
     def __init__(self, host, port, callback, socket_factory=socket.create_connection,
                  recorder_factory=Recorder, route_check=check_direct_route, idle_release=30,
-                 heartbeat_enabled=True, heartbeat_interval=1.0):
+                 heartbeat_enabled=True, heartbeat_interval=1.0, interface_mode="legacy"):
         """Validate the destination and create command queues, watchdog and telemetry state."""
         if idle_release not in (0, 10, 20, 30, 60, 120, 300):
             raise ValueError('Idle release must be Never (0), 10, 20, 30, 60, 120, or 300 seconds')
@@ -66,6 +66,9 @@ class MotorController:
         self.heartbeat_interval = heartbeat_interval
         self.idle_release = idle_release
         self.last_control_activity = time.monotonic()
+        if interface_mode not in ('legacy', 'modern'):
+            raise ValueError('Motor control supports legacy or modern hardware mode, not proxy diagnostics mode.')
+        self.interface_mode = interface_mode
         self.host, self.port = validate_endpoint(host, port)
         self.callback, self.socket_factory = callback, socket_factory
         self.recorder_factory, self.route_check = recorder_factory, route_check
@@ -75,6 +78,7 @@ class MotorController:
         self.command_pending = threading.Event()
         self.jog_in_progress = threading.Event()
         self.commands = queue.Queue(maxsize=1)
+        self.position_reads = queue.Queue(maxsize=1)
         self.thread = None
         self.sock = None
         self.recorder = None
@@ -119,6 +123,19 @@ class MotorController:
         self.lease_deadline = time.monotonic() + .4 if hold else 0
         self.command_pending.set()
         self.commands.put_nowait((axis, direction, rate, seconds))
+
+    def request_position(self, axis):
+        """Queue a read on the owning worker; never access the socket from Tk."""
+        if axis not in AXES:
+            raise ValueError('Select Azimuth or Elevation')
+        if not self.connected.is_set() or self.disconnecting.is_set():
+            raise RuntimeError('Connect Motors before reading positions')
+        if self.command_pending.is_set() or self.jog_in_progress.is_set() or self.stopping.is_set():
+            raise RuntimeError('Wait for movement or Stop to finish before reading')
+        try:
+            self.position_reads.put_nowait(axis)
+        except queue.Full:
+            raise RuntimeError('Wait for the current position read to finish') from None
 
     def stop(self):
         """Request priority stopping through the service’s owning thread."""
@@ -369,7 +386,7 @@ class MotorController:
             self.sock = self.socket_factory((self.host, self.port), 3)
             self.sock.settimeout(.05)
             # Let the RN-171 finish its greeting before the first AUX request.
-            end = time.monotonic() + .6
+            end = time.monotonic() + (.6 if self.interface_mode == 'legacy' else 0)
             while time.monotonic() < end and not self.disconnecting.is_set():
                 try:
                     greeting = self.sock.recv(4096)
@@ -414,6 +431,11 @@ class MotorController:
                         self.jog_in_progress.clear()
                         self.last_control_activity = time.monotonic()
                     next_poll = time.monotonic() + self.heartbeat_interval
+                elif not self.position_reads.empty():
+                    axis = self.position_reads.get_nowait()
+                    self.emit('motor_manual_position_read', axis=axis,
+                              message=f'Requested fresh {AXES[axis]} position from this control app.')
+                    self.read_positions(axes=(axis,))
                 elif self.heartbeat_enabled and time.monotonic() >= next_poll:
                     if len(self.read_positions()) != len(AXES):
                         if self.disconnecting.is_set():

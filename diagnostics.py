@@ -183,8 +183,10 @@ class DiagnosticAborted(Exception):
 
 
 @exclusive_endpoint
-def diagnose(host, port, callback=lambda event: None, deep=False, cancel=None):
+def diagnose(host, port, callback=lambda event: None, deep=False, cancel=None, interface_mode="legacy"):
     """Read WiFly settings and both motor controllers, reporting replies and failures separately."""
+    if interface_mode not in ("legacy", "modern"):
+        raise ValueError("Use read-only management diagnostics for computer proxies")
     host, port = validate_endpoint(host, port)
     recorder = LiveRecorder(callback, ())
     report = {'host': host, 'port': port, 'settings_changed': False,
@@ -197,8 +199,9 @@ def diagnose(host, port, callback=lambda event: None, deep=False, cancel=None):
               'location_status': 'No documented WiFly geographic-site read. AUX GPS values, if any, are listed separately; host location is not inferred.',
               'time_site_note': 'Reported device data only; not computer time. '
                                 'Optional GPS/RTC presence and data accuracy are not assumed.'}
-    report['endpoint_catalog'] = [dict(device=device, endpoint=endpoint)
-                                  for device, endpoint in endpoint_catalog(deep)]
+    catalog = [item for item in endpoint_catalog(deep) if interface_mode == 'legacy' or item[0] != 'Wi-Fi adapter']
+    report['interface_mode'] = interface_mode
+    report['endpoint_catalog'] = [dict(device=device, endpoint=endpoint) for device, endpoint in catalog]
 
     def row(device, endpoint, status, reply):
         """Append and publish one diagnostic result with its actual response data."""
@@ -213,35 +216,41 @@ def diagnose(host, port, callback=lambda event: None, deep=False, cancel=None):
     try:
         check_cancel()
         check_direct_route(host)
-        session = None
-        try:
-            with socket.create_connection((host, port), 3) as sock:
-                sock.settimeout(.2)
-                session = Session(sock, recorder)
-                try:
-                    check_cancel()
-                    session.enter()
-                    for command in (WIFI_QUERIES if deep else BASE_WIFI_QUERIES):
+        if interface_mode == 'legacy':
+            session = None
+            try:
+                with socket.create_connection((host, port), 3) as sock:
+                    sock.settimeout(.2)
+                    session = Session(sock, recorder)
+                    try:
                         check_cancel()
-                        try:
-                            reply = session.command(command)
-                            row('Wi-Fi adapter', command, 'REPLY', reply)
-                            if command in ('get time', 'show time', 'show t t'):
-                                report.setdefault('wifly_clock_replies', {})[command] = sanitize(reply)
-                            if command == 'ver':
-                                report['wifi_verified'] = 'WiFly' in reply and 'RN-171' in reply
-                        except Exception as error:
-                            row('Wi-Fi adapter', command, 'REJECTED' if 'Adapter rejected' in str(error) else 'ERROR',
-                                str(error) + '\n' + getattr(session, 'last_reply', ''))
-                finally:
-                    report['command_mode_exit_confirmed'] = session.exit()
-        except DiagnosticAborted:
-            raise
-        except Exception as error:
-            row('Wi-Fi adapter', f'{host}:{port} / command mode', 'ERROR', str(error))
-        if session and session.entered and not report.get('command_mode_exit_confirmed'):
-            raise RuntimeError('Command-mode exit unconfirmed; AUX queries skipped')
+                        session.enter()
+                        for command in (WIFI_QUERIES if deep else BASE_WIFI_QUERIES):
+                            check_cancel()
+                            try:
+                                reply = session.command(command)
+                                row('Wi-Fi adapter', command, 'REPLY', reply)
+                                if command in ('get time', 'show time', 'show t t'):
+                                    report.setdefault('wifly_clock_replies', {})[command] = sanitize(reply)
+                                if command == 'ver':
+                                    report['wifi_verified'] = 'WiFly' in reply and 'RN-171' in reply
+                            except Exception as error:
+                                row('Wi-Fi adapter', command, 'REJECTED' if 'Adapter rejected' in str(error) else 'ERROR',
+                                    str(error) + '\n' + getattr(session, 'last_reply', ''))
+                    finally:
+                        report['command_mode_exit_confirmed'] = session.exit()
+            except DiagnosticAborted:
+                raise
+            except Exception as error:
+                row('Wi-Fi adapter', f'{host}:{port} / command mode', 'ERROR', str(error))
+            if session and session.entered and not report.get('command_mode_exit_confirmed'):
+                raise RuntimeError('Command-mode exit unconfirmed; AUX queries skipped')
 
+        else:
+            from discover_modules import identify_proxy
+            identity = identify_proxy(host, port)
+            row('Modern Wi-Fi interface', 'TCP 3000 / version', 'REPLY' if identity else 'UNVERIFIED',
+                identity.get('module_version', '') if identity else 'No recognized management identity; AUX reads only. No WiFly command mode attempted.')
         # A new connection restores the transparent AUX stream after command mode.
         check_cancel()
         probe = AuxProbe(host, port, recorder)
@@ -301,11 +310,11 @@ def diagnose(host, port, callback=lambda event: None, deep=False, cancel=None):
         row('Connection', f'{host}:{port}', 'ERROR', report['error'])
     finally:
         queried = {item['endpoint'] for item in report['rows']}
-        for device, endpoint in endpoint_catalog(deep):
+        for device, endpoint in catalog:
             if endpoint not in queried:
                 row(device, endpoint, 'NOT QUERIED',
                     'Session unavailable or interrupted; no conclusion about endpoint support')
-        report['wifly_clock'] = clock_summary(report.get('wifly_clock_replies', {}))
+        report['wifly_clock'] = clock_summary(report.get('wifly_clock_replies', {})) if interface_mode == 'legacy' else {}
         for field, value in report['wifly_clock'].items():
             row('WiFly clock', field, 'REPORTED' if value != 'Not reported' else 'NOT REPORTED', str(value))
         report['log_directory'] = str(recorder.directory)

@@ -10,11 +10,12 @@ import csv
 import datetime as dt
 import hashlib
 import json
+from log_archive import archive_logs, json_log_bytes, MemoryLog
 from pathlib import Path
 from bridge_decode import describe_aux
 
 COLUMNS = ('record_type', 'source_session', 'source_line', 'export_time', 'utc', 'monotonic_seconds', 'event',
-           'direction', 'origin', 'source_ip', 'destination_ip', 'route', 'axis', 'encoder_counts', 'raw_angle_degrees',
+           'direction', 'origin', 'source_ip', 'destination_ip', 'route', 'purpose', 'request_origin', 'requester_ip', 'request_purpose', 'request_context', 'axis', 'encoder_counts', 'raw_angle_degrees',
            'source_node_hex', 'destination_node_hex', 'command_hex', 'payload_hex',
            'frame_hex', 'interpretation', 'message', 'details_json')
 
@@ -22,6 +23,10 @@ COLUMNS = ('record_type', 'source_session', 'source_line', 'export_time', 'utc',
 def recording_files(source):
     source = Path(source)
     if source.is_file():
+        if source.suffix.lower() == '.zip':
+            return archive_logs(source)
+        if source.suffix.lower() == '.json':
+            return [MemoryLog(source.parent.name + '/' + source.name, json_log_bytes(source.read_bytes()))]
         return [source]
     if not source.is_dir():
         raise ValueError('Select an events.jsonl file or a logs folder.')
@@ -66,6 +71,8 @@ def export_recording(source, destination, selection='both', format='csv',
     end = parse_timestamp(end) if isinstance(end, str) else end
     if start and end and end <= start:
         raise ValueError('End must be after start.')
+    if source.resolve() == destination.resolve():
+        raise ValueError('Choose a destination different from the source recording.')
     files = recording_files(source)
     if any(file.resolve() == destination.resolve() for file in files):
         raise ValueError('Choose an export filename different from the original log.')
@@ -73,7 +80,7 @@ def export_recording(source, destination, selection='both', format='csv',
     for file in files:
         with file.open('rb') as stream:
             snapshot = stream.read(file.stat().st_size)
-        session = file.parent.name + '/' + file.name
+        session = getattr(file, 'session_name', file.parent.name + '/' + file.name)
         snapshots.append({'session': session, 'bytes': len(snapshot), 'sha256': hashlib.sha256(snapshot).hexdigest()})
         lines = snapshot.splitlines(keepends=True)
         for number, line in enumerate(lines, 1):
@@ -104,7 +111,7 @@ def export_recording(source, destination, selection='both', format='csv',
             elif packet:
                 raw = event.get('hex', '')
                 row.update(direction=event.get('direction', ''), frame_hex=raw)
-                row.update({key: event.get(key, '') for key in ('origin', 'source_ip', 'destination_ip', 'route')})
+                row.update({key: event.get(key, '') for key in ('origin', 'source_ip', 'destination_ip', 'route', 'purpose', 'request_origin', 'requester_ip', 'request_purpose', 'request_context')})
                 try:
                     frame = bytes.fromhex(raw)
                     if len(frame) < 6:

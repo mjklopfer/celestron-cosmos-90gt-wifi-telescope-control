@@ -601,6 +601,25 @@ class LocalJogRecoveryTests(unittest.TestCase):
         self.assertEqual(b.packet_route('client')['source_ip'], '192.0.2.20')
         self.assertEqual(b.packet_route('mount', b.client_peer)['destination_ip'], '192.0.2.20')
         self.assertIn('not forwarded', b.packet_route('mount')['route'])
+        incoming = b.packet_route('client')['route']
+        self.assertLess(incoming.index('External control app'), incoming.index('This control app'))
+        self.assertLess(incoming.index('This control app'), incoming.index('Telescope'))
+        outgoing = b.packet_route('mount', ('192.0.2.3', 12345))['route']
+        self.assertLess(outgoing.index('Telescope'), outgoing.index('This control app'))
+        self.assertLess(outgoing.index('This control app'), outgoing.index('External control app'))
+
+    def test_reply_request_context_is_inferred_or_ambiguous(self):
+        b = self.b
+        request = motor_packet(16, 1)
+        reply = bytes.fromhex('3b0610200140000089')
+        b.send_local(request, purpose='Keep connection alive / heartbeat')
+        context = b.position_reply_context(reply)
+        self.assertIn('heartbeat', context['request_purpose'])
+        self.assertIn('inferred', context['request_context'])
+        b.send_local(request, purpose='Local-jog safety feedback')
+        b.remember_position_request(request, 'external control app', '192.0.2.20', 'External request')
+        self.assertIn('ambiguous', b.position_reply_context(reply)['request_context'])
+        self.assertIn('unknown', b.position_reply_context(reply)['request_context'])
 
     def test_timeout_validation_and_effect(self):
         b = self.b

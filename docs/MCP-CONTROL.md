@@ -88,3 +88,7 @@ GUI local references are separate session state; MCP experimental position
 references are not shared with the GUI. The general HTTP companion API is
 **not implemented**; only tracking-target ingress currently uses HTTP. See
 [development roadmap](DEVELOPMENT-ROADMAP.md).
+
+## Desktop 1.1 profile boundary
+
+The desktop now selects legacy SkyQLink, modern Celestron module, or controller-proxy diagnostics profiles. This GUI selection is not shared automatically with a separate MCP process. Existing MCP operations retain their documented backend contracts; modern provisioning, HomeBrew configuration and complete GUI-profile parity are not newly exposed as MCP tools by this release. Do not infer support from the desktop controls. Use one owner of the telescope endpoint at a time.

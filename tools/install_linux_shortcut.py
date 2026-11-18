@@ -58,7 +58,7 @@ def main():
                ('Standard', 'Open standard view without zoom menu', '--ui-scale 1.0')]
     command = desktop_quote(launcher)
     entry = ('[Desktop Entry]\nVersion=1.0\nType=Application\n'
-             'Name=Celestron Cosmos 90GT WiFi Control\n'
+             'Name=Celestron Telescope Network Control\n'
              'Comment=Telescope Wi-Fi control; right-click for display launch options\n'
              f'Exec={command}\nPath={repo}\nIcon={icon}\nTerminal=false\n'
              'Categories=Education;Astronomy;\nStartupNotify=false\nActions=Compact;Zoom;Standard;\n')

@@ -179,6 +179,17 @@ class ProxyDiscoveryTests(unittest.TestCase):
                          [b'version\n', b'get cosmos.proxy\n'])
         sock.close.assert_called_once()
 
+    def test_known_esp32_identified_without_motor_or_private_queries(self):
+        from unittest.mock import Mock
+        sock = self.socket(version='COSMOS-SIM-AMW007-0.2.2.0, ESP32 simulator')
+        factory = Mock(return_value=sock)
+        result = identify('192.0.2.22', socket_factory=factory)
+        self.assertEqual(result['endpoint_kind'], 'modern_simulator')
+        self.assertEqual(result['module_type'], 'Celestron Wi-Fi Module V2 or later — COSMOS-SIM-AMW007-0.2.2.0, ESP32 simulator')
+        factory.assert_called_once_with(('192.0.2.22', 3000), .35)
+        sock.sendall.assert_called_once_with(b'version\n')
+        self.assertFalse(result['motors_verified'])
+
     def test_nonproxy_never_receives_private_query(self):
         from discover_modules import identify_proxy
         sock = self.socket(version='AMW007 hardware')

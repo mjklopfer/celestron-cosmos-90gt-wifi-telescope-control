@@ -1,6 +1,13 @@
-# User guide: Celestron Cosmos 90GT Telescope Wi-Fi Control
+# User guide: Celestron Telescope Network Control
 
-This application configures and controls the original **Celestron Wi-Fi Control
+For modern adapter Wi-Fi setup, see [commercial SkyPortal provisioning versus
+emulated-module captive setup pages](INTERFACE-MODES.md#commercial-versus-emulated-wi-fi-provisioning).
+Use the applicable module or firmware procedure; legacy WiFly provisioning is
+not interchangeable.
+
+See [interface modes, capability limits and log export](INTERFACE-MODES.md) for the expanded interface selector and current review build.
+
+The legacy interface configures and controls the original **Celestron Wi-Fi Control
 Version 1 - SkyQLink RN-171** adapter. It also provides a bridge for compatible
 astronomy software. It is not a planetarium or a complete celestial alignment
 system. The four tabs are **Motor control**, **Control Bridge**, **Diagnostics**,
@@ -134,7 +141,7 @@ Hold/Timed jog mode applies to keyboard directions as well.
 Open **Controller Angle / Backlash Settings…**. This contains both former
 reference controls and the hardware settings; choose the intended mode:
 
-- **Local reference (this app only):** connect motors, point at a known object,
+- **Local reference (this app only):** use the **Connect** side of the connection switch inside this section, point at a known object,
   and enter that object's current azimuth/elevation. Current readings and the
   proposed coordinate offset are displayed before setting the reference. This
   changes this application's displayed coordinates only; it clears on disconnect.
@@ -146,7 +153,7 @@ reference controls and the hardware settings; choose the intended mode:
 
 Other applications can observe hardware encoder/backlash changes, but those
 changes do not create shared celestial alignment. They can invalidate existing
-alignment assumptions. Local reference is also not a full multi-star sky model. Local offsets clear on disconnect or lost feedback; inactive applied-offset history is retained until the app closes. **Poll Azimuth/Elevation now** waits for the next sample from the existing motor polling loop. **Clear local references** resets only local offsets. Explicit reapply requires fresh feedback and confirmation that the telescope has not been power-cycled, moved manually or realigned. A connection loss cannot reliably identify a power cycle.
+alignment assumptions. Local reference is also not a full multi-star sky model. Local offsets clear on disconnect or lost feedback; inactive applied-offset history is retained until the app closes. **Read Azimuth/Elevation position now** requests a fresh sample on the existing motor connection, even when periodic polling is off. The current encoder angle, sample age and operation status appear inside this window. Reads do not reset the idle-release timer. **Clear local references** resets only local offsets. Explicit reapply requires fresh feedback and confirmation that the telescope has not been power-cycled, moved manually or realigned. A connection loss cannot reliably identify a power cycle.
 Actual encoder/backlash writes remain unverified on this telescope; readback has
 been exercised. If a write reports uncertain verification, read again before
 retrying—it may already have changed the setting.
@@ -632,7 +639,7 @@ Wi-Fi provisioning uses **Infrastructure / Router Wi-Fi Settings** for new value
 
 For the original SkyQLink RN-171, use the physical slider **LEFT** for Direct/ad hoc: connect this computer to SkyQLink-xx and read at `1.2.3.4:2000`. Use **RIGHT** for Infrastructure: connect this computer to the telescope’s current network and discover its assigned IP. Power OFF before moving the slider, then power ON. The app’s mode selector does not move the switch or join Wi-Fi. Readback describes stored settings, not a sensed physical switch position.
 
-Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Future adapter support must provide model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Newer-adapter provisioning is not implemented by this wording change.
+Adapter-generation terminology: **Celestron Version 1 Wi-Fi — SkyQLink RN-171** uses `SkyQLink-xx`; **Version 2 and later Celestron Wi-Fi** use `Celestron-xxxx`. The current provisioning workflow and LEFT/RIGHT switch instructions apply only to the Version 1 RN-171 / 2.40-CEL. Use model-specific connection and provisioning instructions; a network name alone does not verify device capabilities. Modern provisioning is now a separate experimental TCP 3000 form; see the modern-module configuration section below.
 
 ### Wi-Fi address and port reference
 
@@ -965,3 +972,94 @@ not proof of which request caused a reply: AUX has no transaction IDs, and echoe
 can resemble requests. Origin/route fields are included in new CSV/JSON exports;
 older recordings without those fields retain blank values. IP metadata stays in
 local logs unless the user exports or shares it.
+
+Controller settings now include [cord wrap, per-axis GoTo approach and travel-limit availability](INTERFACE-MODES.md#cord-wrap-goto-approach-and-travel-limits). Readback determines which controls are enabled; these writes have offline verification, not new physical-mount validation.
+
+
+### HomeBrew and alternative interfaces — research checkpoint
+
+See [alternative interface findings and ESP32 implementation plan](HOMEBREW-INTERFACES.md).
+Our ESP32 remains a Celestron-compatible module project with optional extensions.
+HomeBrew location support is an unverified, opt-in developer prototype; GUI/MCP
+integration and physical device validation remain pending.
+
+
+## Modern-module Wi-Fi configuration (experimental, 2026-11-18)
+
+The Celestron module profile now has SSID, masked password, network security,
+Read module Wi-Fi settings, and Apply & Save Router Wi-Fi Settings controls.
+Disconnect Motor control/Control Bridge and finish other operations first.
+Read obtains the SSID, not the password. Enter a password before Apply; an
+explicit Open selection requires an empty password. Personal encryption is
+negotiated automatically using a method supported by both device and router.
+This is not a claim of WPA3-only, WEP or Enterprise support. Quotes, backslashes
+and control characters are currently rejected rather than guessing escaping rules.
+
+Our ESP32 source v0.2.3 implements the management configuration capability and
+uses the same saved record as the captive portal. Some emulated modules offer
+captive Wi-Fi setup pages as an alternative; the project includes our ESP32
+portal code. Existing v0.2.2 firmware does not support desktop provisioning:
+use its portal until the new firmware has been compiled, tested and uploaded.
+
+Desktop writes stage SSID/passkey and enable DHCP, check staged SSID readback,
+then save. On our ESP32, station mode is selected in software and saving schedules
+a restart. Commercial AMW007/ZentriOS writes require the experimental opt-in;
+module identity and expected acknowledgments must match. Its physical switch
+may still need to be set to WLAN. A save acknowledgment does not verify a network
+join. Reconnect the computer to the router network and rediscover the module.
+Do not automatically retry after a timeout; saved state may be uncertain.
+
+The official commercial procedure starts in Direct Connect, joins Celestron-###,
+uses SkyPortal > Connect > Settings > Communication > Configure Access Point,
+enters SSID/password, sends configuration and selects Use Access Point. Set the
+module switch to WLAN, then join that router network on the controlling device.
+The switch chooses network mode, not encryption.
+Reference: https://celestron-site-support-files.s3.amazonaws.com/support_files/93973_Celestron%20SkyPortal%20WiFi%20Accessory_Manual_5LANG_Web.pdf
+
+Validation: eight mocked backend tests and two focused GUI tests pass; lint passes.
+ESP32 compilation, upload, actual configuration/network recovery and commercial
+module interoperability remain unverified. No credentials or live configuration
+were sent during implementation. The running desktop app must be relaunched to
+show these additions. The captive portal remains an optional alternative on supported emulated modules.
+
+
+## Module selection and bridge restart
+
+Choose a discovered module and review the recommended communications profile.
+The Apply Module & Profile button turns red while changes are pending; operation
+tabs remain disabled until Apply or Cancel. Green means the current profile is
+applied, not that a telescope connection has been verified.
+
+Restart Bridge Connection disconnects the astronomy app, requests Stop on both
+axes and waits for bridge shutdown. With complete Stop acknowledgments it waits
+one second and starts a new bridge; local jogging remains OFF. Incomplete Stop
+replies cancel automatic restart and show recovery instructions. This operation
+does not power-cycle the telescope or replay movement. It applies only to SkyQLink.
+
+GoTo approach controls appear under Controller Angle / Backlash Settings >
+Telescope controller > Cord wrap / GoTo approach / limits. Both physical profiles
+use the same AUX controller commands. Azimuth (RA/E–W) and Elevation (Dec/N–S)
+have Default/Reversed choices. These are provisional labels for positive (0) and
+negative (1), not verified SkySafari defaults or a factory reset. Raw meanings
+remain in readback and confirmation. They do not reverse manual jog buttons.
+
+### Finding the telescope address
+
+Use **View Local Network Interfaces** in the Telescope connection section to see this computer’s adapters, IPv4 addresses, subnets and status in every communications profile. These are computer addresses; do not copy them into **Telescope Wi-Fi interface IP address**. Click **Discover SkyQLink / Celestron Modules**, select the telescope found, then **Apply Module & Profile**. Discovery searches attached active private IPv4 /24 or narrower networks automatically; Direct mode checks the known 1.2.3.4 endpoint on the attached direct network. For unsupported subnet sizes or an undiscovered telescope, look up its assigned address in your router’s device list and enter that telescope address manually. Adapter inspection does not change network settings or select a scan interface.
+
+Controller Angle / Backlash Settings reads one axis at a time. Wait for the current read operation to finish before reading the other axis. Watch **Settings operation status** for completion or an error; a second operation cannot run concurrently.
+
+Local reference works in both physical-module profiles over a direct motor connection. A Disconnect / Connect switch is available inside that section, alongside connection status, current raw encoder angles, sample ages and operation status. Read buttons request a fresh axis sample even with periodic polling off; reads do not renew the user-idle release timer or issue movement. Wait for one axis read to finish before requesting another. Set local reference changes only this app’s coordinate display, not telescope or other-app alignment. Controller-proxy and active-bridge sessions do not support these direct local-reference operations.
+
+**Controller Angle / Backlash Settings…** has one entry point: the Motor control tab, for both SkyQLink and Celestron module profiles. Diagnostics does not duplicate that settings menu.
+
+**Module & Profile Selected** means the target and communication profile have been applied; it is not a connection indicator. The text below directs you to Connect Motors or, for SkyQLink, Control Bridge ON. Inside Local reference, a separate indicator shows Disconnected, Connected -- Link Unconfirmed or Connected -- Link Confirmed. The Disconnect / Connect switch highlights disconnected red and verified connected green, with a matching status light. Connect stays unselected until motor feedback confirms success; connection/recovery is amber. Disconnect becomes available when connected; Cancel is available during connection/recovery.
+
+The Local reference light uses three states: green **Connected -- Link Confirmed**
+for fresh feedback from both motors, orange **Connected -- Link Unconfirmed** while
+feedback is pending or overdue, and red **Disconnected** with no active connection.
+Unconfirmed is not proof of a broken socket. The detail line identifies expected
+aging when periodic polling is off and directs the user to Read for a fresh sample.
+The Connect side does not turn green until motor feedback verifies the connection.
+A module reply alone cannot establish motor health. Disconnect/Cancel remains
+available to release an active connection or attempt.

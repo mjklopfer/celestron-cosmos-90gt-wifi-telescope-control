@@ -5,16 +5,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cosmos90gt-control"
-version = "1.0.0"
-description = "Celestron Cosmos 90GT / SkyQLink WiFly RN-171 Wi-Fi setup, telescope motor diagnostics and SkySafari bridge"
+version = "1.1.0"
+description = "Celestron telescope WiFi network control, diagnostics and provisioning, with a V1 SkyQLink RN-171 bridge for COSMOS 90GT"
 readme = "README.md"
 keywords = ["celestron", "cosmos-90gt", "skyqlink", "wifly", "rn171", "skysafari", "skyportal", "cpwi", "telescope-control", "wifi-provisioning", "celestron-aux", "tcp-bridge"]
 requires-python = ">=3.10"
 dependencies = ["psutil>=5.9,<8"]
 
 [project.urls]
-Repository = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control"
-Issues = "https://github.com/mjklopfer/celestron-cosmos-90gt-wifi-telescope-control/issues"
+Repository = "https://github.com/mjklopfer/celestron-telescope-network-control"
+Issues = "https://github.com/mjklopfer/celestron-telescope-network-control/issues"
 
 [project.optional-dependencies]
 dev = ["ruff>=0.9,<1", "build>=1.2,<2"]
@@ -27,7 +27,7 @@ cosmos90gt-bridge = "bridge_mode:main"
 cosmos90gt-mcp = "cosmos_mcp:main"
 
 [tool.setuptools]
-py-modules = ["skyqlink_setup", "ui_zoom", "motor_control", "bridge_mode", "bridge_decode", "export_recording", "network_info", "endpoint_lock", "celestron_probe", "setup_backend", "wifly_configure", "diagnostics", "time_settings", "motor_settings", "telescope_calibration", "calibrate_telescope", "cosmos_mcp", "position_control", "tracking_stream", "discover_modules", "recover_link", "verify_motors", "verify_bridge", "gui_hardware_check"]
+py-modules = ["skyqlink_setup", "ui_zoom", "motor_control", "bridge_mode", "bridge_decode", "export_recording", "log_archive", "interface_diagnostics", "homebrew_settings", "modern_wifi", "network_info", "endpoint_lock", "celestron_probe", "setup_backend", "wifly_configure", "diagnostics", "time_settings", "motor_settings", "telescope_calibration", "calibrate_telescope", "cosmos_mcp", "position_control", "tracking_stream", "discover_modules", "recover_link", "verify_motors", "verify_bridge", "gui_hardware_check"]
 
 [tool.ruff]
 target-version = "py310"

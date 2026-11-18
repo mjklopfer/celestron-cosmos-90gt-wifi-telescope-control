@@ -73,3 +73,39 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(len(result['metadata']['source_snapshots']), 2)
             with self.assertRaises(ValueError):
                 export_recording(root, output, start='2026-11-18T09:00:00Z', end='2026-11-18T08:00:00Z')
+
+
+class ArchiveTests(unittest.TestCase):
+    def test_zip_sessions_and_json_export_round_trip(self):
+        from log_archive import save_logs_zip
+        from export_recording import recording_bounds
+        import zipfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            logs = root / 'logs'
+            for index in range(3):
+                session = logs / f'session{index}'
+                session.mkdir(parents=True)
+                event = {'utc': f'2026-11-18T08:00:0{index}+00:00', 'event': 'bridge_status', 'message': 'Notice'}
+                (session / 'events.jsonl').write_text(json.dumps(event) + '\n')
+                (session / 'report.json').write_text('{"summary": true}')
+            archive = root / 'saved.zip'
+            self.assertEqual(save_logs_zip(logs, archive), 6)
+            with zipfile.ZipFile(archive) as z:
+                self.assertIn('logs/session2/events.jsonl', z.namelist())
+            self.assertEqual(recording_bounds(archive)['sessions'], 3)
+            exported = root / 'export.json'
+            self.assertEqual(export_recording(archive, exported, format='json')['records'], 3)
+            self.assertEqual(export_recording(exported, root / 'again.csv')['records'], 3)
+            with self.assertRaises(ValueError):
+                save_logs_zip(logs, logs / 'recursive.zip')
+
+    def test_unsafe_zip_path_rejected_without_extracting(self):
+        from log_archive import archive_logs
+        import zipfile
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / 'bad.zip'
+            with zipfile.ZipFile(archive, 'w') as z:
+                z.writestr('../events.jsonl', '{}\n')
+            with self.assertRaises(ValueError):
+                archive_logs(archive)

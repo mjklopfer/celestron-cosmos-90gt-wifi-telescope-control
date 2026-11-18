@@ -7,6 +7,62 @@ from test_diagnostics import Recorder
 
 
 class SettingTests(unittest.TestCase):
+    def test_modern_missing_backlash_preserves_position(self):
+        probe = MagicMock()
+        probe.query.side_effect = [bytes.fromhex('400000'), b'\x00', None]
+        with patch.object(ms, 'LiveRecorder', Recorder), patch.object(ms, 'check_direct_route'), patch.object(ms, 'AuxProbe', return_value=probe):
+            result = ms.motor_settings('192.0.2.1', 2000, 0x10, interface_mode='modern')
+        self.assertNotIn('error', result)
+        self.assertEqual(result['values']['degrees'], 90)
+        self.assertIsNone(result['values']['negative_backlash'])
+        probe.sock.sendall.assert_not_called()
+
+    def test_modern_missing_backlash_blocks_write(self):
+        probe = MagicMock()
+        probe.query.side_effect = [b'\x00', None]
+        with patch.object(ms, 'LiveRecorder', Recorder), patch.object(ms, 'check_direct_route'), patch.object(ms, 'AuxProbe', return_value=probe):
+            result = ms.motor_settings('192.0.2.1', 2000, 0x10, interface_mode='modern', changes={0x10: 5})
+        self.assertIn('error', result)
+        probe.sock.sendall.assert_not_called()
+
+    def test_proxy_mode_rejected_before_socket(self):
+        with patch.object(ms, 'AuxProbe') as probe, self.assertRaises(ValueError):
+            ms.motor_settings('192.0.2.1', 2000, 0x10, interface_mode='proxy')
+        probe.assert_not_called()
+
+    def test_extended_packets_reject_wrong_axes_and_values(self):
+        self.assertEqual(ms.setting_packet(0x10, 0x38, None)[5:-1], b'')
+        self.assertEqual(ms.setting_packet(0x11, 0xFD, 1)[5:-1], b'\x01')
+        for axis, command, value in ((0x11, 0x38, None), (0x11, 0x3A, 90), (0x10, 0xFD, 2), (0x10, 0x38, 1)):
+            with self.assertRaises(ValueError):
+                ms.setting_packet(axis, command, value)
+
+    def test_unsupported_approach_does_not_write(self):
+        probe = MagicMock()
+        probe.query.return_value = None
+        with patch.object(ms, 'LiveRecorder', Recorder), patch.object(ms, 'check_direct_route'), patch.object(ms, 'AuxProbe', return_value=probe):
+            result = ms.motor_settings('192.0.2.1', 2000, 0x11, changes={0xFD: 1})
+        self.assertIn('error', result)
+        probe.sock.sendall.assert_not_called()
+
+    def test_cordwrap_and_approach_write_readback_for_both_profiles(self):
+        for profile in ('legacy', 'modern'):
+            for command, value in ((0x38, None), (0x39, None), (0x3A, 90), (0xFD, 1)):
+                with self.subTest(profile=profile, command=command):
+                    state = {1: bytes(3), 0x40: b'\x00', 0x41: b'\x00', 0xFC: b'\x00', 0x3B: b'\x00', 0x3C: bytes(3)}
+                    probe = MagicMock()
+                    probe.query.side_effect = lambda axis, cmd, state=state, **kw: state[cmd]
+                    probe.receive.return_value = b''
+                    def write(packet, state=state):
+                        cmd = packet[4]
+                        key = {0x38: 0x3B, 0x39: 0x3B, 0x3A: 0x3C, 0xFD: 0xFC}[cmd]
+                        state[key] = b'\xff' if cmd == 0x38 else b'\x00' if cmd == 0x39 else packet[5:-1]
+                    probe.sock.sendall.side_effect = write
+                    with patch.object(ms, 'LiveRecorder', Recorder), patch.object(ms, 'check_direct_route'), patch.object(ms, 'AuxProbe', return_value=probe), patch.object(ms.time, 'sleep'):
+                        result = ms.motor_settings('192.0.2.1', 2000, 0x10, changes={command: value}, interface_mode=profile, include_extended=True)
+                    self.assertNotIn('error', result)
+                    self.assertTrue(result['writes'][0]['verified'])
+
     def test_backlash_normalization_rejects_fraction_and_wrong_sign(self):
         for text, expected in [(' 002.0 ', 2), ('+99', 99), ('0', 0)]:
             self.assertEqual(ms.parse_backlash(text), expected)

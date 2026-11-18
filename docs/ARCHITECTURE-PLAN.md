@@ -1,6 +1,8 @@
-# Future connection backends
+# Connection backends: implemented foundation and future work
 
-Recorded 2026-11-16 from the operator's development direction. This is planned
+Update 2026-11-18: the GUI now selects legacy, modern-module or read-only proxy behavior. See [current capabilities](INTERFACE-MODES.md). The separation below remains the longer-term architecture plan; full capability discovery and MCP parity still require further work.
+
+Historical plan recorded 2026-11-16 from the operator's development direction. This is planned
 work, not a claim of current ESP32/ESP8266 or modern-module support.
 
 Today the application's provisioning and control path targets the legacy
@@ -172,3 +174,11 @@ reset evidence, default snapshot and recovery policy while sharing the GUI/MCP
 contracts for supported operations.
 
 ESP32 work resume point: [decisions, wiring references and ordered TODO checklist](ESP32-RESUME.md).
+
+
+### HomeBrew and alternative interfaces — research checkpoint
+
+See [alternative interface findings and ESP32 implementation plan](HOMEBREW-INTERFACES.md).
+Our ESP32 remains a Celestron-compatible module project with optional extensions.
+HomeBrew location support is an unverified, opt-in developer prototype; GUI/MCP
+integration and physical device validation remain pending.

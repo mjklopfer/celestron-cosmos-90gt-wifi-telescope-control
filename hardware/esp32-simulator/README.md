@@ -152,3 +152,42 @@ simulated telescope movement successfully over infrastructure Wi-Fi. USB logs
 showed a connected client, 356 AUX packets, changing virtual AZ/ALT values, and
 simulation stopping on disconnect. Exact app edition/version was not recorded.
 This validates the tested simulator session, not physical AUX operation.
+
+
+## Modern-module Wi-Fi configuration (experimental, 2026-11-18)
+
+The Celestron module profile now has SSID, masked password, network security,
+Read module Wi-Fi settings, and Apply & Save Router Wi-Fi Settings controls.
+Disconnect Motor control/Control Bridge and finish other operations first.
+Read obtains the SSID, not the password. Enter a password before Apply; an
+explicit Open selection requires an empty password. Personal encryption is
+negotiated automatically using a method supported by both device and router.
+This is not a claim of WPA3-only, WEP or Enterprise support. Quotes, backslashes
+and control characters are currently rejected rather than guessing escaping rules.
+
+Our ESP32 source v0.2.3 implements the management configuration capability and
+uses the same saved record as the captive portal. Some emulated modules offer
+captive Wi-Fi setup pages as an alternative; the project includes our ESP32
+portal code. Existing v0.2.2 firmware does not support desktop provisioning:
+use its portal until the new firmware has been compiled, tested and uploaded.
+
+Desktop writes stage SSID/passkey and enable DHCP, check staged SSID readback,
+then save. On our ESP32, station mode is selected in software and saving schedules
+a restart. Commercial AMW007/ZentriOS writes require the experimental opt-in;
+module identity and expected acknowledgments must match. Its physical switch
+may still need to be set to WLAN. A save acknowledgment does not verify a network
+join. Reconnect the computer to the router network and rediscover the module.
+Do not automatically retry after a timeout; saved state may be uncertain.
+
+The official commercial procedure starts in Direct Connect, joins Celestron-###,
+uses SkyPortal > Connect > Settings > Communication > Configure Access Point,
+enters SSID/password, sends configuration and selects Use Access Point. Set the
+module switch to WLAN, then join that router network on the controlling device.
+The switch chooses network mode, not encryption.
+Reference: https://celestron-site-support-files.s3.amazonaws.com/support_files/93973_Celestron%20SkyPortal%20WiFi%20Accessory_Manual_5LANG_Web.pdf
+
+Validation: eight mocked backend tests and two focused GUI tests pass; lint passes.
+ESP32 compilation, upload, actual configuration/network recovery and commercial
+module interoperability remain unverified. No credentials or live configuration
+were sent during implementation. The running desktop app must be relaunched to
+show these additions. This section supersedes earlier portal-only statements.
