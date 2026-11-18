@@ -147,3 +147,30 @@ unknown commands, and remaining live-validation tasks are recorded in the
 No new controls for unknown commands, no claim of shared alignment, and no new
 verified time/location-write endpoint. Live SkySafari coexistence and new UI
 validation on Pi/macOS remain pending.
+
+
+## Low-latency relay and future motion reconstruction — 2026-11-18
+
+Implemented: TCP_NODELAY, forwarding before packet observation, and a separate
+queued event writer/decoder/UI publisher. Tested with a deliberately stalled log
+writer while commands and replies continue on loopback. No bridge inactivity
+expiry; direct motor idle release and local-jog safety limits remain.
+
+Remaining: measure receive-to-send latency and end-to-end motor response latency
+under load; consider explicit high-resolution receive/send stamps plus per-session
+sequence IDs. Existing UTC/monotonic stamps denote queued observations, not hardware
+execution. Preserve sample timing rather than using disk-write time.
+
+Plan an offline JSONL-to-CSV motion-track exporter with separate commanded and
+measured encoder tracks, 24-bit wrap handling, reconnect/reset segmentation, gap
+and dropped-event warnings, and optional plots. Require alignment/site/time metadata
+before converting raw encoder angles to sky coordinates. Captured manual rocket
+tracking could become an edited reference trajectory, but a different launch needs
+its own trajectory and time origin; do not blindly replay packets or assume it
+follows the same path. Validate rates, acceleration, clearance and stale samples.
+
+Optional quiet-client read-only heartbeat remains a separate experiment, OFF by
+default if added: use a bounded position read after silence, suspend when normal
+traffic resumes, and avoid duplicate outstanding queries. There is no such new
+option yet. Existing no-client position polling does not prevent all observed
+missing-reply episodes. Do not add a heartbeat as a substitute for diagnosis.

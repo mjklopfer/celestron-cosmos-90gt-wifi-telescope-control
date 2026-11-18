@@ -3,6 +3,8 @@
 Provides later-module-style discovery and limited read-only management. One worker
 owns the upstream stream; other control sessions must remain disconnected."""
 import argparse
+import datetime as dt
+import queue
 import ipaddress
 import json
 import math
@@ -50,6 +52,10 @@ class Bridge:
         self.ready = threading.Event()
         self.thread = None
         self.recorder = None
+        self.event_queue = queue.SimpleQueue()
+        self.event_thread = None
+        self.telemetry_dropped = 0
+        self.recording_failed = False
         self.upstream = self.client = self.manager = None
         self.listeners = []
         self.udp = None
@@ -74,10 +80,60 @@ class Bridge:
         self.lease = EndpointLease(self.host, self.port)
 
     def emit(self, kind, **fields):
-        """Publish a service event for logging and the GUI event queue."""
-        if self.recorder:
-            self.recorder.record(kind, **fields)
-        self.callback({'event': kind, **fields})
+        """Queue observations without disk IO, decoding or UI callbacks on relay."""
+        if kind in ('bridge_packet', 'bridge_values') and self.event_queue.qsize() >= 8192:
+            self.telemetry_dropped += 1
+            return
+        fields.setdefault('utc', dt.datetime.now(dt.timezone.utc).isoformat())
+        fields.setdefault('monotonic', time.monotonic())
+        self.event_queue.put((kind, fields))
+
+    def dispatch_events(self):
+        """One consumer preserves event order; slow logs never hold the socket worker.
+
+        Cap queued high-volume telemetry at 8192. Lifecycle/safety notices are not
+        discarded. If storage/UI cannot keep up, report omitted telemetry explicitly
+        rather than blocking traffic or growing an unlimited packet backlog.
+        Timestamps are captured by emit(), not when the writer eventually flushes.
+        """
+        reported_drops = 0
+        while True:
+            item = self.event_queue.get()
+            if item is None:
+                break
+            kind, fields = item
+            if kind == 'bridge_packet':
+                try:
+                    fields['interpretation'] = describe_aux(bytes.fromhex(fields['hex']))
+                except Exception as error:
+                    fields['interpretation'] = f'Interpretation unavailable: {error}'
+            if self.recorder and not self.recording_failed:
+                try:
+                    self.recorder.record(kind, **fields)
+                except Exception as error:
+                    self.report['logging_error'] = str(error)
+                    self.recording_failed = True
+                    try:
+                        self.callback({'event': 'bridge_status', 'message': f'Bridge log writing failed: {error}; relay continues.'})
+                    except Exception:
+                        pass
+            try:
+                self.callback({'event': kind, **fields})
+            except Exception as error:
+                self.report['callback_error'] = str(error)
+            if self.telemetry_dropped != reported_drops:
+                reported_drops = self.telemetry_dropped
+                warning = {'message': f'Logging/display backlog: {reported_drops} telemetry events omitted; relay continues.'}
+                if self.recorder and not self.recording_failed:
+                    try:
+                        self.recorder.record('bridge_log_overflow', **warning)
+                    except Exception as error:
+                        self.report['logging_error'] = str(error)
+                try:
+                    self.callback({'event': 'bridge_status', **warning})
+                except Exception:
+                    pass
+        self.report['telemetry_events_dropped'] = self.telemetry_dropped
 
     def start(self):
         """Start the relay worker; construction alone never opens a telescope connection."""
@@ -177,7 +233,8 @@ class Bridge:
         Unknown commands conservatively preempt a jog, but remain transparent to
         the external application. No cached command or tracking rate is replayed.
         """
-        for frame in self.observe(raw, 'client'):
+        frames = self.client_parser.feed(raw)
+        for frame in frames:
             axis, command = frame[3:5]
             stop = axis in AXES and command in (0x24, 0x25) and frame[5:-1] == b'\x00'
             with self.local_lock:
@@ -197,14 +254,16 @@ class Bridge:
                               message=f'Local jog interrupted by external command 0x{command:02X} to 0x{axis:02X}. External command forwarded. Pause tracking in the external app if it repeatedly interrupts jogging.')
             self.upstream.sendall(frame)
             self.report['bytes_to_mount'] += len(frame)
+        self.observe(raw, 'client', frames=frames)
 
-    def observe(self, raw, direction):
+    def observe(self, raw, direction, frames=None):
         """Log valid AUX frames and update readbacks from controller position replies."""
         parser = self.parser if direction == 'mount' else self.client_parser
-        frames = parser.feed(raw)
+        if frames is None:
+            frames = parser.feed(raw)
         for frame in frames:
             # Log checksummed AUX frames, not arbitrary ASCII/configuration data.
-            self.emit('bridge_packet', direction=direction, hex=frame.hex(), interpretation=describe_aux(frame))
+            self.emit('bridge_packet', direction=direction, hex=frame.hex())
             axis = frame[2]
             if direction != 'mount' or axis not in AXES or frame[3] != 0x20:
                 continue
@@ -246,7 +305,7 @@ class Bridge:
                 self.report['stop_attempts'].append({'axis': axis, 'sent': False, 'error': str(error)})
                 message = f'{AXES[axis]} Stop delivery unconfirmed: {error}'
                 self.report['errors'].append(message)
-                self.callback({'event': 'bridge_error', 'message': message})
+                self.emit('bridge_error', message=message)
         self.emit('bridge_status', message='Stop attempted on both axes; encoder verification is separate.')
 
     def close_client(self, reason="control app closed the socket or a socket error occurred"):
@@ -285,6 +344,8 @@ class Bridge:
         """Own the upstream socket, relay one client, advertise discovery and clean up Stop replies."""
         try:
             self.recorder = Recorder('bridge')
+            self.event_thread = threading.Thread(target=self.dispatch_events, daemon=True)
+            self.event_thread.start()
             self.emit('bridge_starting', message='Opening infrastructure bridge and verifying motor replies…',
                       log_directory=str(self.recorder.directory))
             self.lease.acquire()
@@ -294,6 +355,7 @@ class Bridge:
             self.listen_port = data_server.getsockname()[1]
             self.management_port = management_server.getsockname()[1]
             self.upstream = self.socket_factory((self.host, self.port), 3)
+            self.upstream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.upstream.settimeout(.1)
             end = time.monotonic() + .6
             while not self.stopping.is_set() and time.monotonic() < end:
@@ -353,6 +415,7 @@ class Bridge:
                 for source in readable:
                     if source in self.listeners:
                         connection, peer = source.accept()
+                        connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                         connection.settimeout(.2)
                         if source is data_server:
                             if self.client is not None:
@@ -371,20 +434,21 @@ class Bridge:
                         raw = source.recv(4096)
                         if not raw:
                             raise ConnectionError('Telescope disconnected')
-                        self.observe(raw, 'mount')
                         if self.client:
                             try:
                                 self.client.sendall(raw)
                                 self.report['bytes_to_client'] += len(raw)
-                            except OSError:
-                                self.close_client()
+                            except OSError as error:
+                                self.close_client(f'writing to control app failed: {error}')
+                        self.observe(raw, 'mount')
                     elif source is self.client:
                         try:
                             raw = source.recv(4096)
-                        except OSError:
-                            raw = b''
+                        except OSError as error:
+                            self.close_client(f'reading from control app failed: {error}')
+                            continue
                         if not raw:
-                            self.close_client()
+                            self.close_client('control app closed its TCP stream (EOF)')
                         else:
                             self.forward_client(raw)
                     elif source is self.manager:
@@ -419,7 +483,7 @@ class Bridge:
                            'Start Bridge first, then connect the control app to this computer in Access Point mode. '
                            'If it still fails with other clients disconnected, the adapter may need a power-cycle.')
             self.report['errors'].append(message)
-            self.callback({'event': 'bridge_error', 'message': message})
+            self.emit('bridge_error', message=message)
         finally:
             self.ready.clear()
             if self.upstream:
@@ -460,6 +524,9 @@ class Bridge:
                     except OSError:
                         pass
             self.lease.release()
+            if self.event_thread is not None:
+                self.event_queue.put(None)
+                self.event_thread.join()  # Sockets are closed; drain logs before report.
             directory = str(self.recorder.directory) if self.recorder else ''
             if self.recorder:
                 try:

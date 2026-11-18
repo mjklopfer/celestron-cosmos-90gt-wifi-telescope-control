@@ -149,6 +149,41 @@ class BridgeTests(unittest.TestCase):
             else:
                 self.fail('No position reply after quiet interval')
 
+    def test_relay_disables_tcp_small_packet_batching(self):
+        with self.connect(self.bridge.listen_port):
+            self.wait('bridge_client')
+            self.assertEqual(self.bridge.upstream.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY), 1)
+            self.assertEqual(self.bridge.client.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY), 1)
+
+    def test_blocked_log_writer_does_not_block_command_or_reply_relay(self):
+        release = threading.Event()
+        entered = threading.Event()
+        original = self.bridge.recorder.record
+        def slow_record(kind, **fields):
+            if kind == 'bridge_packet':
+                entered.set()
+                release.wait(5)
+            original(kind, **fields)
+        with self.connect(self.bridge.listen_port) as client:
+            self.wait('bridge_client')
+            self.bridge.recorder.record = slow_record
+            try:
+                client.settimeout(1)
+                parser = FrameParser()
+                for axis in (16, 17):
+                    client.sendall(motor_packet(axis, 1))
+                    deadline = time.monotonic() + 1
+                    received = False
+                    while time.monotonic() < deadline:
+                        if any(f[2:5] == bytes((axis, 32, 1)) for f in parser.feed(client.recv(4096))):
+                            received = True
+                            break
+                    self.assertTrue(received, 'Disk logging held up telescope traffic')
+                    self.assertTrue(entered.wait(1))
+                self.assertFalse(release.is_set())
+            finally:
+                release.set()
+
     def test_single_idle_timeout_keeps_bridge_alive_and_recovers(self):
         self.drop_positions = 1
         event = self.wait('bridge_status', timeout=5)

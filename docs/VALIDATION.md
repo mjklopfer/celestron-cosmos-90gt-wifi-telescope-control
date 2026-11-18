@@ -135,3 +135,18 @@ both control and management sockets, subsequent successful requests, and no
 inactivity-triggered Stop. Ruff and whitespace checks passed. Direct Motor control
 idle release was not modified. Live app restart remains pending; the existing
 process retains its old timeout behavior until restarted.
+
+
+## Queued bridge telemetry and restart — 2026-11-18
+
+Bridge/decoder suite passed 22 tests; six additional targeted tests passed (the
+blocked-writer relay regression plus five withdrawn-GUI tests). Ruff passed. The
+blocked writer test held packet logging while two motor position requests and
+replies completed through loopback, proving disk work no longer gates forwarding.
+TCP_NODELAY was checked on upstream and accepted control sockets. No numerical
+hardware-latency improvement or high-speed tracking accuracy is claimed.
+
+Windows GUI was closed normally and relaunched. Updated bridge started at
+08:20:41 UTC; both axes answered startup queries. Old raw logs/report were preserved
+locally with hashes. New SkySafari endurance and joint local-jog tests remain
+pending; no agent-commanded jog was used for this restart.

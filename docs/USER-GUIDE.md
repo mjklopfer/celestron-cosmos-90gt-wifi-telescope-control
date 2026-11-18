@@ -610,3 +610,25 @@ and records candidate maximum-slew-rate commands. Their uncertain scaling and
 readback field order remain qualified in the engineering note; no GUI controls
 were added for those candidate commands. Menu visibility alone does not establish
 onboard enforcement of slew limits or storage of alignment/hibernation settings.
+
+
+### Bridge forwarding and timestamped motion records
+
+The bridge forwards complete AUX client frames and telescope reply bytes before
+packet logging/interpretation and screen updates. A separate event worker writes
+logs and supplies UI events. TCP_NODELAY disables small-packet batching on local
+bridge TCP sockets. This reduces avoidable overhead; it is not a measured guarantee
+of end-to-end latency or tracking accuracy. AUX framing and local-jog arbitration
+still precede client-command dispatch.
+
+Events retain UTC and monotonic timestamps captured when queued after forwarding,
+not when the disk writer later flushes. They identify bridge observations, not the
+exact instant a motor executed a command. Encoder replies can reconstruct sampled
+raw-axis motion, while commands describe intended motion. Do not treat either as
+aligned celestial coordinates without a valid alignment model.
+
+If the worker backlog reaches 8192 queued events, high-volume packet/readback
+telemetry may be omitted to keep relay traffic moving. An explicit warning and
+final dropped-event count identify incomplete recordings; lifecycle/safety events
+are retained. A motion-track export tool is planned, not yet implemented. Keep
+original logs and distinguish gaps, clock changes, resets and reconnections.
